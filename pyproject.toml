@@ -17,6 +17,8 @@ dependencies = [
     "pandas>=3.0.2",
     "numpy>=2.4.4",
     "pyyaml>=6.0.3",
+    "scipy>=1.11.0",
+    "rainflow>=3.2.0",
 ]
 
 [project.optional-dependencies]
