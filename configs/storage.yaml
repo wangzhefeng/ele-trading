@@ -1,0 +1,10 @@
+asset_name: sample_bess
+soc0: 5.0
+soc_min: 1.0
+soc_max: 10.0
+p_ch_max: 3.0
+p_dis_max: 3.0
+eta_ch: 0.95
+eta_dis: 0.95
+deg_cost: 0.01
+dt: 1.0

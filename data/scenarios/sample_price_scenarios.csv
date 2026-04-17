@@ -1,0 +1,13 @@
+scenario,hour,price,weight
+low,0,300,0.2
+low,1,290,0.2
+low,2,280,0.2
+low,3,275,0.2
+base,0,320,0.5
+base,1,300,0.5
+base,2,285,0.5
+base,3,270,0.5
+high,0,350,0.3
+high,1,330,0.3
+high,2,310,0.3
+high,3,295,0.3

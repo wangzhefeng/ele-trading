@@ -1,0 +1,5 @@
+market_name: sample_day_ahead_market
+time_step_hours: 1.0
+currency: CNY
+price_column: price
+settlement_mode: day_ahead
