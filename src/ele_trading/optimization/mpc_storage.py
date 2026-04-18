@@ -16,8 +16,13 @@ def solve_one_mpc_window(
     eta_dis=0.95,
     deg_cost=0.01,
     dt=1.0,
+    terminal_soc_fraction: float = 0.0,
 ):
-    """求解单个 MPC 窗口。"""
+    """求解单个 MPC 窗口。
+
+    terminal_soc_fraction: 窗口末端 SOC 下界 = soc_min + fraction*(soc_max-soc_min)。
+    0.0 表示不加终端约束（默认，向后兼容）。
+    """
     T = range(horizon)
     m = LpProblem('storage_mpc_window', LpMaximize)
 
@@ -38,6 +43,11 @@ def solve_one_mpc_window(
         else:
             m += soc[t] == soc[t - 1] + eta_ch * p_ch[t] * dt - (p_dis[t] * dt) / eta_dis
 
+    # 终端 SOC 下界约束：防止 MPC 在预测窗口末尾过度放电
+    if terminal_soc_fraction > 0.0:
+        terminal_lb = soc_min + terminal_soc_fraction * (soc_max - soc_min)
+        m += soc[horizon - 1] >= terminal_lb
+
     m += lpSum(
         prices_window[t] * (p_dis[t] - p_ch[t]) * dt - deg_cost * (p_ch[t] + p_dis[t]) * dt
         for t in T
@@ -49,6 +59,7 @@ def solve_one_mpc_window(
         'p_ch': value(p_ch[0]),
         'p_dis': value(p_dis[0]),
         'soc_next': value(soc[0]),
+        'soc_terminal': value(soc[horizon - 1]),
         'obj': value(m.objective),
     }
 
@@ -65,6 +76,7 @@ def run_storage_mpc(
     eta_dis=0.95,
     deg_cost=0.01,
     dt=1.0,
+    terminal_soc_fraction: float = 0.0,
 ) -> pd.DataFrame:
     """运行储能滚动优化，并输出逐步执行结果。"""
     records = []
@@ -86,6 +98,7 @@ def run_storage_mpc(
             eta_dis=eta_dis,
             deg_cost=deg_cost,
             dt=dt,
+            terminal_soc_fraction=terminal_soc_fraction,
         )
         records.append(
             {
