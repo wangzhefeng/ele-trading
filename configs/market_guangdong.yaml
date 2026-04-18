@@ -1,0 +1,18 @@
+market_name: guangdong_spot_market
+settlement_mode: day_ahead_plus_realtime
+currency: CNY
+granularity_minutes: 15
+periods_per_day: 96
+
+price_limits:
+  cap_cny_per_mwh: 1500.0
+  floor_cny_per_mwh: -100.0
+
+deviation_penalty:
+  dead_band_pct: 0.02
+  tier1_threshold_pct: 0.05
+  tier1_kappa: 0.25
+  tier2_kappa: 0.50
+
+# 参考：山东市场死区更紧（±1.5%），可按需切换
+# shandong_dead_band_pct: 0.015
