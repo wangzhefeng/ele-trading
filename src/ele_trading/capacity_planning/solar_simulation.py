@@ -1,0 +1,155 @@
+"""
+光伏出力模拟模块
+
+基于 pvlib 实现单位容量（1 MW）或指定容量的光伏系统出力时序仿真，
+支持等效利用小时数（FLH）校准。
+"""
+from __future__ import annotations
+
+import pandas as pd
+import pvlib
+
+
+# SAPM 开放架构组件（open-rack glass-glass）典型参数
+_SAPM_PARAMS = {"a": -3.56, "b": -0.075, "deltaT": 3}
+
+# PVWatts DC 模型参数
+_GAMMA_PDC = -0.004  # 功率温度系数 [1/°C]
+# 系统综合效率（逆变器 × 线损 × 其他损耗）
+_SYSTEM_EFF = 0.96
+
+
+class SolarSimulator:
+    """基于 pvlib 的光伏出力模拟器。
+
+    Parameters
+    ----------
+    latitude : float
+        纬度（°）。
+    longitude : float
+        经度（°）。
+    timezone : str
+        时区，例如 ``'Asia/Shanghai'``。
+    tilt : float or None
+        组件倾角（°）。为 None 时取 ``latitude * 0.9``（工程经验值）。
+    azimuth : float
+        方位角（°），北半球默认 180（正南）。
+    """
+
+    def __init__(
+        self,
+        latitude: float,
+        longitude: float,
+        timezone: str,
+        tilt: float | None = None,
+        azimuth: float = 180.0,
+    ) -> None:
+        self.latitude = latitude
+        self.longitude = longitude
+        self.timezone = timezone
+        self.tilt = tilt if tilt is not None else latitude * 0.9
+        self.azimuth = azimuth
+        self._location = pvlib.location.Location(
+            latitude=latitude,
+            longitude=longitude,
+            tz=timezone,
+        )
+
+    def simulate(
+        self,
+        weather_df: pd.DataFrame,
+        equiv_hours: float,
+        target_capacity_mw: float = 1.0,
+    ) -> tuple[pd.Series, float]:
+        """模拟光伏出力时序。
+
+        Parameters
+        ----------
+        weather_df : pd.DataFrame
+            气象数据，索引为 DatetimeIndex（含时区），至少包含列：
+            ``ghi``（W/m²）、``temp_air``（°C）、``wind_speed``（m/s）。
+        equiv_hours : float
+            目标年等效发电小时数，用于校准出力曲线。
+        target_capacity_mw : float
+            目标装机容量（MW），默认 1 MW。
+
+        Returns
+        -------
+        output_mw : pd.Series
+            与 ``weather_df`` 同频的出力时序（MW）。
+        K : float
+            等效小时数校准系数。
+        """
+        # 1. 计算太阳位置
+        solar_pos = self._location.get_solarposition(weather_df.index)
+
+        # 2. GHI → DNI + DHI（DISC 模型）
+        disc_out = pvlib.irradiance.disc(
+            ghi=weather_df["ghi"],
+            solar_zenith=solar_pos["zenith"],
+            datetime_or_doy=weather_df.index,
+        )
+        dni = disc_out["dni"]
+        dhi = weather_df["ghi"] - dni * _cos_zenith(solar_pos["zenith"])
+
+        # 3. 斜面辐照度（Hay-Davies 模型，需要 dni_extra）
+        dni_extra = pvlib.irradiance.get_extra_radiation(weather_df.index)
+        poa = pvlib.irradiance.get_total_irradiance(
+            surface_tilt=self.tilt,
+            surface_azimuth=self.azimuth,
+            solar_zenith=solar_pos["zenith"],
+            solar_azimuth=solar_pos["azimuth"],
+            dni=dni,
+            ghi=weather_df["ghi"],
+            dhi=dhi,
+            dni_extra=dni_extra,
+            model="haydavies",
+        )
+
+        # 4. 组件温度（SAPM 模型）
+        temp_cell = pvlib.temperature.sapm_cell(
+            poa_global=poa["poa_global"],
+            temp_air=weather_df["temp_air"],
+            wind_speed=weather_df["wind_speed"],
+            **_SAPM_PARAMS,
+        )
+
+        # 5. DC 功率（PVWatts，以 1 MW = 1e6 W 为基准）
+        pdc0 = 1e6  # W，对应 1 MW 装机
+        pdc = pvlib.pvsystem.pvwatts_dc(
+            effective_irradiance=poa["poa_global"],
+            temp_cell=temp_cell,
+            pdc0=pdc0,
+            gamma_pdc=_GAMMA_PDC,
+        )
+
+        # 6. AC 出力（应用系统综合效率），转换为 MW
+        pac_mw = pdc * _SYSTEM_EFF / 1e6  # MW
+        pac_mw = pac_mw.clip(lower=0)
+
+        # 7. 校准：根据等效小时数计算系数 K
+        # 采样间隔（小时）
+        dt_hours = _infer_dt_hours(weather_df.index)
+        e_raw = pac_mw.sum() * dt_hours  # MWh（原始年发电量）
+        e_target = 1.0 * equiv_hours     # MWh（目标，基于 1 MW 基准容量）
+        K = e_target / e_raw if e_raw > 0 else 1.0
+
+        # 8. 应用校准系数并缩放到目标容量
+        output_mw = pac_mw * K * target_capacity_mw
+        output_mw.name = "solar_output_mw"
+
+        return output_mw, K
+
+
+def _cos_zenith(zenith_deg: pd.Series) -> pd.Series:
+    """返回 cos(zenith)，zenith 单位为度。"""
+    import numpy as np
+    return np.cos(np.radians(zenith_deg))
+
+
+def _infer_dt_hours(index: pd.DatetimeIndex) -> float:
+    """从索引推断采样间隔（小时）。"""
+    if len(index) < 2:
+        return 1.0
+    dt = index[1] - index[0]
+    return dt.total_seconds() / 3600.0
