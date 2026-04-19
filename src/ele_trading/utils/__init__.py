@@ -1,2 +1,2 @@
 from .io import read_yaml, write_text
-from .logger import get_logger
+from .log_util import logger

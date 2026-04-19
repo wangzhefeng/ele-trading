@@ -73,3 +73,36 @@
 - [x] TODO 005 — `src/ele_trading/optimization/mpc_storage.py` 新增 `terminal_soc_fraction` 参数（默认 0.0 向后兼容），约束 `soc[H-1] >= soc_min + fraction*(soc_max-soc_min)`；返回值新增 `soc_terminal` 字段；`tests/test_mpc_storage.py` 新增终端约束防过放电测试。
 - [x] TODO 006 — `src/ele_trading/evaluation/metrics.py` 新增 `compute_extended_metrics()`，输出年化 Sharpe、最大回撤（MDD）、EFC 循环次数、单 EFC 收益、往返效率（RTE）、利用率；新增 `tests/test_metrics.py`（7 项测试全部通过）。
 - [x] TODO 007 — `src/ele_trading/evaluation/settlement.py` 新增 `compute_deviation_penalty()`（广东分层罚款：死区 ≤2% 免罚，2–5% 按 0.25 系数，>5% 按 0.50 系数）；新建 `configs/market_guangdong.yaml`（96 时段/日、价格限幅 1500/−100 CNY/MWh）；新增 `tests/test_settlement.py`（5 项测试全部通过）。
+
+## 2026-04-19
+
+### TODO 008 — 补全测试覆盖（承接 TODO 001 未关闭项）
+
+- [ ] `tests/test_backtest.py`（新建）：为 `run_simple_backtest()` 添加指标输出回归测试，断言返回字典包含 `Total Revenue`、`Energy Arbitrage Revenue`、`Degradation Cost`、`Average SOC`，且数值在合理范围（如总收益 > 0、平均 SOC 在 [soc_min, soc_max] 区间内）。
+- [ ] `tests/test_entry_scripts.py`（新建）：为四个入口脚本添加端到端冒烟测试，通过 `subprocess.run` 调用并断言退出码为 0、stdout 非空；覆盖 `run_storage_arbitrage.py`、`run_mpc_demo.py`、`run_two_stage_skeleton.py`、`run_backtest.py`。
+- [ ] `tests/test_extended_metrics_backtest.py`（新建）：将 `compute_extended_metrics()` 接入完整 MPC 回测输出，验证 Sharpe、MDD、EFC 等指标在 24 步样本数据上的数值合理性（EFC > 0，MDD ≤ 0，0 ≤ utilization ≤ 1）。
+
+### TODO 009 — 数据层 15 分钟颗粒度适配（承接 TODO 007 数据层遗留项）
+
+- [ ] `data/raw/`（新建 `sample_day_ahead_prices_96.csv`）：通过三次样条插值将现有 24 点日前价格扩展为 96 个 15 分钟时段，用于接口验证；插值脚本放在 `scripts/interpolate_to_15min.py`。
+- [ ] `src/ele_trading/data/loader.py`：确认 `load_price_series()` 的 `time_col` 参数可无缝读取 96 行的 15 分钟数据，无需修改调用方代码。
+- [ ] `configs/market_guangdong.yaml`：已配置 `granularity_minutes: 15`，需补充对应 `dt=0.25`（小时）的说明注释，确保优化模块传参一致。
+- [ ] `src/ele_trading/optimization/storage_arbitrage.py` 与 `mpc_storage.py`：确认 `dt` 参数可直接传入 0.25 以切换至 15 分钟颗粒度，补充对应单元测试用例（|T|=8，dt=0.25）。
+
+### TODO 010 — 离线雨流计数退化核算（承接 TODO 005 可选项）
+
+- [ ] `src/ele_trading/evaluation/metrics.py`：新增 `compute_rainflow_degradation(soc_series, e_cap, deg_cost_per_cycle)` 函数，调用 `rainflow.count_cycles(soc_series)` 对完整 SOC 序列执行离线雨流计数，返回总循环次数、加权 DoD、估算退化成本；`rainflow` 已列入依赖，无需额外安装。
+- [ ] `tests/test_metrics.py`：追加 `test_rainflow_degradation_*` 用例，验证单次满充满放 SOC 序列（[1→10→1]）对应约 1 个完整循环，退化成本 = `deg_cost_per_cycle * 1`。
+- [ ] `app/run_backtest.py`：在最小回测结束后调用 `compute_rainflow_degradation()`，将雨流退化成本与线性吞吐量退化成本并列输出，便于对比两种模型的差异。
+
+### TODO 011 — 价格预测模块升级（替换 SimplePriceForecaster）
+
+- [ ] `src/ele_trading/forecasting/price_forecast.py`：在保留 `SimplePriceForecaster`（向后兼容）的基础上，新增 `ARIMAForecaster` 类，基于 `statsmodels.tsa.arima.model.ARIMA`（建议初始阶数 p=2, d=0, q=1）实现 `fit(history)` 与 `predict(horizon)` 接口，输出点预测及 95% 置信区间作为上下分位数。
+- [ ] `src/ele_trading/forecasting/price_forecast.py`：统一 `ForecastOutput` 接口，使 `ARIMAForecaster` 与 `SimplePriceForecaster` 返回相同 dataclass，场景模块可无感切换预测器。
+- [ ] `tests/test_forecasting.py`（新建）：用样例 24 点日前价格序列验证 `ARIMAForecaster.predict()` 输出长度与 horizon 一致、上分位数 ≥ 点预测 ≥ 下分位数。
+- [ ] `pyproject.toml`：添加 `statsmodels>=0.14.0` 依赖。
+
+### TODO 012 — 更新 AGENTS.md（承接 TODO 002）
+
+- [ ] `AGENTS.md`：补充新增求解链路的运行约束，包括：Two-stage CVaR 模型需系统安装 glpk（`brew install glpk`）；场景模块升级后默认使用 LHS，新代码须保留 `method='mc'` 向后兼容参数；`compute_extended_metrics()` 调用须传入正确 `e_cap` 参数，否则 EFC 计算无意义。
+- [ ] `AGENTS.md`：补充偏差考核模块的审查约束：`compute_deviation_penalty()` 的 `dead_band_pct`、`tier1_threshold_pct` 参数须与所用市场配置文件（`configs/market_*.yaml`）保持一致，不得在代码中硬编码市场参数。

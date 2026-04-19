@@ -10,6 +10,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from ele_trading.data.sample_data import load_default_intraday_prices, load_default_storage_config
 from ele_trading.optimization.mpc_storage import run_storage_mpc
+from ele_trading.utils.log_util import logger
 
 
 if __name__ == '__main__':
@@ -28,6 +29,18 @@ if __name__ == '__main__':
         deg_cost=storage.deg_cost,
         dt=storage.dt,
     )
-    print('=== 储能 MPC 滚动优化结果 ===')
-    print(dispatch_df.to_string(index=False))
-    print(f'累计窗口目标值={dispatch_df["step_objective"].sum():.4f}')
+    logger.info('=== 输出数据和参数 ===')
+    logger.info(f"price_series: {price_series}")
+    logger.info(f"storage.soc0: {storage.soc0}")
+    logger.info(f"storage.soc_min: {storage.soc_min}")
+    logger.info(f"storage.soc_max: {storage.soc_max}")
+    logger.info(f"storage.p_ch_max: {storage.p_ch_max}")
+    logger.info(f"storage.p_dis_max: {storage.p_dis_max}")
+    logger.info(f"storage.eta_ch: {storage.eta_ch}")
+    logger.info(f"storage.eta_dis: {storage.eta_dis}")
+    logger.info(f"storage.deg_cost: {storage.deg_cost}")
+    logger.info(f"storage.dt: {storage.dt}")
+    
+    logger.info('=== 储能 MPC 滚动优化结果 ===')
+    logger.info(f"result: \n{dispatch_df.to_string(index=False)}")
+    logger.info(f'累计窗口目标值={dispatch_df["step_objective"].sum():.4f}')
