@@ -1,10 +1,6 @@
-"""
-光伏出力模拟模块
-
-基于 pvlib 实现单位容量（1 MW）或指定容量的光伏系统出力时序仿真，
-支持等效利用小时数（FLH）校准。
-"""
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 import pandas as pd
 import pvlib
@@ -19,30 +15,27 @@ _GAMMA_PDC = -0.004  # 功率温度系数 [1/°C]
 _SYSTEM_EFF = 0.96
 
 
+@dataclass(slots=True)
+class SolarSimResult:
+    output_mw: pd.Series         # 出力时序（MW），与输入气象数据同频
+    total_generation_mwh: float  # 模拟年发电量（MWh）
+    scale_factor: float          # 等效小时数校准系数 K
+
+
 class SolarSimulator:
     """基于 pvlib 的光伏出力模拟器。
 
-    Parameters
-    ----------
-    latitude : float
-        纬度（°）。
-    longitude : float
-        经度（°）。
-    timezone : str
-        时区，例如 ``'Asia/Shanghai'``。
-    tilt : float or None
-        组件倾角（°）。为 None 时取 ``latitude * 0.9``（工程经验值）。
-    azimuth : float
-        方位角（°），北半球默认 180（正南）。
+    使用物理仿真 + 等效小时数校准，生成指定容量的出力时间序列。
     """
 
     def __init__(
         self,
         latitude: float,
         longitude: float,
-        timezone: str,
+        timezone: str = 'Asia/Shanghai',
         tilt: float | None = None,
         azimuth: float = 180.0,
+        altitude: float = 0.0,
     ) -> None:
         self.latitude = latitude
         self.longitude = longitude
@@ -53,6 +46,7 @@ class SolarSimulator:
             latitude=latitude,
             longitude=longitude,
             tz=timezone,
+            altitude=altitude,
         )
 
     def simulate(
@@ -60,25 +54,17 @@ class SolarSimulator:
         weather_df: pd.DataFrame,
         equiv_hours: float,
         target_capacity_mw: float = 1.0,
-    ) -> tuple[pd.Series, float]:
+    ) -> SolarSimResult:
         """模拟光伏出力时序。
 
-        Parameters
-        ----------
-        weather_df : pd.DataFrame
-            气象数据，索引为 DatetimeIndex（含时区），至少包含列：
-            ``ghi``（W/m²）、``temp_air``（°C）、``wind_speed``（m/s）。
-        equiv_hours : float
-            目标年等效发电小时数，用于校准出力曲线。
-        target_capacity_mw : float
-            目标装机容量（MW），默认 1 MW。
+        Args:
+            weather_df: 气象数据，索引为 DatetimeIndex（含时区），至少包含列：
+                        ghi（W/m²）、temp_air（°C）、wind_speed（m/s）。
+            equiv_hours: 目标年等效发电小时数，用于校准出力曲线。
+            target_capacity_mw: 目标装机容量（MW），默认 1 MW。
 
-        Returns
-        -------
-        output_mw : pd.Series
-            与 ``weather_df`` 同频的出力时序（MW）。
-        K : float
-            等效小时数校准系数。
+        Returns:
+            SolarSimResult with output_mw, total_generation_mwh, scale_factor.
         """
         # 1. 计算太阳位置
         solar_pos = self._location.get_solarposition(weather_df.index)
@@ -138,7 +124,11 @@ class SolarSimulator:
         output_mw = pac_mw * K * target_capacity_mw
         output_mw.name = "solar_output_mw"
 
-        return output_mw, K
+        return SolarSimResult(
+            output_mw=output_mw,
+            total_generation_mwh=float(output_mw.sum() * dt_hours),
+            scale_factor=K,
+        )
 
 
 def _cos_zenith(zenith_deg: pd.Series) -> pd.Series:

@@ -1,3 +1,5 @@
-from .solar_simulation import SolarSimulator
+from __future__ import annotations
 
-__all__ = ["SolarSimulator"]
+from .solar_simulation import SolarSimulator, SolarSimResult
+
+__all__ = ['SolarSimulator', 'SolarSimResult']
