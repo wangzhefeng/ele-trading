@@ -1,0 +1,22 @@
+# 搜索策略参数
+search:
+  coarse_step_mw: 10       # 粗搜索步长（风/光，MW）
+  coarse_step_mwh: 20      # 粗搜索步长（储能，MWh）
+  fine_step_mw: 1          # 精细搜索步长（风/光，MW）
+  fine_step_mwh: 2         # 精细搜索步长（储能，MWh）
+  fine_range_ratio: 0.3    # 精细搜索范围（最优解 ±30%）
+
+# 储能默认参数
+storage:
+  c_rate: 0.5              # 充放电倍率（0.5C = 2h 充满）
+  dod: 0.90                # 放电深度
+  soc_min: 0.10            # 最小荷电状态
+  eta_charge: 0.95         # 充电效率
+  eta_discharge: 0.95      # 放电效率
+  duration_hours: 2.0      # 储能时长（h），用于从容量推算功率
+
+# 成本参数（元/kW 或 元/kWh，2024 年参考值）
+cost:
+  wind_yuan_per_kw: 5000
+  pv_yuan_per_kw: 3500
+  ess_yuan_per_kwh: 1500

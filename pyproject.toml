@@ -19,6 +19,8 @@ dependencies = [
     "pyyaml>=6.0.3",
     "scipy>=1.11.0",
     "rainflow>=3.2.0",
+    "pvlib>=0.10.0",
+    "windpowerlib>=0.2.0",
 ]
 
 [project.optional-dependencies]
