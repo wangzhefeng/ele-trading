@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 import pvlib
 
@@ -75,8 +76,9 @@ class SolarSimulator:
             solar_zenith=solar_pos["zenith"],
             datetime_or_doy=weather_df.index,
         )
-        dni = disc_out["dni"]
-        dhi = weather_df["ghi"] - dni * _cos_zenith(solar_pos["zenith"])
+        dni = disc_out["dni"].clip(lower=0)
+        # GHI = DNI·cos(θ) + DHI; clip to 0 to avoid negative DHI at zenith ≥ 90°
+        dhi = (weather_df["ghi"] - dni * _cos_zenith(solar_pos["zenith"])).clip(lower=0)
 
         # 3. 斜面辐照度（Hay-Davies 模型，需要 dni_extra）
         dni_extra = pvlib.irradiance.get_extra_radiation(weather_df.index)
@@ -132,14 +134,12 @@ class SolarSimulator:
 
 
 def _cos_zenith(zenith_deg: pd.Series) -> pd.Series:
-    """返回 cos(zenith)，zenith 单位为度。"""
-    import numpy as np
     return np.cos(np.radians(zenith_deg))
 
 
 def _infer_dt_hours(index: pd.DatetimeIndex) -> float:
-    """从索引推断采样间隔（小时）。"""
     if len(index) < 2:
         return 1.0
-    dt = index[1] - index[0]
-    return dt.total_seconds() / 3600.0
+    # Use median interval to tolerate DST gaps at position 0
+    diffs = pd.Series(index[1:]) - pd.Series(index[:-1])
+    return float(diffs.median().total_seconds() / 3600.0)
