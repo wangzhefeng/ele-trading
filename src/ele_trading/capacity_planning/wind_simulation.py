@@ -5,14 +5,11 @@ from functools import lru_cache
 
 import numpy as np
 import pandas as pd
-from windpowerlib import ModelChain, WindFarm, WindTurbine, get_turbine_types
+from windpowerlib import ModelChain, WindTurbine, get_turbine_types
 
 
 # 综合折减系数（尾流损耗 + 可用率 + 集电线损等）
 _SYSTEM_EFF = 0.92
-
-# 风切变指数（1/7 幂律，适用于平原/草原地区）
-_SHEAR_EXPONENT = 1 / 7
 
 
 @dataclass(slots=True)
@@ -21,7 +18,7 @@ class WindSimResult:
     total_generation_mwh: float   # 模拟年发电量（MWh）
     scale_factor: float           # 等效小时数校准系数 K
     selected_turbine: str         # 选用的机型名称
-    turbine_count: int            # 所需台数（= ceil(target_capacity / single_turbine_mw)）
+    turbine_count: int            # 风机台数
 
 
 class WindSimulator:
@@ -33,56 +30,51 @@ class WindSimulator:
 
     def __init__(
         self,
-        latitude: float,
-        longitude: float,
         hub_height: float = 100.0,
-        ref_height: float = 10.0,
+        wind_shear_exp: float = 0.143,
+        wind_speed_ref_height: float = 10.0,
     ) -> None:
-        self.latitude = latitude
-        self.longitude = longitude
         self.hub_height = hub_height
-        self.ref_height = ref_height
+        self.wind_shear_exp = wind_shear_exp
+        self.wind_speed_ref_height = wind_speed_ref_height
 
     def simulate(
         self,
         weather_df: pd.DataFrame,
         equiv_hours: float,
         target_capacity_mw: float = 1.0,
+        single_turbine_capacity_mw: float | None = None,
     ) -> WindSimResult:
-        """模拟风电出力时序。
+        """模拟风电场出力时间序列。
 
         Args:
-            weather_df: 气象数据，索引为 DatetimeIndex（含时区），至少包含列：
-                        wind_speed（m/s，参考高度 ref_height）、
-                        temperature（°C）、pressure（Pa）。
-            equiv_hours: 目标年等效利用小时数，用于校准出力曲线。
-            target_capacity_mw: 目标装机容量（MW），默认 1 MW。
+            weather_df: 时间序列 DataFrame，含 'wind_speed'（m/s）、
+                        'temperature'（°C）、'pressure'（Pa）列。
+            equiv_hours: 年等效利用小时数，用于校准出力曲线。
+            target_capacity_mw: 风电场总装机容量（MW）。
+            single_turbine_capacity_mw: 指定单机容量（MW），None 则自动匹配中位数机型。
 
         Returns:
             WindSimResult with output_mw, total_generation_mwh, scale_factor,
             selected_turbine, turbine_count.
         """
-        turbine_type, turbine_mw = _select_turbine(self.hub_height)
-        n_turbines = max(1, int(np.ceil(target_capacity_mw / turbine_mw)))
+        turbine_type, rated_mw = _select_turbine(self.hub_height, single_turbine_capacity_mw)
+        turbine_count = max(1, round(target_capacity_mw / rated_mw))
 
         turbine = WindTurbine(turbine_type=turbine_type, hub_height=self.hub_height)
-
-        # windpowerlib 要求 MultiIndex 气象数据：(variable, height)
-        # 风速已外推至 hub_height，ModelChain 直接使用，无需 roughness_length
-        weather_wpl = _build_weather_multiindex(weather_df, self.ref_height, self.hub_height)
+        weather_wpl = _build_weather_multiindex(
+            weather_df, self.wind_speed_ref_height, self.hub_height, self.wind_shear_exp
+        )
 
         mc = ModelChain(turbine).run_model(weather_wpl)
         # power_output 单位：W（单台机组）
         power_w = mc.power_output.clip(lower=0)
-        # 归一化为每 MW 装机的出力（capacity factor 形式）
-        capacity_factor = power_w / (turbine_mw * 1e6)  # dimensionless [0, 1]
+        capacity_factor = power_w / (rated_mw * 1e6)  # 归一化为 [0, 1]
 
-        # 校准：根据等效小时数计算系数 K（基于 1 MW 基准）
         dt_hours = _infer_dt_hours(weather_df.index)
         e_raw_per_mw = (capacity_factor * _SYSTEM_EFF).sum() * dt_hours  # MWh/MW
         K = equiv_hours / e_raw_per_mw if e_raw_per_mw > 0 else 1.0
 
-        # 应用校准系数并缩放到目标容量（线性）
         output_mw = capacity_factor * _SYSTEM_EFF * K * target_capacity_mw
         output_mw.name = "wind_output_mw"
 
@@ -91,19 +83,19 @@ class WindSimulator:
             total_generation_mwh=float(output_mw.sum() * dt_hours),
             scale_factor=K,
             selected_turbine=turbine_type,
-            turbine_count=n_turbines,
+            turbine_count=turbine_count,
         )
 
 
-@lru_cache(maxsize=8)
-def _select_turbine(hub_height: float) -> tuple[str, float]:
-    """从 windpowerlib 内置库中选择最接近中位功率的机型。
+@lru_cache(maxsize=32)
+def _select_turbine(
+    hub_height: float,
+    single_turbine_capacity_mw: float | None,
+) -> tuple[str, float]:
+    """从 windpowerlib 内置库中选择风机型号，返回 (型号名, 额定功率 MW)。
 
     windpowerlib 0.2.2 的 get_turbine_types() 不含 rated_power 列，
-    需逐一实例化 WindTurbine 以读取 nominal_power（W）。
-
-    Returns:
-        (turbine_type, rated_power_mw)
+    需逐一实例化 WindTurbine 读取 nominal_power（W）。结果由 lru_cache 缓存。
     """
     df = get_turbine_types(print_out=False)
     powers: dict[str, float] = {}
@@ -115,8 +107,10 @@ def _select_turbine(hub_height: float) -> tuple[str, float]:
             pass
 
     power_series = pd.Series(powers)
-    median_mw = power_series.median()
-    selected = (power_series - median_mw).abs().idxmin()
+    if single_turbine_capacity_mw is not None:
+        selected = (power_series - single_turbine_capacity_mw).abs().idxmin()
+    else:
+        selected = (power_series - power_series.median()).abs().idxmin()
     return selected, float(power_series[selected])
 
 
@@ -124,18 +118,14 @@ def _build_weather_multiindex(
     weather_df: pd.DataFrame,
     ref_height: float,
     hub_height: float,
+    shear_exp: float,
 ) -> pd.DataFrame:
-    """将气象 DataFrame 转换为 windpowerlib 要求的 MultiIndex 格式。
+    """将气象 DataFrame 转换为 windpowerlib ModelChain 所需的 MultiIndex 列格式。
 
-    windpowerlib ModelChain 期望列索引为 (variable, height) 二级 MultiIndex。
-    当 weather_df 中 wind_speed 的高度等于 hub_height 时，ModelChain 直接使用，
-    无需 roughness_length 列（避免 windpowerlib 0.2.2 的对数/幂律外推依赖）。
-
-    风切变已在此函数中用幂律（1/7 指数）从 ref_height 外推到 hub_height。
+    风速用幂律从 ref_height 外推至 hub_height，使 ModelChain 直接使用已外推数据，
+    无需 roughness_length 列（避免 windpowerlib 0.2.2 内置对数外推的依赖）。
     """
-    ws_ref = weather_df['wind_speed']
-    ws_hub = ws_ref * (hub_height / ref_height) ** _SHEAR_EXPONENT
-
+    ws_hub = weather_df['wind_speed'] * (hub_height / ref_height) ** shear_exp
     temp_k = weather_df['temperature'] + 273.15  # °C → K
 
     data = {
