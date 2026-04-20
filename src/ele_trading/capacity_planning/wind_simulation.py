@@ -34,6 +34,8 @@ class WindSimulator:
         wind_shear_exp: float = 0.143,
         wind_speed_ref_height: float = 10.0,
     ) -> None:
+        if wind_speed_ref_height <= 0:
+            raise ValueError(f'wind_speed_ref_height must be > 0, got {wind_speed_ref_height}')
         self.hub_height = hub_height
         self.wind_shear_exp = wind_shear_exp
         self.wind_speed_ref_height = wind_speed_ref_height
@@ -69,7 +71,7 @@ class WindSimulator:
         mc = ModelChain(turbine).run_model(weather_wpl)
         # power_output 单位：W（单台机组）
         power_w = mc.power_output.clip(lower=0)
-        capacity_factor = power_w / (rated_mw * 1e6)  # 归一化为 [0, 1]
+        capacity_factor = (power_w / (rated_mw * 1e6)).clip(upper=1.0)  # 归一化为 [0, 1]
 
         dt_hours = _infer_dt_hours(weather_df.index)
         e_raw_per_mw = (capacity_factor * _SYSTEM_EFF).sum() * dt_hours  # MWh/MW
@@ -106,6 +108,11 @@ def _select_turbine(
         except Exception:
             pass
 
+    if not powers:
+        raise RuntimeError(
+            f'No turbines found for hub_height={hub_height}m. '
+            'Check that windpowerlib turbine data is installed.'
+        )
     power_series = pd.Series(powers)
     if single_turbine_capacity_mw is not None:
         selected = (power_series - single_turbine_capacity_mw).abs().idxmin()
@@ -141,5 +148,4 @@ def _build_weather_multiindex(
 def _infer_dt_hours(index: pd.DatetimeIndex) -> float:
     if len(index) < 2:
         return 1.0
-    diffs = pd.Series(index[1:]) - pd.Series(index[:-1])
-    return float(diffs.median().total_seconds() / 3600.0)
+    return float((index[1:] - index[:-1]).median().total_seconds() / 3600.0)

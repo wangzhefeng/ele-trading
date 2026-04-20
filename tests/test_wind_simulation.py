@@ -44,7 +44,8 @@ def test_wind_sim_scale_factor_calibrates_energy():
     weather = _make_weather(8760)
     equiv_hours = 2200.0
     result = sim.simulate(weather, equiv_hours=equiv_hours, target_capacity_mw=1.0)
-    assert result.total_generation_mwh > 0
+    # 1 MW 装机的年发电量应约等于 equiv_hours MWh（误差 < 1%）
+    np.testing.assert_allclose(result.total_generation_mwh, equiv_hours, rtol=0.01)
 
 
 def test_wind_sim_capacity_scales_linearly():
@@ -75,12 +76,21 @@ def test_wind_sim_hub_height_shear():
 
 
 def test_wind_sim_single_turbine_capacity_fixed():
-    """指定单机容量时，turbine_count 应与 target/single 的比值一致。"""
+    """指定单机容量时，turbine_count = round(target / rated)，且额定功率接近指定值。"""
     sim = WindSimulator()
     weather = _make_weather(24)
     result = sim.simulate(
         weather, equiv_hours=2200, target_capacity_mw=10.0,
         single_turbine_capacity_mw=2.0,
     )
+    # windpowerlib 选最接近 2 MW 的机型；turbine_count = round(10 / rated_mw)
     assert result.turbine_count >= 1
     assert isinstance(result.selected_turbine, str)
+    # 选出的机型额定功率应在 2 MW ±50% 范围内
+    estimated_rated_mw = 10.0 / result.turbine_count
+    assert 1.0 <= estimated_rated_mw <= 5.0
+
+
+def test_wind_sim_invalid_ref_height_raises():
+    with pytest.raises(ValueError, match='wind_speed_ref_height'):
+        WindSimulator(wind_speed_ref_height=0)
