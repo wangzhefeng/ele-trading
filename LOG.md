@@ -106,3 +106,23 @@
 
 - [ ] `AGENTS.md`：补充新增求解链路的运行约束，包括：Two-stage CVaR 模型需系统安装 glpk（`brew install glpk`）；场景模块升级后默认使用 LHS，新代码须保留 `method='mc'` 向后兼容参数；`compute_extended_metrics()` 调用须传入正确 `e_cap` 参数，否则 EFC 计算无意义。
 - [ ] `AGENTS.md`：补充偏差考核模块的审查约束：`compute_deviation_penalty()` 的 `dead_band_pct`、`tier1_threshold_pct` 参数须与所用市场配置文件（`configs/market_*.yaml`）保持一致，不得在代码中硬编码市场参数。
+
+## 2026-04-20
+
+### 状态更新 013 — 历史 TODO 与当前实现对齐
+
+- [x] `TODO 001` / `TODO 003` 的“Two-stage 仍是骨架”表述已被后续实现覆盖：当前仓库中的 `src/ele_trading/optimization/two_stage_cvar.py` 已按 README 所述扩展为完整可求解模型。保留旧条目仅作为历史记录，不再代表当前真实状态。
+
+### TODO 014 — 风光储新增链路的入口级验收
+
+- [ ] `app/run_wind_solar_storage.py`：补充入口级冒烟验证，至少覆盖脚本可启动、核心阶段日志可输出、退出码为 0；如全年 8760 小时演示耗时较高，应增加 `--hours` 或 demo 级降采样参数，避免测试过重。
+- [ ] `.venv` 新依赖的 fresh 环境验收仍未记录：`pvlib`、`windpowerlib`、`scipy`、`rainflow` 需要在全新环境中补一次安装与运行验证，确保 README 中新增的风光储链路说明不是“只在当前机器偶然可跑”。
+
+### TODO 015 — 新增模块的文档补齐
+
+- [ ] `src/ele_trading/capacity_planning/` 当前已新增公开模块，但尚无与其他模块对齐的目录级 `README.md`；需要补充模块职责、输入输出和与 `forecasting` / `app` 的关系说明。
+- [ ] `tests/README.md` 仍停留在早期最小闭环描述，尚未覆盖 `test_capacity_optimizer.py`、`test_solar_forecast.py`、`test_wind_forecast.py`、`test_metrics.py`、`test_settlement.py`、`test_scenario.py` 等后续新增测试。
+
+### TODO 016 — 工作区生成物清理与忽略规则
+
+- [ ] 当前工作区存在 `.DS_Store` 与 `logs/None/service*` 等生成物变更；需要确认这些文件是否应纳入版本管理，若不是，应补充 `.gitignore` 或日志目录策略，避免后续文档更新时混入无关噪音。
