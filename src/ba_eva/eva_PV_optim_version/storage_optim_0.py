@@ -342,12 +342,12 @@ def main():
     # ------------------------------
     # 负荷数据
     # ------------------------------
-    from ba_eva.optim_version.data_loader import load_data
+    from ba_eva.eva_PV_optim_version.data_loader import load_data
     df_2025 = load_data()
     # ------------------------------
     # PV power data
     # ------------------------------
-    from ba_eva.optim_version.pv_simu import generate_pv_data
+    from ba_eva.eva_PV_optim_version.pv_simu import generate_pv_data
     pv_kw = generate_pv_data(df=df_2025, lat=40.55, lon=113.4, capacity_kwp=100.0)
     # ------------------------------
     # 光伏 + 储能测算

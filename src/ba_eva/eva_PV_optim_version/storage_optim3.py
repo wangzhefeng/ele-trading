@@ -1059,9 +1059,9 @@ def main():
     # ##############################
     # 风光储最佳组合测算
     # ##############################
-    from ba_eva.optim_version.data_loader import load_data
-    from ba_eva.optim_version.wind_simu import generate_wind_data
-    from ba_eva.optim_version.pv_simu import generate_pv_data
+    from ba_eva.eva_PV_optim_version.data_loader import load_data
+    from ba_eva.eva_PV_optim_version.wind_simu import generate_wind_data
+    from ba_eva.eva_PV_optim_version.pv_simu import generate_pv_data
     # ------------------------------
     # 负荷数据
     # ------------------------------

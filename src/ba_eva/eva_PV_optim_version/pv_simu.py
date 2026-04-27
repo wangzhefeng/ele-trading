@@ -163,7 +163,7 @@ def main():
     # ------------------------------
     # 负荷数据
     # ------------------------------
-    from ba_eva.optim_version.data_loader import load_data
+    from ba_eva.eva_PV_optim_version.data_loader import load_data
     # data path
     raw_energy_data_dir = Path("src/ba_eva/dataset/负荷曲线/")
     energy_data_path = Path("src/ba_eva/dataset/temp/df_2025.csv")

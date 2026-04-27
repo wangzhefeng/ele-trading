@@ -204,7 +204,6 @@ def fill_missing_days_by_nearest(df_2025, missing_days, freq="15T"):
     return df.sort_values("Time").reset_index(drop=True)
 
 
-
 def load_data(raw_data_dir, energy_data_path):
     if not energy_data_path.exists():
         # ------------------------------

@@ -557,9 +557,9 @@ def plan_wind_fixed_pv_bess_fast_full(
 
 # 测试代码 main 函数
 def main():
-    from ba_eva.optim_version.data_loader import load_data
-    from ba_eva.optim_version.wind_simu import generate_wind_data
-    from ba_eva.optim_version.pv_simu import generate_pv_data
+    from ba_eva.eva_PV_optim_version.data_loader import load_data
+    from ba_eva.eva_PV_optim_version.wind_simu import generate_wind_data
+    from ba_eva.eva_PV_optim_version.pv_simu import generate_pv_data
     
     # ##############################
     # model 2
