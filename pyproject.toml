@@ -21,6 +21,11 @@ dependencies = [
     "rainflow>=3.2.0",
     "pvlib>=0.10.0",
     "windpowerlib>=0.2.0",
+    "jupyter>=1.1.1",
+    "pyscipopt>=6.1.0",
+    "matplotlib>=3.10.8",
+    "numba>=0.65.0",
+    "openpyxl>=3.1.5",
 ]
 
 [project.optional-dependencies]
