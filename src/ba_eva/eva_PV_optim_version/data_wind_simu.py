@@ -30,11 +30,6 @@ import pandas as pd
 import numpy as np
 from windpowerlib import WindTurbine, ModelChain
 
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
-os.environ['LOG_NAME'] = LOGGING_LABEL
-# from utils.log_util import logger
-
 
 # ##############################
 # Open-Meteo 接口获取 ERA5-Land 小时级天气数据，主要使用风速和气温作为风电建模输入

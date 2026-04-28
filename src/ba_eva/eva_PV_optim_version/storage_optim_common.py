@@ -134,9 +134,12 @@ def align_to_time(t: pd.Series, s: pd.Series) -> np.ndarray:
 
 
 def monthly_kwh(df_time: pd.Series, kw_arr: np.ndarray, dt_hours: float) -> pd.Series:
-    """按月累计电量（kWh）"""
+    """
+    按月累计电量（kWh）
+    """
     idx = pd.DatetimeIndex(pd.to_datetime(df_time).to_numpy())
     s = pd.Series(kw_arr, index=idx)
+
     return (s.groupby(s.index.to_period("M")).sum() * dt_hours).sort_index()
 
 
@@ -412,8 +415,7 @@ def dispatch(load_kw: np.ndarray,
     }
 
 
-def evaluate(load_kw: np.ndarray, gen_kw: np.ndarray, dt: float,
-             batt_kwh: float, cfg: Any) -> Dict[str, float]:
+def evaluate(load_kw: np.ndarray, gen_kw: np.ndarray, dt: float, batt_kwh: float, cfg: Any) -> Dict[str, float]:
     """
     dispatch 的 config 对象封装。
     cfg 需要有：use_numba, eta_roundtrip, c_rate, soc_init_frac, soc_min_frac, soc_max_frac。

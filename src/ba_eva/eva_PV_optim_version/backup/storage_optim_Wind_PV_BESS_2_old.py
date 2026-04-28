@@ -27,7 +27,6 @@ import pandas as pd
 from ba_eva.eva_PV_optim_version.storage_optim_common import (
     njit, NUMBA_OK,
     PlanConfigFast,
-    dispatch_numba,
 )
 
 
@@ -43,25 +42,72 @@ def _dispatch_annual_fast_numba(load_kw,
                                 soc_init_frac, 
                                 soc_min_frac, 
                                 soc_max_frac):
-    soc0 = soc_init_frac
-    if soc0 < soc_min_frac:
-        soc0 = soc_min_frac
-    if soc0 > soc_max_frac:
-        soc0 = soc_max_frac
+    gen_e = 0.0
+    used_e = 0.0
+    load_e = 0.0
+    direct_e = 0.0
+    bess_dis = 0.0
 
-    gen_kw = wind_kw + pv_kw + other_kw
-    gen_e, used_e, load_e, bess_dis = dispatch_numba(
-        load_kw,
-        gen_kw,
-        dt_hours,
-        batt_kwh,
-        eta_roundtrip,
-        c_rate,
-        soc0,
-        soc_min_frac,
-        soc_max_frac,
-    )
-    direct_e = used_e - bess_dis
+    eta_c = eta_roundtrip ** 0.5
+    eta_d = eta_roundtrip ** 0.5
+
+    E = batt_kwh
+    Pmax = c_rate * E
+
+    soc_min = soc_min_frac * E
+    soc_max = soc_max_frac * E
+    soc = soc_init_frac * E
+    if soc < soc_min:
+        soc = soc_min
+    if soc > soc_max:
+        soc = soc_max
+
+    n = load_kw.shape[0]
+
+    for i in range(n):
+        # ---- load ----
+        L = load_kw[i]
+        if L < 0.0:
+            L = 0.0
+
+        # ---- generation ----
+        G = wind_kw[i] + pv_kw[i] + other_kw[i]
+        if G < 0.0:
+            G = 0.0
+
+        load_e += L * dt_hours
+        gen_e += G * dt_hours
+
+        # ---- direct use ----
+        direct = L if L < G else G
+        used_e += direct * dt_hours
+        direct_e += direct * dt_hours
+
+        surplus = G - direct
+        deficit = L - direct
+
+        # ---- charge ----
+        if surplus > 1e-9 and soc < soc_max:
+            p_ch = surplus
+            if p_ch > Pmax:
+                p_ch = Pmax
+            max_ch = (soc_max - soc) / dt_hours
+            if p_ch > max_ch:
+                p_ch = max_ch
+            soc += p_ch * dt_hours * eta_c
+
+        # ---- discharge ----
+        if deficit > 1e-9 and soc > soc_min:
+            p_dis = deficit
+            if p_dis > Pmax:
+                p_dis = Pmax
+            max_dis = (soc - soc_min) * eta_d / dt_hours
+            if p_dis > max_dis:
+                p_dis = max_dis
+            soc -= p_dis * dt_hours / eta_d
+            used_e += p_dis * dt_hours
+            bess_dis += p_dis * dt_hours
+
     return gen_e, used_e, load_e, direct_e, bess_dis
 
 # TODO wind_fixed_pv_bess_fast

@@ -27,7 +27,6 @@ import pandas as pd
 from ba_eva.eva_PV_optim_version.storage_optim_common import (
     njit, NUMBA_OK,
     PlanConfigFast,
-    dispatch_numba,
     infer_dt_hours, align_to_time, monthly_kwh,
 )
 
@@ -45,24 +44,53 @@ def _dispatch_annual_numba(load_kw,
                            soc_init_frac, 
                            soc_min_frac, 
                            soc_max_frac):
-    soc0 = soc_init_frac
-    if soc0 < soc_min_frac:
-        soc0 = soc_min_frac
-    if soc0 > soc_max_frac:
-        soc0 = soc_max_frac
+    pv_gen = pv_used = load_e = direct_e = bess_dis = 0.0
 
-    pv_gen, pv_used, load_e, bess_dis = dispatch_numba(
-        load_kw,
-        pv_kw,
-        dt_hours,
-        batt_kwh,
-        eta_roundtrip,
-        c_rate,
-        soc0,
-        soc_min_frac,
-        soc_max_frac,
-    )
-    direct_e = pv_used - bess_dis
+    if batt_kwh <= 0.0:
+        for i in range(load_kw.shape[0]):
+            L = max(load_kw[i], 0.0)
+            PV = max(pv_kw[i], 0.0)
+            load_e += L * dt_hours
+            pv_gen += PV * dt_hours
+            d = PV if PV < L else L
+            pv_used += d * dt_hours
+            direct_e += d * dt_hours
+        return pv_gen, pv_used, load_e, direct_e, bess_dis
+
+    soc = soc_init_frac * batt_kwh
+    soc_min = soc_min_frac * batt_kwh
+    soc_max = soc_max_frac * batt_kwh
+    Pmax = c_rate * batt_kwh
+    eta_c = eta_roundtrip ** 0.5
+    eta_d = eta_roundtrip ** 0.5
+
+    if soc < soc_min: soc = soc_min
+    if soc > soc_max: soc = soc_max
+
+    for i in range(load_kw.shape[0]):
+        L = max(load_kw[i], 0.0)
+        PV = max(pv_kw[i], 0.0)
+
+        load_e += L * dt_hours
+        pv_gen += PV * dt_hours
+
+        direct = PV if PV < L else L
+        pv_used += direct * dt_hours
+        direct_e += direct * dt_hours
+
+        surplus = PV - direct
+        deficit = L - direct
+
+        if surplus > 1e-12 and soc < soc_max:
+            charge_p = min(surplus, Pmax, (soc_max - soc) / dt_hours)
+            soc += charge_p * dt_hours * eta_c
+
+        if deficit > 1e-12 and soc > soc_min:
+            discharge_p = min(deficit, Pmax, (soc - soc_min) * eta_d / dt_hours)
+            soc -= discharge_p * dt_hours / eta_d
+            pv_used += discharge_p * dt_hours
+            bess_dis += discharge_p * dt_hours
+
     return pv_gen, pv_used, load_e, direct_e, bess_dis
 
 
@@ -83,7 +111,7 @@ def _dispatch_annual(load_kw, pv_kw, dt_hours, batt_kwh, cfg: PlanConfigFast):
             )
         ))
 
-    # 保持与重构前 fallback 完全一致：不裁剪负值，也不模拟电池。
+    # Python fallback（省略，性能低，但逻辑一致）
     direct = np.minimum(load_kw, pv_kw)
     return {
         "pv_gen_kwh": float(pv_kw.sum() * dt_hours),
@@ -97,11 +125,16 @@ def _dispatch_annual(load_kw, pv_kw, dt_hours, batt_kwh, cfg: PlanConfigFast):
 # 主规划函数（完整版）
 # 把单机光伏出力曲线和负荷数据结合起来，在给定约束下搜索最小化投资的光伏+储能方案。约束主要围绕自用率、负荷覆盖率、储能参数和投资成本展开
 # ------------------------------
-def plan_pv_bess_min_capex_fast(df_2025: pd.DataFrame,
-                                pv_unit_kw: pd.Series,
-                                load_col: str = "P_kw",
-                                time_col: str = "Time",
-                                cfg: PlanConfigFast = PlanConfigFast()) -> Dict[str, object]:
+def plan_pv_bess_min_capex_fast(
+    df_2025: pd.DataFrame,
+    pv_unit_kw: pd.Series,
+    load_col: str = "P_kw",
+    time_col: str = "Time",
+    cfg: PlanConfigFast = PlanConfigFast(),
+    # ===== 关键：比例阈值可在调用时覆盖 =====
+    self_use_ratio_min: Optional[float] = None,
+    load_cover_ratio_min: Optional[float] = None,
+) -> Dict[str, object]:
     """
     输出：
       PV装机容量(kWp)
@@ -110,33 +143,33 @@ def plan_pv_bess_min_capex_fast(df_2025: pd.DataFrame,
       储能装机容量(kWh)
       储能投资(元)
     """
+    # ---- 覆盖比例阈值（若调用时传入）----
+    if self_use_ratio_min is not None:
+        cfg.self_use_ratio_min = float(self_use_ratio_min)
+    if load_cover_ratio_min is not None:
+        cfg.load_cover_ratio_min = float(load_cover_ratio_min)
+    
     # 负荷数据
     df = df_2025[[time_col, load_col]].copy()
     df[time_col] = pd.to_datetime(df[time_col])
     df = df.sort_values(time_col).reset_index(drop=True)
-    
-    # 数据频率时长(hour)
     dt_hours = infer_dt_hours(df[time_col])
+    load_kw = pd.to_numeric(df[load_col], errors="coerce").fillna(0.0).to_numpy(dtype="float64")
 
     # 光伏数据
     unit_kw = align_to_time(df[time_col], pv_unit_kw)
     print(len(unit_kw))
 
-    # 光伏最大装机容量
-    load_kw = pd.to_numeric(df[load_col], errors="coerce").fillna(0.0).to_numpy(dtype="float64")
+    # 最大功率
     peak_load = float(load_kw.max())
     pv_max_kwp = cfg.pv_max_kwp or max(cfg.pv_step_coarse_kwp, 3.0 * peak_load)
     
     # 按月累计电量（kWh）
     unit_monthly_kwh = monthly_kwh(df[time_col], unit_kw, dt_hours)
-    
-    # 光伏全年发电量(kWh)
-    load_kwh_total = float(load_kw.sum() * dt_hours)
-    # ------------------------------
     # 
-    # ------------------------------
+    load_kwh_total = float(load_kw.sum() * dt_hours)
+
     best = None
-    # 遍历光伏装机容量
     pv_candidates = np.arange(cfg.pv_step_coarse_kwp, pv_max_kwp + 1e-9, cfg.pv_step_coarse_kwp)
     for pv_kwp in pv_candidates:
         pv_kw = unit_kw * pv_kwp

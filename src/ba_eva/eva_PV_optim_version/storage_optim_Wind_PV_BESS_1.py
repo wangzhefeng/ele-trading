@@ -29,11 +29,6 @@ from src.ba_eva.eva_PV_optim_version.storage_optim_common import (
     BESSConfig
 )
 
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
-os.environ['LOG_NAME'] = LOGGING_LABEL
-# from utils.log_util import logger
-
 
 def _ensure_time_sorted(df, time_col: str) -> pd.DataFrame:
     """

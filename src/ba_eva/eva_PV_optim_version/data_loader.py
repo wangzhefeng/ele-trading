@@ -25,11 +25,6 @@ from calendar import monthrange
 import numpy as np
 import pandas as pd
 
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
-os.environ['LOG_NAME'] = LOGGING_LABEL
-# from utils.log_util import logger
-
 
 # ##############################
 # 负责批量读取目录下的 Excel 文件，统一生成 `Time` 和 `P_kw` 字段，并保留来源文件名。它只做最基础的时间列拼接和数值规范化，不处理插值、补点或异常值修正

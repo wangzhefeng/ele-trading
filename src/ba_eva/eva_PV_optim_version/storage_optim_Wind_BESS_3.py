@@ -32,11 +32,6 @@ from ba_eva.eva_PV_optim_version.storage_optim_common import (
     read_timeseries, align_and_merge,
 )
 
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
-os.environ['LOG_NAME'] = LOGGING_LABEL
-# from utils.log_util import logger
-
 
 # ============================================================
 # 弃电搬运调度（核心）

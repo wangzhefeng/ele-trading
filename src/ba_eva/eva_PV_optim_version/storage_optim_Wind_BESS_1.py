@@ -29,13 +29,8 @@ from ba_eva.eva_PV_optim_version.storage_optim_common import (
     njit, NUMBA_OK,
     UnitsConfig, PlanConfigFast,
     infer_dt_hours, normalize_time_and_load, as_time_series, align_to_time,
-    dispatch_numba, evaluate,
+    evaluate,
 )
-
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
-os.environ['LOG_NAME'] = LOGGING_LABEL
-# from utils.log_util import logger
 
 
 # ============================================================

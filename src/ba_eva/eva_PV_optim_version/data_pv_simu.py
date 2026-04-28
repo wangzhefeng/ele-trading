@@ -30,11 +30,6 @@ import pvlib
 from pvlib.location import Location
 from ba_eva.eva_PV_optim_version.storage_optim_common import njit, NUMBA_OK
 
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
-os.environ['LOG_NAME'] = LOGGING_LABEL
-# from utils.log_util import logger
-
 
 # ##############################
 # 光伏出力模拟

@@ -32,11 +32,6 @@ from ba_eva.eva_PV_optim_version.storage_optim_common import (
     infer_dt_hours, align_to_time, monthly_kwh,
 )
 
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
-os.environ['LOG_NAME'] = LOGGING_LABEL
-# from utils.log_util import logger
-
 
 # ==============================
 # 基础工具

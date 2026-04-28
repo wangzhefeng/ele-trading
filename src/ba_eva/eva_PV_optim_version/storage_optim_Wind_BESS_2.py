@@ -30,14 +30,9 @@ from ba_eva.eva_PV_optim_version.storage_optim_common import (
     njit, NUMBA_OK,
     BESSConfig, Targets, UnitsConfig, PlanConfigFast,
     infer_dt_hours, normalize_time_and_load, as_time_series, align_to_time,
-    dispatch_numba, evaluate,
+    evaluate,
     read_timeseries, align_and_merge, dbg
 )
-
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
-os.environ['LOG_NAME'] = LOGGING_LABEL
-# from utils.log_util import logger
 
 
 # ============================================================
@@ -520,11 +515,7 @@ def run_planning_min_investment(
 # ------------------------------
 #
 # ------------------------------
-def calc_monthly_wind_metrics(
-    df,
-    load_col="Load_kW",
-    wind_col="Wind_kW",
-):
+def calc_monthly_wind_metrics(df, load_col="Load_kW", wind_col="Wind_kW"):
     """
     df: DatetimeIndex, 15min / 30min / 1h 均可
     返回：月度统计 DataFrame
@@ -603,8 +594,7 @@ def calc_monthly_wind_metrics(
 # ------------------------------
 # 用你现有的仿真函数：simulate_dispatch_offgrid_shiftable
 # 如果你用的是我给你的那版代码，函数名就是 simulate_dispatch_offgrid_shiftable
-def plot_capacity_curve(df, dt_h, bess, policy,
-                       cap_max_mwh=None, n_points=30):
+def plot_capacity_curve(df, dt_h, bess, policy, cap_max_mwh=None, n_points=30):
     load_kw = df["Load_kW"].to_numpy(float)
     wind_kw = df["Wind_kW"].to_numpy(float)
 
