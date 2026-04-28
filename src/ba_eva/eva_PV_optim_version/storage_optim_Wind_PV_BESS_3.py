@@ -26,14 +26,11 @@ from typing import Optional, Dict, Any, Tuple, Union
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-try:
-    from numba import njit
-    NUMBA_OK = True
-except Exception:
-    NUMBA_OK = False
-    def njit(*args, **kwargs):
-        def deco(f): return f
-        return deco
+from ba_eva.eva_PV_optim_version.storage_optim_common import (
+    njit, NUMBA_OK,
+    PlanConfigFast,
+    infer_dt_hours, align_to_time, monthly_kwh,
+)
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -41,64 +38,10 @@ os.environ['LOG_NAME'] = LOGGING_LABEL
 # from utils.log_util import logger
 
 
-# ##############################
-# TODO 
-# ##############################
-# ==============================
-# 配置类（可被调用覆盖）
-# ==============================
-@dataclass
-class PlanConfigFastWind:
-    # ---- 成本 ----
-    pv_capex_yuan_per_kwp: float = 2000.0
-    bess_capex_yuan_per_kwh: float = 1000.0
-
-    # ---- 储能参数 ----
-    eta_roundtrip: float = 0.92
-    c_rate: float = 0.5
-    soc_init_frac: float = 0.5
-    soc_min_frac: float = 0.0
-    soc_max_frac: float = 1.0
-
-    # ---- 约束比例（新能源整体）----
-    self_use_ratio_min: float = 0.60     # (Renewable_used) / (Renewable_gen)
-    load_cover_ratio_min: float = 0.30   # (Renewable_used) / (Load)
-
-    # ---- PV 搜索参数（粗+细）----
-    pv_step_coarse_kwp: float = 2000.0
-    pv_step_fine_kwp: float = 250.0
-    pv_refine_window_kwp: float = 8000.0
-    pv_max_kwp: Optional[float] = None
-    pv_min_kwp: float = 0.0
-
-    # ---- 电池搜索（二分）----
-    enable_bess: bool = True
-    batt_hi_init_kwh: float = 1000.0
-    batt_hi_max_kwh: float = 1e7
-    batt_bisect_iter: int = 22
-    batt_tol_kwh: float = 100.0
-
-    # ---- 性能 ----
-    use_numba: bool = True
-
 # ==============================
 # 基础工具
 # ==============================
-def _infer_dt_hours(time_series: pd.Series) -> float:
-    t = pd.to_datetime(time_series).sort_values()
-    if len(t) < 2:
-        raise ValueError("Time 序列长度不足，无法推断 dt")
-    dt = t.diff().dropna().mode().iloc[0]
-    return dt.total_seconds() / 3600.0
-
-
-def _as_time_index_series(
-    x: Union[pd.Series, pd.DataFrame],
-    time_col: str,
-    value_col_candidates: Tuple[str, ...],
-    *,
-    scale: float = 1.0,
-) -> pd.Series:
+def _as_time_index_series(x: Union[pd.Series, pd.DataFrame], time_col: str, value_col_candidates: Tuple[str, ...], *, scale: float = 1.0) -> pd.Series:
     """
     将输入 x 规范为：Series(index=DatetimeIndex, values=float)
     - x 可为 Series (index为时间) 或 DataFrame(含 time_col + value_col)
@@ -142,28 +85,6 @@ def _as_time_index_series(
 
     raise TypeError("输入必须是 pd.Series 或 pd.DataFrame")
 
-
-def _align_to_time(df_time: pd.Series, s: pd.Series) -> np.ndarray:
-    """
-    对齐到 df_time 的时间轴，返回 1D float64 numpy array
-    """
-    idx = pd.DatetimeIndex(pd.to_datetime(df_time))
-    if isinstance(s.index, pd.DatetimeIndex) and len(s) == len(idx) and (s.index.values == idx.values).all():
-        out = s.to_numpy(dtype="float64")
-    else:
-        out = (
-            s.reindex(idx)
-             .interpolate("time")
-             .fillna(0.0)
-             .to_numpy(dtype="float64")
-        )
-    return np.ascontiguousarray(out, dtype=np.float64)
-
-
-def _monthly_kwh(df_time: pd.Series, kw_arr: np.ndarray, dt_hours: float) -> pd.Series:
-    tmp = pd.DataFrame({"Time": pd.to_datetime(df_time), "kw": kw_arr})
-    tmp["m"] = tmp["Time"].dt.to_period("M")
-    return (tmp.groupby("m")["kw"].sum() * dt_hours).sort_index()
 
 # ==============================
 # 年度调度（Numba / Python）
@@ -248,7 +169,7 @@ def _dispatch_annual(
     other_kw: np.ndarray,
     dt_hours: float,
     batt_kwh: float,
-    cfg: PlanConfigFastWind
+    cfg: PlanConfigFast
 ) -> Dict[str, float]:
     if cfg.use_numba and NUMBA_OK:
         gen_e, used_e, load_e, direct_e, bess_dis = _dispatch_annual_numba(
@@ -285,7 +206,7 @@ def _find_min_bess_kwh(
     pv_kw: np.ndarray,
     other_kw: np.ndarray,
     dt_hours: float,
-    cfg: PlanConfigFastWind
+    cfg: PlanConfigFast
 ) -> Optional[Tuple[float, Dict[str, float]]]:
     """
     返回 (bess_kwh, stats)；若找不到可行解返回 None
@@ -349,7 +270,7 @@ def plan_wind_fixed_pv_bess_fast_full(
     *,
     load_col: str = "P_kw",
     time_col: str = "Time",
-    cfg: PlanConfigFastWind = PlanConfigFastWind(),
+    cfg: PlanConfigFast = PlanConfigFast(),
     # 预留：其他新能源输入（可空）
     other_input: Optional[Union[pd.Series, pd.DataFrame]] = None,
     other_unit: str = "kW",  # 预留
@@ -363,7 +284,7 @@ def plan_wind_fixed_pv_bess_fast_full(
     df[time_col] = pd.to_datetime(df[time_col])
     df = df.sort_values(time_col).reset_index(drop=True)
 
-    dt_hours = _infer_dt_hours(df[time_col])
+    dt_hours = infer_dt_hours(df[time_col])
     load_kw_arr = pd.to_numeric(df[load_col], errors="coerce").fillna(0.0).to_numpy(dtype="float64")
     load_kw_arr = np.ascontiguousarray(load_kw_arr, dtype=np.float64)
 
@@ -375,7 +296,7 @@ def plan_wind_fixed_pv_bess_fast_full(
         value_col_candidates=("WindPower_MW", "wind_mw", "wind_kw", "WindPower_kW", "WindPower"),
         scale=wind_scale,
     )
-    wind_kw_arr = _align_to_time(df[time_col], wind_s)
+    wind_kw_arr = align_to_time(df[time_col], wind_s)
 
     # ---- PV 单位出力：支持 Series/DataFrame（按 index 或 Time 列）
     pv_unit_s = _as_time_index_series(
@@ -384,7 +305,7 @@ def plan_wind_fixed_pv_bess_fast_full(
         value_col_candidates=("pv_unit_kw", "pv_kw", "u", "value"),
         scale=1.0,
     )
-    pv_unit_arr = _align_to_time(df[time_col], pv_unit_s)
+    pv_unit_arr = align_to_time(df[time_col], pv_unit_s)
 
     # ---- 其他新能源预留 ----
     if other_input is None:
@@ -397,7 +318,7 @@ def plan_wind_fixed_pv_bess_fast_full(
             value_col_candidates=("other_kw", "OtherPower_kW", "OtherPower"),
             scale=other_scale,
         )
-        other_kw_arr = _align_to_time(df[time_col], other_s)
+        other_kw_arr = align_to_time(df[time_col], other_s)
 
     # ---- 基础量 ----
     load_kwh_total = float(load_kw_arr.sum() * dt_hours)
@@ -407,7 +328,7 @@ def plan_wind_fixed_pv_bess_fast_full(
     pv_max_kwp = cfg.pv_max_kwp or max(cfg.pv_step_coarse_kwp, 3.0 * peak_load)
 
     # 年/月风电发电量输出
-    wind_monthly_kwh = _monthly_kwh(df[time_col], wind_kw_arr, dt_hours)
+    windmonthly_kwh = monthly_kwh(df[time_col], wind_kw_arr, dt_hours)
 
     # ==========================
     # PV 搜索：粗扫 + 可选细扫
@@ -522,7 +443,7 @@ def plan_wind_fixed_pv_bess_fast_full(
     # ==========================
     pv_gen_kw_arr = pv_unit_arr * float(best["pv_kwp"])
     pv_gen_kwh_total = float(pv_gen_kw_arr.sum() * dt_hours)
-    pv_monthly_kwh = _monthly_kwh(df[time_col], pv_gen_kw_arr, dt_hours)
+    pvmonthly_kwh = monthly_kwh(df[time_col], pv_gen_kw_arr, dt_hours)
 
     out = {
         "pv_kwp": best["pv_kwp"],
@@ -531,10 +452,10 @@ def plan_wind_fixed_pv_bess_fast_full(
         "load_cover_ratio": best["load_cover_ratio"],
 
         "pv_gen_kwh_annual": pv_gen_kwh_total,
-        "pv_gen_kwh_monthly": pv_monthly_kwh,
+        "pv_gen_kwh_monthly": pvmonthly_kwh,
 
         "wind_gen_kwh_annual": wind_kwh_total,
-        "wind_gen_kwh_monthly": wind_monthly_kwh,
+        "wind_gen_kwh_monthly": windmonthly_kwh,
 
         "pv_capex_yuan": best["pv_capex_yuan"],
         "bess_capex_yuan": best["bess_capex_yuan"],
@@ -557,31 +478,46 @@ def plan_wind_fixed_pv_bess_fast_full(
 
 # 测试代码 main 函数
 def main():
-    from ba_eva.eva_PV_optim_version.data_loader import load_data
-    from ba_eva.eva_PV_optim_version.wind_simu import generate_wind_data
-    from ba_eva.eva_PV_optim_version.pv_simu import generate_pv_data
-    
-    # ##############################
-    # model 2
-    # ##############################
     # ------------------------------
     # 负荷数据
     # ------------------------------
-    # df_2025 = pd.read_csv("D:\\228-售前测算\\乌兰察布\\df_2025.csv", encoding="utf_8_sig")
-    df_2025 = load_data()
+    from ba_eva.eva_PV_optim_version.data_loader import load_data
+    energy_data_path = Path("src/ba_eva/dataset/temp/df_2025.csv")
+    df_2025 = load_data(energy_data_path=energy_data_path)
     df_2025["P_kw"] = df_2025["P_kw"] / 704234268 * 685436401
+    print(df_2025)
     # ------------------------------
     # wind power data
     # ------------------------------
-    df_wind = generate_wind_data(farm_capacity_mw=110.0, mean_wind_speed_140m=5.5, eq_full_load_hours=1920.7, lat=28.42, lon=117.88)
+    from ba_eva.eva_PV_optim_version.data_wind_simu import generate_wind_data
+    wind_data_path = Path("src/ba_eva/dataset/temp/df_wind_2026.csv")
+    df_wind = generate_wind_data(
+        farm_capacity_mw=110.0, 
+        mean_wind_speed_140m=5.5, 
+        eq_full_load_hours=1920.7, 
+        lat=28.42, 
+        lon=117.88, 
+        wind_data_path=wind_data_path
+    )
+    print(df_wind)
     # ------------------------------
     # PV(Photo Voltaics) power data
     # ------------------------------
-    pv_kw_0 = generate_pv_data(df=df_2025, lat=28.42, lon=117.88, capacity_kwp=1)
+    from ba_eva.eva_PV_optim_version.data_pv_simu import generate_pv_data
+    pv_data_path = Path("src/ba_eva/dataset/temp/df_pv_2025.csv")
+    pv_kw_0 = generate_pv_data(
+        df=df_2025, 
+        lat=28.42, 
+        lon=117.88, 
+        capacity_kwp=1, 
+        pv_data_path=pv_data_path, 
+        plot_img=False
+    )
+    print(pv_kw_0)
     # ------------------------------
     # config
     # ------------------------------
-    # cfg = PlanConfigFastWind(
+    # cfg = PlanConfigFast(
     #     # -------- 约束 --------
     #     self_use_ratio_min=0.60,     # 新能源整体自用率 ≥ 60%
     #     load_cover_ratio_min=0.35,   # 新能源覆盖负荷 ≥ 30%
@@ -602,31 +538,16 @@ def main():
     #     # -------- 性能 --------
     #     use_numba=True,              # 有 numba 就会自动启用
     # )
-    cfg_pv = PlanConfigFastWind(
-        # -------- 约束 --------
-        self_use_ratio_min=0.60,
+    cfg_pv = PlanConfigFast(
         load_cover_ratio_min=0.30,
-        # -------- 成本 --------
-        pv_capex_yuan_per_kwp=2000.0,
-        bess_capex_yuan_per_kwh=1000.0,
-        # -------- PV 搜索 --------
         pv_step_coarse_kwp=1000.0,
-        pv_step_fine_kwp=250.0,
-        pv_refine_window_kwp=8000.0,
-
-        eta_roundtrip=0.92,
-        c_rate=0.5,
-        soc_init_frac=0.5,
-
-        enable_bess=True,          # 需要储能就 True；只规划PV则 False
         batt_hi_init_kwh=1000.0,
         batt_bisect_iter=22,
-
-        use_numba=True
+        batt_tol_kwh=100.0,
     )
     res = plan_wind_fixed_pv_bess_fast_full(
         df_2025=df_2025,
-        pv_unit_kw=pv_kw_0,        # TODO Series: kW/kWp, index=Time
+        pv_unit_kw=pv_kw_0,      # Series: kW/kWp, index=Time
         wind_input=df_wind,      # DataFrame: [Time, WindPower_MW] 或 Series(kW)
         load_col="P_kw",
         time_col="Time",
@@ -655,9 +576,9 @@ def main():
     print("debug:", res["debug"])
     
     print(res.keys())
-    # TODO 补充路径
-    # res["pv_gen_kwh_monthly"].to_csv("pv_gen_kwh_monthly.csv")
-    # res["wind_gen_kwh_monthly"].to_csv("wind_gen_kwh_monthly.csv")
+
+    res["pv_gen_kwh_monthly"].to_csv("src/ba_eva/dataset/temp/pv_gen_kwh_monthly.csv")
+    res["wind_gen_kwh_monthly"].to_csv("src/ba_eva/dataset/tempwind_gen_kwh_monthly.csv")
 
 if __name__ == "__main__":
     main()

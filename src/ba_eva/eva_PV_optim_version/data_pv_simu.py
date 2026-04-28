@@ -28,15 +28,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import pvlib
 from pvlib.location import Location
-try:
-    from numba import njit
-    NUMBA_OK = True
-except Exception:
-    NUMBA_OK = False
-    def njit(*args, **kwargs):
-        def deco(f):
-            return f
-        return deco
+from ba_eva.eva_PV_optim_version.storage_optim_common import njit, NUMBA_OK
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -146,14 +138,14 @@ def generate_pv_data(df, lat=40.55, lon=113.4, capacity_kwp=100.0, pv_data_path=
         if plot_img:
             plot_daily_pv_shape(pv_kw, "2025-06-15")
         # 数据保存
-        pv_kw = pd.DataFrame(pv_kw)
-        pv_kw["Time"] = pv_kw.index
-        pv_kw = pv_kw[["Time", "pv_kw"]]
-        pv_kw.to_csv(pv_data_path, index=False, encoding="utf-8")
+        tmp = pv_kw.rename("pv_kw").to_frame()
+        tmp.index.name = "Time"
+        tmp.to_csv(pv_data_path, index=True, encoding="utf-8")
     else:
-        pv_kw = pd.read_csv(pv_data_path, encoding="utf-8")
+        tmp = pd.read_csv(pv_data_path, encoding="utf-8", index_col="Time", parse_dates=True)
+        pv_kw = tmp["pv_kw"]
 
-    return pv_kw
+    return pv_kw  # pd.Series, index=DatetimeIndex
 
 
 
@@ -164,18 +156,13 @@ def main():
     # 负荷数据
     # ------------------------------
     from ba_eva.eva_PV_optim_version.data_loader import load_data
-    # data path
-    raw_energy_data_dir = Path("src/ba_eva/dataset/负荷曲线/")
     energy_data_path = Path("src/ba_eva/dataset/temp/df_2025.csv")
-    # data load
-    df_2025 = load_data(raw_data_dir=raw_energy_data_dir, energy_data_path=energy_data_path)
+    df_2025 = load_data(energy_data_path=energy_data_path)
     print(df_2025)
     # ------------------------------
     # PV power data
     # ------------------------------
-    # data path
     pv_data_path = Path("src/ba_eva/dataset/temp/df_pv_2025.csv")
-    # data load
     pv_kw = generate_pv_data(df=df_2025, lat=40.55, lon=113.4, capacity_kwp=100.0, pv_data_path=pv_data_path, plot_img=False)
     print(pv_kw)
 

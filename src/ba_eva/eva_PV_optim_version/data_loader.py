@@ -204,8 +204,8 @@ def fill_missing_days_by_nearest(df_2025, missing_days, freq="15T"):
     return df.sort_values("Time").reset_index(drop=True)
 
 
-def load_data(raw_data_dir, energy_data_path):
-    if not energy_data_path.exists():
+def load_data(energy_data_path, raw_data_dir=None):
+    if not energy_data_path.exists() and raw_data_dir is not None:
         # ------------------------------
         # 读取“负荷曲线”数据
         # ------------------------------
@@ -274,8 +274,10 @@ def main():
     raw_energy_data_dir = Path("src/ba_eva/dataset/负荷曲线/")
     energy_data_path = Path("src/ba_eva/dataset/temp/df_2025.csv")
     # data load
-    df_2025 = load_data(raw_data_dir=raw_energy_data_dir, energy_data_path=energy_data_path)
+    df_2025 = load_data(energy_data_path=energy_data_path, raw_data_dir=raw_energy_data_dir)
     print(df_2025)
+    from ba_eva.eva_PV_optim_version.plot_ts import series_plot
+    series_plot(df=df_2025, time_col="Time", value_col="P_kw")
 
 if __name__ == "__main__":
     main()

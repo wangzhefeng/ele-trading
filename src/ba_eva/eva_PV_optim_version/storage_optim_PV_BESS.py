@@ -25,99 +25,26 @@ from typing import Optional, Dict, Any, Tuple, Union
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-try:
-    from numba import njit
-    NUMBA_OK = True
-except Exception:
-    NUMBA_OK = False
-    def njit(*args, **kwargs):
-        def deco(f): return f
-        return deco
+from ba_eva.eva_PV_optim_version.storage_optim_common import (
+    njit, NUMBA_OK,
+    PlanConfigFast,
+    infer_dt_hours, align_to_time, monthly_kwh,
+)
 
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
-os.environ['LOG_NAME'] = LOGGING_LABEL
-# from utils.log_util import logger
-
-
-# ##############################
-# TODO
-# ##############################
-# ------------------------------
-# 配置类（默认值 + 可被调用覆盖）
-# ------------------------------
-@dataclass
-class PlanConfigFast:
-    # ---- 成本 ----
-    pv_capex_yuan_per_kwp: float = 2000.0
-    bess_capex_yuan_per_kwh: float = 1000.0
-
-    # ---- 储能参数 ----
-    eta_roundtrip: float = 0.92
-    c_rate: float = 0.5
-    soc_init_frac: float = 0.5
-    soc_min_frac: float = 0.0
-    soc_max_frac: float = 1.0
-
-    # ---- 约束比例（默认值）----
-    self_use_ratio_min: float = 0.60     # PV_used / PV_gen
-    load_cover_ratio_min: float = 0.35   # PV_used / Load
-
-    # ---- 约束口径 ----
-    constraint_mode: str = "annual"      # "annual" or "monthly"
-
-    # ---- PV 搜索参数（粗+细）----
-    pv_step_coarse_kwp: float = 2000.0
-    pv_step_fine_kwp: float = 250.0
-    pv_refine_window_kwp: float = 8000.0
-    pv_max_kwp: Optional[float] = None
-
-    # ---- 电池搜索 ----
-    batt_hi_init_kwh: float = 500.0
-    batt_hi_max_kwh: float = 1e7
-    batt_bisect_iter: int = 26
-    batt_cache_round_kwh: float = 1.0
-
-    # ---- 性能 ----
-    use_numba: bool = True
-
-# ------------------------------
-# 基础工具
-# ------------------------------
-def _infer_dt_hours(time_col: pd.Series) -> float:
-    t = pd.to_datetime(time_col).sort_values()
-    dt = t.diff().dropna().mode().iloc[0]
-    return dt.total_seconds() / 3600.0
-
-
-def _align_unit_curve(df_time: pd.Series, pv_unit_kw: pd.Series) -> np.ndarray:
-    idx = pd.DatetimeIndex(pd.to_datetime(df_time))
-    s = pv_unit_kw.copy()
-    s.index = pd.to_datetime(s.index)
-
-    if len(s) == len(idx) and (s.index.values == idx.values).all():
-        out = s.to_numpy(dtype="float64")
-    else:
-        out = s.reindex(idx).interpolate("time").fillna(0.0).to_numpy(dtype="float64")
-
-    return np.ascontiguousarray(out, dtype=np.float64)
-
-
-def _unit_monthly_kwh(df_time: pd.Series, unit_kw: np.ndarray, dt_hours: float) -> pd.Series:
-    tmp = pd.DataFrame({"Time": pd.to_datetime(df_time), "u": unit_kw})
-    tmp["m"] = tmp["Time"].dt.to_period("M")
-    return tmp.groupby("m")["u"].sum() * dt_hours
 
 # ------------------------------
 # 年度调度（Numba）
 # ------------------------------
 @njit
-def _dispatch_annual_numba(
-    load_kw, pv_kw, dt_hours, batt_kwh,
-    eta_roundtrip, c_rate,
-    soc_init_frac, soc_min_frac, soc_max_frac
-):
+def _dispatch_annual_numba(load_kw, 
+                           pv_kw, 
+                           dt_hours, 
+                           batt_kwh,
+                           eta_roundtrip, 
+                           c_rate,
+                           soc_init_frac, 
+                           soc_min_frac, 
+                           soc_max_frac):
     pv_gen = pv_used = load_e = direct_e = bess_dis = 0.0
 
     if batt_kwh <= 0.0:
@@ -131,14 +58,13 @@ def _dispatch_annual_numba(
             direct_e += d * dt_hours
         return pv_gen, pv_used, load_e, direct_e, bess_dis
 
+    soc = soc_init_frac * batt_kwh
+    soc_min = soc_min_frac * batt_kwh
+    soc_max = soc_max_frac * batt_kwh
+    Pmax = c_rate * batt_kwh
     eta_c = eta_roundtrip ** 0.5
     eta_d = eta_roundtrip ** 0.5
-    E = batt_kwh
-    Pmax = c_rate * E
 
-    soc_min = soc_min_frac * E
-    soc_max = soc_max_frac * E
-    soc = soc_init_frac * E
     if soc < soc_min: soc = soc_min
     if soc > soc_max: soc = soc_max
 
@@ -174,9 +100,15 @@ def _dispatch_annual(load_kw, pv_kw, dt_hours, batt_kwh, cfg: PlanConfigFast):
         return dict(zip(
             ["pv_gen_kwh", "pv_used_kwh", "load_kwh", "direct_used_kwh", "bess_discharge_kwh"],
             _dispatch_annual_numba(
-                load_kw, pv_kw, dt_hours, batt_kwh,
-                cfg.eta_roundtrip, cfg.c_rate,
-                cfg.soc_init_frac, cfg.soc_min_frac, cfg.soc_max_frac
+                load_kw, 
+                pv_kw, 
+                dt_hours, 
+                batt_kwh,
+                cfg.eta_roundtrip, 
+                cfg.c_rate,
+                cfg.soc_init_frac, 
+                cfg.soc_min_frac, 
+                cfg.soc_max_frac
             )
         ))
 
@@ -217,19 +149,25 @@ def plan_pv_bess_min_capex_fast(
         cfg.self_use_ratio_min = float(self_use_ratio_min)
     if load_cover_ratio_min is not None:
         cfg.load_cover_ratio_min = float(load_cover_ratio_min)
-
+    
+    # 负荷数据
     df = df_2025[[time_col, load_col]].copy()
     df[time_col] = pd.to_datetime(df[time_col])
     df = df.sort_values(time_col).reset_index(drop=True)
-
-    dt_hours = _infer_dt_hours(df[time_col])
+    dt_hours = infer_dt_hours(df[time_col])
     load_kw = pd.to_numeric(df[load_col], errors="coerce").fillna(0.0).to_numpy(dtype="float64")
-    unit_kw = _align_unit_curve(df[time_col], pv_unit_kw)
 
+    # 光伏数据
+    unit_kw = align_to_time(df[time_col], pv_unit_kw)
+    print(len(unit_kw))
+
+    # 最大功率
     peak_load = float(load_kw.max())
     pv_max_kwp = cfg.pv_max_kwp or max(cfg.pv_step_coarse_kwp, 3.0 * peak_load)
-
-    unit_monthly_kwh = _unit_monthly_kwh(df[time_col], unit_kw, dt_hours)
+    
+    # 按月累计电量（kWh）
+    unit_monthly_kwh = monthly_kwh(df[time_col], unit_kw, dt_hours)
+    # 
     load_kwh_total = float(load_kw.sum() * dt_hours)
 
     best = None
@@ -343,25 +281,28 @@ def main():
     # 负荷数据
     # ------------------------------
     from ba_eva.eva_PV_optim_version.data_loader import load_data
-    df_2025 = load_data()
+    # data path
+    raw_energy_data_dir = Path("src/ba_eva/dataset/负荷曲线/")
+    energy_data_path = Path("src/ba_eva/dataset/temp/df_2025.csv")
+    # data load
+    df_2025 = load_data(raw_data_dir=raw_energy_data_dir, energy_data_path=energy_data_path)
+    print(df_2025)
     # ------------------------------
     # PV power data
     # ------------------------------
-    from ba_eva.eva_PV_optim_version.pv_simu import generate_pv_data
-    pv_kw = generate_pv_data(df=df_2025, lat=40.55, lon=113.4, capacity_kwp=100.0)
+    from ba_eva.eva_PV_optim_version.data_pv_simu import generate_pv_data
+    # data path
+    pv_data_path = Path("src/ba_eva/dataset/temp/df_pv_2025.csv")
+    # data load
+    pv_kw = generate_pv_data(df=df_2025, lat=40.55, lon=113.4, capacity_kwp=1.0, pv_data_path=pv_data_path, plot_img=False)
+    print(pv_kw)
     # ------------------------------
     # 光伏 + 储能测算
     # ------------------------------
     cfg = PlanConfigFast(
-        constraint_mode="annual",
-        pv_step_coarse_kwp=2000.0,
         pv_step_fine_kwp=500.0,
-        pv_refine_window_kwp=8000.0,
-        pv_max_kwp=None,
-        self_use_ratio_min=0.60,
         load_cover_ratio_min=0.35,
     )
-
     res = plan_pv_bess_min_capex_fast(
         df_2025=df_2025,
         pv_unit_kw=pv_kw,
@@ -369,7 +310,6 @@ def main():
         time_col="Time",
         cfg=cfg,
     )
-
     print("PV装机(kWp):", res["pv_kwp"])
     print("PV投资(元):", res["pv_capex_yuan"])
     print("储能容量(kWh):", res["bess_kwh"])
@@ -380,7 +320,7 @@ def main():
     print("口径:", cfg.constraint_mode)
     print("PV自用率 PV_used / PV_gen:", res["self_use_ratio"])
     print("PV覆盖率 PV_used / Load:", res["load_cover_ratio"])
-    res["pv_monthly_kwh"].to_csv("pv_monthly_kwh.csv")
+    res["pv_monthly_kwh"].to_csv("src/ba_eva/dataset/temp/pv_monthly_kwh.csv")
     
     # ------------------------------
     # 

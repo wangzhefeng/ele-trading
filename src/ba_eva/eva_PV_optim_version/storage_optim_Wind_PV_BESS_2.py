@@ -26,14 +26,10 @@ from typing import Optional, Dict, Any, Tuple, Union
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-try:
-    from numba import njit
-    NUMBA_OK = True
-except Exception:
-    NUMBA_OK = False
-    def njit(*args, **kwargs):
-        def deco(f): return f
-        return deco
+from ba_eva.eva_PV_optim_version.storage_optim_common import (
+    njit, NUMBA_OK,
+    PlanConfigFast,
+)
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -41,47 +37,18 @@ os.environ['LOG_NAME'] = LOGGING_LABEL
 # from utils.log_util import logger
 
 
-
-# ##############################
-# TODO
-# ##############################
-@dataclass
-class PlanConfigFastWind:
-    # 成本
-    pv_capex_yuan_per_kwp: float = 2000.0
-    bess_capex_yuan_per_kwh: float = 1000.0
-
-    # 储能
-    eta_roundtrip: float = 0.92
-    c_rate: float = 0.5
-    soc_init_frac: float = 0.5
-    soc_min_frac: float = 0.1
-    soc_max_frac: float = 1.0
-
-    # 约束（新能源整体）
-    self_use_ratio_min: float = 0.60
-    load_cover_ratio_min: float = 0.35
-
-    # PV 搜索
-    pv_step_coarse_kwp: float = 2000.0
-    pv_step_fine_kwp: float = 250.0
-    pv_refine_window_kwp: float = 8000.0
-    pv_max_kwp: Optional[float] = None
-
-    # 电池搜索
-    batt_hi_init_kwh: float = 1000.0
-    batt_hi_max_kwh: float = 1e7
-    batt_bisect_iter: int = 24
-
-    use_numba: bool = True
-
 @njit
-def _dispatch_annual_fast_numba(
-    load_kw, wind_kw, pv_kw, other_kw,
-    dt_hours, batt_kwh,
-    eta_roundtrip, c_rate,
-    soc_init_frac, soc_min_frac, soc_max_frac
-):
+def _dispatch_annual_fast_numba(load_kw, 
+                                wind_kw, 
+                                pv_kw, 
+                                other_kw,
+                                dt_hours, 
+                                batt_kwh,
+                                eta_roundtrip, 
+                                c_rate,
+                                soc_init_frac, 
+                                soc_min_frac, 
+                                soc_max_frac):
     gen_e = 0.0
     used_e = 0.0
     load_e = 0.0
@@ -150,14 +117,14 @@ def _dispatch_annual_fast_numba(
 
     return gen_e, used_e, load_e, direct_e, bess_dis
 
-# TODO wind_fixed_pv_bess_fast¶
+# TODO wind_fixed_pv_bess_fast
 def plan_wind_fixed_pv_bess_fast(
     df_2025: pd.DataFrame,
     pv_unit_kw: pd.Series,        # kW / kWp
     wind_kw: pd.Series,           # kW（50MW 风电）
     load_col: str = "P_kw",
     time_col: str = "Time",
-    cfg: PlanConfigFastWind = PlanConfigFastWind(),
+    cfg: PlanConfigFast = PlanConfigFast(),
 ) -> Dict[str, object]:
 
     df = df_2025[[time_col, load_col]].copy()
@@ -242,10 +209,11 @@ def plan_wind_fixed_pv_bess_fast(
 
 
 
-
 # 测试代码 main 函数
 def main():
-    pass
-
+    cfg = PlanConfigFast(
+        load_cover_ratio_min=0.35,
+        batt_bisect_iter=24
+    )
 if __name__ == "__main__":
     main()

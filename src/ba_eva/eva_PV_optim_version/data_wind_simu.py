@@ -367,7 +367,7 @@ def generate_wind_data(farm_capacity_mw=200.0, mean_wind_speed_140m=7.27, eq_ful
         df_wind["Time"] = df_wind.index
         df_wind = df_wind[["Time", "WindPower_MW"]]
         # result save
-        df_wind.to_csv("src/ba_eva/dataset/temp/df_wind_2026.csv", index=False, encoding="utf-8")
+        df_wind.to_csv(wind_data_path, index=False, encoding="utf-8")
     else:
         df_wind = pd.read_csv(wind_data_path, encoding="utf-8")
 

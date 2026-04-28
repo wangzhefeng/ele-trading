@@ -25,32 +25,14 @@ from typing import Optional, Dict, Any, Tuple, Union
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-try:
-    from numba import njit
-    NUMBA_OK = True
-except Exception:
-    NUMBA_OK = False
-    def njit(*args, **kwargs):
-        def deco(f): return f
-        return deco
+from src.ba_eva.eva_PV_optim_version.storage_optim_common import (
+    BESSConfig
+)
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
 os.environ['LOG_NAME'] = LOGGING_LABEL
 # from utils.log_util import logger
-
-
-@dataclass
-class BESSRuleConfig:
-    freq: str = "1h"
-    eta_charge: float = 0.92
-    eta_discharge: float = 0.92
-    soc_init: float = 0.5
-    soc_min: float = 0.0
-    soc_max: float = 1.0
-    hours_to_full: float = 2.0        # 0.5C => 2h 充满
-    switch_gap_hours: float = 1.0     # 充放之间间隔 1 小时
 
 
 def _ensure_time_sorted(df, time_col: str) -> pd.DataFrame:
@@ -137,7 +119,7 @@ def energy_gate_check(
 def simulate_bess_for_coverage(
     df_mix: pd.DataFrame,
     bess_kwh: float,
-    cfg: BESSRuleConfig,
+    cfg: BESSConfig,
 ) -> Dict[str, Any]:
     """
     贪心调度：最大化可再生对负荷的供给。
@@ -218,7 +200,7 @@ def simulate_bess_for_coverage(
 
 def estimate_min_bess_capacity(
     df_mix: pd.DataFrame,
-    cfg: BESSRuleConfig,
+    cfg: BESSConfig,
     target_cover_ratio: float = 0.30,
     cap_high_kwh: Optional[float] = None,
     max_iter: int = 28,
@@ -272,12 +254,12 @@ def evaluate_50wind_50pv_with_bess(df_2025: pd.DataFrame,
                                    wind_col: str = "WindPower_MW",
                                    time_col: str = "Time",
                                    target_ratio: float = 0.30,
-                                   cfg: Optional[BESSRuleConfig] = None) -> Dict[str, Any]:
+                                   cfg: Optional[BESSConfig] = None) -> Dict[str, Any]:
     """
     先能量门槛：gen/load >= 30% 才做储能评估
     """
     if cfg is None:
-        cfg = BESSRuleConfig()
+        cfg = BESSConfig(soc_min=0.0)
 
     df_mix = align_curves(
         df_load=df_2025,
@@ -319,39 +301,48 @@ def evaluate_50wind_50pv_with_bess(df_2025: pd.DataFrame,
 
 # 测试代码 main 函数
 def main():
-    from ba_eva.eva_PV_optim_version.data_loader import load_data
-    from ba_eva.eva_PV_optim_version.wind_simu import generate_wind_data
-    from ba_eva.eva_PV_optim_version.pv_simu import generate_pv_data
-    
     # ##############################
     # model 1: 风光固定条件下，储能寻优
     # ##############################
     # ------------------------------
     # 负荷数据
     # ------------------------------
-    # df_2025 = pd.read_csv("D:\\228-售前测算\\乌兰察布\\df_2025.csv", encoding="utf_8_sig")
-    df_2025 = load_data()
+    from ba_eva.eva_PV_optim_version.data_loader import load_data
+    energy_data_path = Path("src/ba_eva/dataset/temp/df_2025.csv")
+    df_2025 = load_data(energy_data_path=energy_data_path)
+    print(df_2025)
     # ------------------------------
     # wind power data
     # ------------------------------
-    df_wind = generate_wind_data(farm_capacity_mw=200.0, mean_wind_speed_140m=7.27, eq_full_load_hours=2590, lat=40.55, lon=113.4)
+    from ba_eva.eva_PV_optim_version.data_wind_simu import generate_wind_data
+    wind_data_path = Path("src/ba_eva/dataset/temp/df_wind_2026.csv")
+    df_wind = generate_wind_data(
+        farm_capacity_mw=200.0, 
+        mean_wind_speed_140m=7.27, 
+        eq_full_load_hours=2590, 
+        lat=40.55, 
+        lon=113.4, 
+        wind_data_path=wind_data_path
+    )
+    print(df_wind)
     # ------------------------------
-    # PV(Photo Voltaics) power data
+    # PV power data
     # ------------------------------
-    pv_kw_50m = generate_pv_data(df=df_2025, lat=40.55, lon=113.4, capacity_kwp=100000.0)
-    # TODO 修改路径
-    # pv_kw_50m.to_csv("D:\\228-售前测算\\乌兰察布\\pv_kw_100.csv", encoding="utf-8")
+    from ba_eva.eva_PV_optim_version.data_pv_simu import generate_pv_data
+    pv_data_path = Path("src/ba_eva/dataset/temp/df_pv_2025.csv")
+    pv_kw_50m = generate_pv_data(
+        df=df_2025, 
+        lat=40.55, 
+        lon=113.4, 
+        capacity_kwp=100000.0, 
+        pv_data_path=pv_data_path, 
+        plot_img=False
+    )
+    print(pv_kw_50m)
     # ------------------------------
     # 
     # ------------------------------
-    cfg = BESSRuleConfig(
-        freq="1h",
-        eta_charge=0.92,
-        eta_discharge=0.92,
-        hours_to_full=2.0, # 0.5C
-        switch_gap_hours=1.0, # 充放间隔1小时
-        soc_init=0.5
-    )
+    cfg = BESSConfig(soc_min=0.0)
     res = evaluate_50wind_50pv_with_bess(
         df_2025=df_2025,
         pv_kw_50m=pv_kw_50m,
@@ -380,7 +371,9 @@ def main():
             print("  弃电(kWh):", best["curtailed_kwh"])
     else:
         print(res["message"])
-    # TODO 增加注释
+    # ------------------------------
+    # 负荷 - 风电
+    # ------------------------------
     df_2025_ = df_2025.copy()
     df_2025_["P_kw"] = df_2025_["P_kw"] - df_wind["WindPower_MW"]
     print(df_2025_[df_2025_["P_kw"] < 0])

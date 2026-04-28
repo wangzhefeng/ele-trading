@@ -26,253 +26,18 @@ from typing import Optional, Dict, Any, Tuple, Union
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-try:
-    from numba import njit
-    NUMBA_OK = True
-except Exception:
-    NUMBA_OK = False
-    def njit(*args, **kwargs):
-        def deco(f): return f
-        return deco
+from ba_eva.eva_PV_optim_version.storage_optim_common import (
+    njit, NUMBA_OK,
+    BESSConfig, Targets, UnitsConfig, PlanConfigFast,
+    infer_dt_hours, normalize_time_and_load, as_time_series, align_to_time,
+    dispatch_numba, evaluate,
+    read_timeseries, align_and_merge, dbg
+)
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
 os.environ['LOG_NAME'] = LOGGING_LABEL
 # from utils.log_util import logger
-
-
-# ============================================================
-# 调试工具
-# ============================================================
-def dbg(msg: str, obj: Any = None):
-    print(f"[DBG] {msg}")
-    if obj is not None:
-        try:
-            print("      type:", type(obj))
-            if isinstance(obj, (pd.Series, pd.Index, pd.DatetimeIndex)):
-                print("      len :", len(obj))
-                print("      head:", list(obj[:3]))
-            elif isinstance(obj, pd.DataFrame):
-                print("      shape:", obj.shape)
-                print("      columns:", list(obj.columns))
-                print("      index type:", type(obj.index))
-        except Exception as e:
-            print("      (dbg failed):", e)
-
-
-# ============================================================
-# 单位配置
-# ============================================================
-@dataclass
-class UnitsConfig:
-    load_power: str = "kW"     # kW / MW
-    pv_power: str = "kW"       # kW
-    wind_power: str = "MW"     # MW / kW
-
-
-# ============================================================
-# 全量规划配置
-# ============================================================
-@dataclass
-class PlanConfigFast:
-    bess_capex_yuan_per_kwh: float = 1000.0
-
-    eta_roundtrip: float = 0.92
-    c_rate: float = 0.5
-    soc_init_frac: float = 0.5
-    soc_min_frac: float = 0.1
-    soc_max_frac: float = 1.0
-
-    self_use_ratio_min: float = 0.6
-    load_cover_ratio_min: float = 0.2
-
-    batt_hi_max_kwh: float = 20000.0
-    use_numba: bool = True
-
-
-# ============================================================
-# 时间工具（100% 防 Index）
-# ============================================================
-def infer_dt_hours(t) -> float:
-    dbg("infer_dt_hours input", t)
-
-    t = pd.Series(pd.to_datetime(t), name="Time")
-    t = t.sort_values().reset_index(drop=True)
-
-    if len(t) < 2:
-        raise ValueError("时间点数量不足")
-
-    dt = t.diff().dropna().mode().iloc[0]
-    dt_hours = dt.total_seconds() / 3600.0
-    dbg(f"infer_dt_hours dt_hours={dt_hours}")
-    return dt_hours
-
-
-# ============================================================
-# 负荷 + 时间轴规范化（终极安全版）
-# ============================================================
-def normalize_time_and_load(
-    df: pd.DataFrame,
-    time_col: str,
-    load_col: str,
-    units: UnitsConfig,
-) -> Tuple[pd.Series, np.ndarray, list]:
-
-    print("### normalize_time_and_load CALLED")
-    warnings = []
-
-    dbg("input df", df)
-
-    if not isinstance(df, pd.DataFrame):
-        raise TypeError(f"df_load 类型错误：{type(df)}")
-
-    if load_col not in df.columns:
-        raise KeyError(f"负荷列 {load_col} 不存在")
-
-    # ---------- 时间轴 ----------
-    if time_col in df.columns:
-        raw_t = df[time_col]
-        dbg("raw time_col", raw_t)
-        t = pd.Series(pd.to_datetime(raw_t), name="Time")
-    elif isinstance(df.index, pd.DatetimeIndex):
-        t = pd.Series(pd.to_datetime(df.index), name="Time")
-        warnings.append("使用 DatetimeIndex 作为时间轴")
-    else:
-        raise ValueError("未找到时间列")
-
-    assert isinstance(t, pd.Series), f"t 类型异常：{type(t)}"
-
-    # ---------- 负荷 ----------
-    load = pd.to_numeric(df[load_col], errors="coerce").fillna(0.0).to_numpy(dtype=float)
-
-    if units.load_power.lower() == "mw":
-        load *= 1000.0
-
-    # ---------- 排序 ----------
-    order = np.argsort(t.values)
-    t = t.iloc[order].reset_index(drop=True)
-    load = load[order]
-
-    dbg("normalized t", t)
-    dbg("normalized load", load[:5])
-
-    return t, load, warnings
-
-
-# ============================================================
-# 发电输入规范化
-# ============================================================
-def as_time_series(
-    x: Union[pd.Series, pd.DataFrame],
-    time_col: str,
-    value_cols: Tuple[str, ...],
-    scale: float,
-) -> pd.Series:
-
-    dbg("as_time_series input", x)
-
-    if isinstance(x, pd.Series):
-        s = pd.to_numeric(x, errors="coerce").fillna(0.0)
-        s.index = pd.to_datetime(s.index)
-        return s * scale
-
-    if not isinstance(x, pd.DataFrame):
-        raise TypeError("输入必须是 Series 或 DataFrame")
-
-    if time_col in x.columns:
-        t = pd.to_datetime(x[time_col])
-        df = x.drop(columns=[time_col])
-    else:
-        t = pd.to_datetime(x.index)
-        df = x.copy()
-
-    for c in value_cols:
-        if c in df.columns:
-            s = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
-            s.index = t
-            return s * scale
-
-    raise ValueError("未找到有效数值列")
-
-
-def align_to_time(t: pd.Series, s: pd.Series) -> np.ndarray:
-    return (
-        s.reindex(pd.DatetimeIndex(t))
-        .interpolate("time")
-        .fillna(0.0)
-        .to_numpy(dtype=float)
-    )
-
-
-# ============================================================
-# 调度
-# ============================================================
-@njit
-def dispatch_numba(load_kw, gen_kw, dt, batt_kwh, eta, c_rate, soc0, soc_min_f, soc_max_f):
-    gen_e = used_e = load_e = bess_dis = 0.0
-
-    if batt_kwh <= 0:
-        for i in range(load_kw.shape[0]):
-            L = max(load_kw[i], 0)
-            G = max(gen_kw[i], 0)
-            load_e += L * dt
-            gen_e += G * dt
-            used_e += min(L, G) * dt
-        return gen_e, used_e, load_e, bess_dis
-
-    soc = soc0 * batt_kwh
-    soc_min = soc_min_f * batt_kwh
-    soc_max = soc_max_f * batt_kwh
-    pmax = c_rate * batt_kwh
-    eta_c = eta ** 0.5
-    eta_d = eta ** 0.5
-
-    for i in range(load_kw.shape[0]):
-        L = max(load_kw[i], 0)
-        G = max(gen_kw[i], 0)
-        load_e += L * dt
-        gen_e += G * dt
-
-        direct = min(L, G)
-        used_e += direct * dt
-
-        surplus = G - direct
-        deficit = L - direct
-
-        if surplus > 1e-9 and soc < soc_max:
-            ch = min(surplus, pmax, (soc_max - soc) / dt)
-            soc += ch * dt * eta_c
-
-        if deficit > 1e-9 and soc > soc_min:
-            dis = min(deficit, pmax, (soc - soc_min) * eta_d / dt)
-            soc -= dis * dt / eta_d
-            used_e += dis * dt
-            bess_dis += dis * dt
-
-    return gen_e, used_e, load_e, bess_dis
-
-
-def evaluate(load_kw, gen_kw, dt, batt_kwh, cfg: PlanConfigFast) -> Dict[str, float]:
-    if cfg.use_numba and NUMBA_OK:
-        g, u, l, b = dispatch_numba(
-            load_kw, gen_kw, dt, batt_kwh,
-            cfg.eta_roundtrip, cfg.c_rate,
-            cfg.soc_init_frac, cfg.soc_min_frac, cfg.soc_max_frac
-        )
-    else:
-        g = gen_kw.sum() * dt
-        l = load_kw.sum() * dt
-        u = np.minimum(load_kw, gen_kw).sum() * dt
-        b = 0.0
-
-    return {
-        "gen_kwh": g,
-        "used_kwh": u,
-        "load_kwh": l,
-        "self_use_ratio": u / g if g > 1e-9 else 0.0,
-        "load_cover_ratio": u / l if l > 1e-9 else 0.0,
-        "bess_discharge_kwh": b,
-    }
 
 
 # ============================================================
@@ -288,7 +53,6 @@ def plan_energy_system(
     cfg: PlanConfigFast = PlanConfigFast(),
     units: UnitsConfig = UnitsConfig(),
 ) -> Dict[str, Any]:
-
     try:
         dbg("ENTER plan_energy_system df_load", df_load)
         t, load_kw, warn = normalize_time_and_load(df_load, time_col, load_col, units)
@@ -367,29 +131,8 @@ def plan_energy_system(
 
 
 # ============================================================
-# 1) 配置
+# 1) 配置（BESSConfig / Targets 已提取至 storage_optim_common）
 # ============================================================
-@dataclass
-class BESSConfig:
-    eta_charge: float = 0.92
-    eta_discharge: float = 0.92
-    soc_min: float = 0.10
-    soc_max: float = 1.00
-    soc_init: float = 0.50
-
-    # 功率上限：Pmax(kW) = c_rate * E(kWh)
-    c_rate: float = 1.0
-
-    # 是否强制期末 SOC 回到初始（避免“年末把电池放空”虚增覆盖率）
-    enforce_terminal_soc: bool = True
-
-
-@dataclass
-class Targets:
-    min_green_self_consumption: float = 0.60  # served / wind
-    min_load_coverage: float = 0.30           # served / load
-
-
 @dataclass
 class Investment:
     capex_cny_per_kwh: float = 1000.0
@@ -412,86 +155,7 @@ class ShiftPolicy:
 
 
 # ============================================================
-# 2) 读入与对齐（支持 DataFrame 或文件路径；Time 列或 DatetimeIndex）
-# ============================================================
-def read_timeseries(obj: Union[str, pd.DataFrame]) -> pd.DataFrame:
-    if isinstance(obj, pd.DataFrame):
-        df = obj.copy()
-    elif isinstance(obj, str):
-        ext = os.path.splitext(obj.lower())[1]
-        if ext in [".csv", ".txt"]:
-            df = pd.read_csv(obj)
-        elif ext in [".xlsx", ".xls"]:
-            df = pd.read_excel(obj)
-        else:
-            raise ValueError(f"Unsupported file extension: {ext}")
-    else:
-        raise TypeError("Input must be a DataFrame or a file path (str).")
-
-    if "Time" in df.columns:
-        df["Time"] = pd.to_datetime(df["Time"])
-    elif isinstance(df.index, pd.DatetimeIndex):
-        idx_name = df.index.name or "index"
-        df = df.reset_index().rename(columns={idx_name: "Time"})
-        df["Time"] = pd.to_datetime(df["Time"])
-    else:
-        raise ValueError("Input must have a 'Time' column or a DatetimeIndex.")
-
-    df = df.sort_values("Time").reset_index(drop=True)
-    return df
-
-
-def infer_freq_minutes(time_index: pd.DatetimeIndex) -> int:
-    if len(time_index) < 2:
-        return 15
-    diffs = np.diff(time_index.view("i8"))  # ns
-    diffs = diffs[diffs > 0]
-    if len(diffs) == 0:
-        return 15
-    med_ns = np.median(diffs)
-    return max(1, int(round(med_ns / 1e9 / 60.0)))
-
-
-def align_and_merge(
-    df_load: pd.DataFrame,
-    df_wind: pd.DataFrame,
-    load_col_kw: str = "P_kw",
-    wind_col_mw: str = "WindPower_MW",
-    freq: Optional[str] = None,
-) -> Tuple[pd.DataFrame, float]:
-    if load_col_kw not in df_load.columns:
-        raise ValueError(f"Load missing column: {load_col_kw}")
-    if wind_col_mw not in df_wind.columns:
-        raise ValueError(f"Wind missing column: {wind_col_mw}")
-
-    dfl = df_load[["Time", load_col_kw]].rename(columns={load_col_kw: "Load_kW"}).copy()
-    dfw = df_wind[["Time", wind_col_mw]].rename(columns={wind_col_mw: "WindPower_MW"}).copy()
-    dfw["Wind_kW"] = dfw["WindPower_MW"].astype(float) * 1000.0
-    dfw = dfw.drop(columns=["WindPower_MW"])
-
-    dfl = dfl.set_index("Time")
-    dfw = dfw.set_index("Time")
-
-    if freq is None:
-        mins = min(infer_freq_minutes(dfl.index), infer_freq_minutes(dfw.index))
-        freq = f"{mins}min"
-
-    idx = pd.date_range(
-        start=max(dfl.index.min(), dfw.index.min()),
-        end=min(dfl.index.max(), dfw.index.max()),
-        freq=freq
-    )
-
-    dfl = dfl.reindex(idx).interpolate("time").ffill().bfill()
-    dfw = dfw.reindex(idx).interpolate("time").ffill().bfill()
-
-    df = pd.concat([dfl, dfw], axis=1)
-    dt_h = pd.to_timedelta(freq).total_seconds() / 3600.0
-    return df, float(dt_h)
-
-
-# ============================================================
-# 3) 快速“必要可行性”诊断（避免无解时慢扫容量）
+# 3) 快速”必要可行性”诊断（避免无解时慢扫容量）
 # ============================================================
 def quick_feasibility_diagnose(
     load_kw: np.ndarray,
@@ -854,85 +518,7 @@ def run_planning_min_investment(
 
 
 # ------------------------------
-# 
-# ------------------------------
-def align_and_merge(
-    df_load: pd.DataFrame,
-    df_wind: pd.DataFrame,
-    load_col_kw: str = "P_kw",
-    wind_col_mw: str = "WindPower_MW",
-    freq: Optional[str] = None,
-) -> Tuple[pd.DataFrame, float]:
-    """
-    支持：
-      - df_load / df_wind 的时间在 Time 列
-      - 或时间在 DatetimeIndex
-    最终统一为：
-      index = DatetimeIndex
-      columns = Load_kW, Wind_kW
-    """
-
-    # ---------- 1. 统一负荷时间 ----------
-    dfl = df_load.copy()
-    if "Time" in dfl.columns:
-        dfl["Time"] = pd.to_datetime(dfl["Time"])
-        dfl = dfl.set_index("Time")
-    elif isinstance(dfl.index, pd.DatetimeIndex):
-        pass
-    else:
-        raise ValueError("df_load must have Time column or DatetimeIndex")
-
-    if load_col_kw not in dfl.columns:
-        raise ValueError(f"Load missing column: {load_col_kw}")
-
-    dfl = dfl[[load_col_kw]].rename(columns={load_col_kw: "Load_kW"})
-
-    # ---------- 2. 统一风电时间 ----------
-    dfw = df_wind.copy()
-    if "Time" in dfw.columns:
-        dfw["Time"] = pd.to_datetime(dfw["Time"])
-        dfw = dfw.set_index("Time")
-    elif isinstance(dfw.index, pd.DatetimeIndex):
-        pass
-    else:
-        raise ValueError("df_wind must have Time column or DatetimeIndex")
-
-    if wind_col_mw not in dfw.columns:
-        raise ValueError(f"Wind missing column: {wind_col_mw}")
-
-    dfw = dfw[[wind_col_mw]].rename(columns={wind_col_mw: "Wind_MW"})
-    dfw["Wind_kW"] = dfw["Wind_MW"].astype(float) * 1000.0
-    dfw = dfw.drop(columns=["Wind_MW"])
-
-    # ---------- 3. 统一频率 ----------
-    if freq is None:
-        def _infer(idx):
-            if len(idx) < 2:
-                return 15
-            d = np.diff(idx.view("i8"))
-            d = d[d > 0]
-            return max(1, int(round(np.median(d) / 1e9 / 60)))
-        mins = min(_infer(dfl.index), _infer(dfw.index))
-        freq = f"{mins}min"
-
-    idx = pd.date_range(
-        start=max(dfl.index.min(), dfw.index.min()),
-        end=min(dfl.index.max(), dfw.index.max()),
-        freq=freq,
-    )
-
-    dfl = dfl.reindex(idx).interpolate("time").ffill().bfill()
-    dfw = dfw.reindex(idx).interpolate("time").ffill().bfill()
-
-    df = pd.concat([dfl, dfw], axis=1)
-    df.index.name = "Time"
-
-    dt_h = pd.to_timedelta(freq).total_seconds() / 3600.0
-    return df, float(dt_h)
-
-
-# ------------------------------
-# 
+#
 # ------------------------------
 def calc_monthly_wind_metrics(
     df,
@@ -1017,7 +603,6 @@ def calc_monthly_wind_metrics(
 # ------------------------------
 # 用你现有的仿真函数：simulate_dispatch_offgrid_shiftable
 # 如果你用的是我给你的那版代码，函数名就是 simulate_dispatch_offgrid_shiftable
-
 def plot_capacity_curve(df, dt_h, bess, policy,
                        cap_max_mwh=None, n_points=30):
     load_kw = df["Load_kW"].to_numpy(float)
@@ -1059,44 +644,66 @@ def main():
     # ##############################
     # 风光储最佳组合测算
     # ##############################
-    from ba_eva.eva_PV_optim_version.data_loader import load_data
-    from ba_eva.eva_PV_optim_version.wind_simu import generate_wind_data
-    from ba_eva.eva_PV_optim_version.pv_simu import generate_pv_data
     # ------------------------------
     # 负荷数据
     # ------------------------------
-    # df_2025 = pd.read_csv("D:\\228-售前测算\\乌兰察布\\df_2025.csv", encoding="utf_8_sig")
-    df_2025 = load_data()
+    from ba_eva.eva_PV_optim_version.data_loader import load_data
+    energy_data_path = Path("src/ba_eva/dataset/temp/df_2025.csv")
+    df_2025 = load_data(energy_data_path=energy_data_path)
     df_2025["P_kw"] = df_2025["P_kw"] / 704234268 * 685436401
+    print(df_2025)
     # ------------------------------
     # wind power data
     # ------------------------------
-    df_wind = generate_wind_data(farm_capacity_mw=110.0, mean_wind_speed_140m=5.5, eq_full_load_hours=1920.7, lat=28.42, lon=117.88)
+    from ba_eva.eva_PV_optim_version.data_wind_simu import generate_wind_data
+    wind_data_path = Path("src/ba_eva/dataset/temp/df_wind_2026.csv")
+    df_wind = generate_wind_data(
+        farm_capacity_mw=110.0, 
+        mean_wind_speed_140m=5.5, 
+        eq_full_load_hours=1920.7, 
+        lat=28.42, 
+        lon=117.88, 
+        wind_data_path=wind_data_path
+    )
+    print(df_wind)
     # ------------------------------
     # PV(Photo Voltaics) power data
     # ------------------------------
-    pv_kw_28 = generate_pv_data(df=df_2025, lat=28.42, lon=117.88, capacity_kwp=28250)
+    from ba_eva.eva_PV_optim_version.data_pv_simu import generate_pv_data
+    pv_data_path = Path("src/ba_eva/dataset/temp/df_pv_2025.csv")
+    pv_kw_28 = generate_pv_data(
+        df=df_2025, 
+        lat=28.42, 
+        lon=117.88, 
+        capacity_kwp=28250, 
+        pv_data_path=pv_data_path, 
+        plot_img=False
+    )
+    print(pv_kw_28)
     # ------------------------------
-    # 
+    # TODO
     # ------------------------------
+    cfg = PlanConfigFast(
+        batt_hi_max_kwh=20000.0,
+    )
     res = plan_energy_system(
         df_load=df_2025,
         wind_input=df_wind,
         time_col="Time",
         load_col="P_kw",
+        cfg=cfg,
     )
     # ------------------------------
-    # 
+    # TODO
     # ------------------------------
     res = run_planning_min_investment(
         load_file=df_2025,   # DataFrame: Time + P_kw
         wind_file=df_wind,   # DataFrame: Time(index或列) + WindPower_MW
-        out_schedule_csv="bess_schedule.csv",  # TODO 修改路径
+        out_schedule_csv="src/ba_eva/dataset/temp/bess_schedule.csv",
         freq=None,           # 或指定 "15min"
         cap_max_mwh=5000.0,  # 如果确实需要更大再加
         tol_mwh=0.1,
     )
-
     print("dt_h:", res["dt_h"])
     print("Diagnosis:", res["diagnosis"])
     print("Capacity (MWh):", res["recommended_capacity_mwh"])
@@ -1107,17 +714,14 @@ def main():
     # 
     # ------------------------------
     df, dt_h = align_and_merge(df_2025, df_wind)
-    # TODO 修改路径
-    # df.to_csv("bess_load_wind.csv", encoding="utf-8-sig")
+    df.to_csv("src/ba_eva/dataset/temp/bess_load_wind.csv", encoding="utf-8-sig")
     print(df)
     # ------------------------------
     # 
     # ------------------------------
     monthly_metrics = calc_monthly_wind_metrics(df)
     print(monthly_metrics.round(4))
-    # TODO 修改路径
-    # monthly_metrics.to_csv("bess_monthly_metrics.csv", encoding="utf-8-sig")
-
+    monthly_metrics.to_csv("src/ba_eva/dataset/temp/dataset/bess_monthly_metrics.csv", encoding="utf-8-sig")
 
     # ===============================
     # 1. 确保 Time 是 DatetimeIndex
@@ -1154,11 +758,13 @@ def main():
     plt.grid(alpha=0.3)
     plt.tight_layout()
     plt.show()
+    
+    
     # ------------------------------
     # 
     # ------------------------------
     df_2025_ = df_2025.copy()
-    df_2025_['P_kw'] = df_2025_['P_kw']*6.85/7.04
+    df_2025_['P_kw'] = df_2025_['P_kw'] * 6.85 / 7.04
     df, dt_h = align_and_merge(df_2025, df_wind)
     print(df_2025)
     # ------------------------------
@@ -1174,13 +780,11 @@ def main():
         c_rate=1.0,
         enforce_terminal_soc=False,
     )
-
     policy = ShiftPolicy(
         enable_shift=True,
         lookahead_steps=8,
         shift_max_frac_of_wind=0.30,
     )
-
     # 3. 画“容量响应曲线”
     plot_capacity_curve(
         df=df,
