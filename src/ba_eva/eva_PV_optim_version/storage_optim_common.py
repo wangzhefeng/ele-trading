@@ -40,7 +40,9 @@ except Exception:
 # ============================================================
 @dataclass
 class BESSConfig:
-    """储能物理参数"""
+    """
+    储能物理参数
+    """
     freq: str = "1h"
     eta_charge: float = 0.92
     eta_discharge: float = 0.92
@@ -50,18 +52,47 @@ class BESSConfig:
     c_rate: float = 1.0
     hours_to_full: float = 2.0        # 0.5C => 2h 充满
     switch_gap_hours: float = 1.0     # 充放之间间隔 1 小时
+    enforce_terminal_soc: bool = True
 
 
 @dataclass
 class Targets:
-    """优化约束目标（新能源消纳率 / 负荷覆盖率）"""
+    """
+    优化约束目标（新能源消纳率 / 负荷覆盖率）
+    """
     min_green_self_consumption: float = 0.60  # used / gen
     min_load_coverage: float = 0.30           # used / load
 
 
 @dataclass
+class Investment:
+    """
+    # TODO 补充注释
+    """
+    capex_cny_per_kwh: float = 1000.0
+
+
+@dataclass
+class ShiftPolicy:
+    """
+    允许在 Wind < Load 时也能充电平移（通过牺牲当期供电来换未来供电）。
+        - enable_shift: 是否开启
+        - lookahead_steps: 未来窗口长度（用于判断是否“值得”储能平移）
+        - shift_max_frac_of_wind: 当 Wind < Load 时，最多拿走 Wind 的多少比例去充电
+    说明：
+      这会减少当期 served，但可能提升未来某些时段的 served（更符合“平移”直觉）。
+      若你只关心总覆盖率/自用率，理论上它不一定更优，但你明确要求支持该行为。
+    """
+    enable_shift: bool = True
+    lookahead_steps: int = 8
+    shift_max_frac_of_wind: float = 0.30
+
+
+@dataclass
 class UnitsConfig:
-    """输入数据单位声明"""
+    """
+    输入数据单位声明
+    """
     load_power: str = "kW"   # kW / MW
     pv_power: str = "kW"     # kW/kWp
     wind_power: str = "MW"   # MW / kW
@@ -111,6 +142,7 @@ def infer_dt_hours(t) -> float:
     if len(t) < 2:
         raise ValueError("时间点数量不足，无法推断 dt")
     dt = t.diff().dropna().mode().iloc[0]
+    
     return float(dt.total_seconds() / 3600.0)
 
 # ============================================================
@@ -157,25 +189,23 @@ def as_time_series(
         s = pd.to_numeric(x, errors="coerce").fillna(0.0)
         s.index = pd.to_datetime(s.index)
         return s * scale
+    elif isinstance(x, pd.DataFrame):
+        df = x.copy()
+        if time_col in df.columns:
+            t = pd.to_datetime(df[time_col])
+            df = df.drop(columns=[time_col])
+        else:
+            t = pd.to_datetime(df.index)
+            df = df.reset_index(drop=True)
 
-    if not isinstance(x, pd.DataFrame):
+        for c in value_cols:
+            if c in df.columns:
+                s = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+                s.index = t
+                return s * scale
+        raise ValueError(f"未找到有效数值列，尝试过：{value_cols}")
+    elif not isinstance(x, pd.DataFrame):
         raise TypeError("输入必须是 pd.Series 或 pd.DataFrame")
-
-    df = x.copy()
-    if time_col in df.columns:
-        t = pd.to_datetime(df[time_col])
-        df = df.drop(columns=[time_col])
-    else:
-        t = pd.to_datetime(df.index)
-        df = df.reset_index(drop=True)
-
-    for c in value_cols:
-        if c in df.columns:
-            s = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
-            s.index = t
-            return s * scale
-
-    raise ValueError(f"未找到有效数值列，尝试过：{value_cols}")
 
 
 def normalize_time_and_load(
@@ -190,9 +220,11 @@ def normalize_time_and_load(
     """
     if not isinstance(df, pd.DataFrame):
         raise TypeError(f"df_load 类型错误：{type(df)}")
+    
     if load_col not in df.columns:
         raise KeyError(f"负荷列 '{load_col}' 不存在")
 
+    # 时间列预处理为一个 pd.Series
     warn = []
     if time_col in df.columns:
         t = pd.Series(pd.to_datetime(df[time_col]), name="Time")
@@ -201,11 +233,14 @@ def normalize_time_and_load(
         warn.append("使用 DatetimeIndex 作为时间轴")
     else:
         raise ValueError("未找到时间列，且 index 不是 DatetimeIndex")
-
+    
+    # 负荷数值转换
     load = pd.to_numeric(df[load_col], errors="coerce").fillna(0.0).to_numpy(dtype=float)
+    # 负荷单位转换
     if units.load_power.lower() == "mw":
         load *= 1000.0
 
+    # 按照时间顺序排序
     order = np.argsort(t.values)
     t = t.iloc[order].reset_index(drop=True)
     load = load[order]

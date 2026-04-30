@@ -109,6 +109,19 @@ def series_plot(df: pd.DataFrame, time_col, value_col):
     plt.show();
 
 
+def plot_ele_series(df, year: str, month: str):
+    plt.figure(figsize=(16, 6))
+    plt.plot(df.index, df["Load_kW"], label="负荷 Load (kW)", linewidth=1.5)
+    plt.plot(df.index, df["Wind_kW"], label="风电 Wind (kW)", linewidth=1.2, alpha=0.85)
+    plt.title(f"{year} 年 {month} 月负荷与风电出力对比（15min）")
+    plt.xlabel("时间")
+    plt.ylabel("功率 (kW)")
+    plt.legend(loc="upper right")
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show();
+
+
 
 
 # 测试代码 main 函数

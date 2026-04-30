@@ -20,7 +20,7 @@ if ROOT not in sys.path:
     sys.path.append(ROOT)
 import warnings
 warnings.filterwarnings("ignore")
-from typing import Optional, Dict
+from typing import Dict
 
 import numpy as np
 import pandas as pd
@@ -32,9 +32,18 @@ from ba_eva.eva_PV_optim_version.storage_optim_common import (
 )
 
 
+# 当前脚本的定位更接近“基于负荷与单位 PV 曲线的最小 PV 投资搜索”。
+# 虽然文件名里包含 BESS，但当前主规划函数并没有真正搜索储能容量，
+# 而是保留了储能调度接口与结果字段，方便后续把 BESS 联合优化接回主流程。
+
 # ------------------------------
 # 年度调度（Numba）
 # ------------------------------
+# 给定全年逐时负荷与 PV 出力，按“先直供、后充电、再放电补缺口”的口径做能量结算。
+# 返回的 pv_used 包含两部分：
+# 1) 光伏直接供负荷的电量
+# 2) 先由 PV 充入电池、再由电池放出供负荷的电量
+# 因此 direct_e = pv_used - bess_dis，表示不经过电池的直接消纳电量。
 @njit
 def _dispatch_annual_numba(load_kw, 
                            pv_kw, 
@@ -65,8 +74,8 @@ def _dispatch_annual_numba(load_kw,
     direct_e = pv_used - bess_dis
     return pv_gen, pv_used, load_e, direct_e, bess_dis
 
-
 def _dispatch_annual(load_kw, pv_kw, dt_hours, batt_kwh, cfg: PlanConfigFast):
+    # 统一封装调度结果字段，便于上层规划逻辑只关心业务指标，不关心底层实现细节。
     if cfg.use_numba and NUMBA_OK:
         return dict(zip(
             ["pv_gen_kwh", "pv_used_kwh", "load_kwh", "direct_used_kwh", "bess_discharge_kwh"],
@@ -83,7 +92,10 @@ def _dispatch_annual(load_kw, pv_kw, dt_hours, batt_kwh, cfg: PlanConfigFast):
             )
         ))
 
-    # 保持与重构前 fallback 完全一致：不裁剪负值，也不模拟电池。
+    # fallback 只保证输出字段口径一致，不保证与 numba 分支完全同逻辑：
+    # 1) 不裁剪负值
+    # 2) 不模拟电池充放电
+    # 因此它更像兼容旧行为的保底路径，而不是等价的年度调度器。
     direct = np.minimum(load_kw, pv_kw)
     return {
         "pv_gen_kwh": float(pv_kw.sum() * dt_hours),
@@ -95,7 +107,9 @@ def _dispatch_annual(load_kw, pv_kw, dt_hours, batt_kwh, cfg: PlanConfigFast):
 
 # ------------------------------
 # 主规划函数（完整版）
-# 把单机光伏出力曲线和负荷数据结合起来，在给定约束下搜索最小化投资的光伏+储能方案。约束主要围绕自用率、负荷覆盖率、储能参数和投资成本展开
+# 把单位光伏出力曲线与全年负荷曲线结合起来，搜索满足约束的最小投资方案。
+# 当前版本的实际行为是“只搜索 PV 装机容量”，BESS 仍是接口占位：
+# 调度函数支持电池参数，但主循环固定用 batt_kwh=0.0，因此结果不会真正搜索储能容量。
 # ------------------------------
 def plan_pv_bess_min_capex_fast(df_2025: pd.DataFrame,
                                 pv_unit_kw: pd.Series,
@@ -110,54 +124,66 @@ def plan_pv_bess_min_capex_fast(df_2025: pd.DataFrame,
       储能装机容量(kWh)
       储能投资(元)
     """
-    # 负荷数据
+    # 先把输入负荷整理成统一的时间序列格式，避免后续时序计算受原始顺序影响。
     df = df_2025[[time_col, load_col]].copy()
     df[time_col] = pd.to_datetime(df[time_col])
     df = df.sort_values(time_col).reset_index(drop=True)
     
-    # 数据频率时长(hour)
+    # 根据时间列推断单个时段长度，后续所有功率到电量的换算都依赖这个 dt。
     dt_hours = infer_dt_hours(df[time_col])
 
-    # 光伏数据
+    # unit_kw 表示“1 kWp 光伏在各时刻的出力曲线”，需要先对齐到负荷时间轴。
+    # 如果时间戳不完全一致，这里会做插值和缺失补零。
     unit_kw = align_to_time(df[time_col], pv_unit_kw)
     print(len(unit_kw))
 
-    # 光伏最大装机容量
+    # 负荷统一转成 float64 数组，后续调度函数按 ndarray 处理更高效。
     load_kw = pd.to_numeric(df[load_col], errors="coerce").fillna(0.0).to_numpy(dtype="float64")
     peak_load = float(load_kw.max())
+    # 搜索上界默认取“步长下限”和“3 倍峰值负荷”中的较大者。
+    # 这不是严格的业务上界，只是为了给研究型穷举一个足够大的搜索空间。
     pv_max_kwp = cfg.pv_max_kwp or max(cfg.pv_step_coarse_kwp, 3.0 * peak_load)
     
-    # 按月累计电量（kWh）
+    # 先计算“每 1 kWp 对应的月发电量”，找到最优 PV 容量后可直接线性缩放输出月度结果。
     unit_monthly_kwh = monthly_kwh(df[time_col], unit_kw, dt_hours)
     
-    # 光伏全年发电量(kWh)
+    # 全年负荷总电量是覆盖率约束的分母，也是全年快速剪枝的基准量。
     load_kwh_total = float(load_kw.sum() * dt_hours)
-    # ------------------------------
-    # 
-    # ------------------------------
+
+    # best 保存当前找到的最便宜可行方案；当前成本口径只包含 PV CAPEX。
     best = None
-    # 遍历光伏装机容量
+    # 按粗粒度步长枚举 PV 装机容量，寻找第一个满足约束的最小 CAPEX 方案。
     pv_candidates = np.arange(cfg.pv_step_coarse_kwp, pv_max_kwp + 1e-9, cfg.pv_step_coarse_kwp)
     for pv_kwp in pv_candidates:
+        # 单位曲线按装机容量线性放大，得到该候选容量下的全年 PV 功率曲线。
         pv_kw = unit_kw * pv_kwp
 
         # ---- 快速剪枝 ----
+        # 如果全年总发电量连“目标覆盖率对应的最低能量门槛”都达不到，
+        # 就没必要再做逐时调度计算。
         if pv_kw.sum() * dt_hours < cfg.load_cover_ratio_min * load_kwh_total:
             continue
 
+        # 这里显式传入 batt_kwh=0.0，说明当前主规划并未真正启用 BESS 搜索。
+        # 换句话说，这一步是在“无储能”假设下评估 PV 的年度消纳表现。
         stats = _dispatch_annual(load_kw, pv_kw, dt_hours, 0.0, cfg)
         if stats["pv_gen_kwh"] <= 0:
             continue
 
+        # 自用率：PV 最终被负荷消纳的比例。
         self_use = stats["pv_used_kwh"] / stats["pv_gen_kwh"]
+        # 覆盖率：全年负荷里有多大比例由 PV 消纳贡献覆盖。
         cover = stats["pv_used_kwh"] / load_kwh_total
 
+        # 两个比例约束都满足，才认为该候选容量在业务上可接受。
         if self_use < cfg.self_use_ratio_min or cover < cfg.load_cover_ratio_min:
             continue
 
         pv_capex = pv_kwp * cfg.pv_capex_yuan_per_kwp
+        # 当前版本的总投资只有 PV CAPEX，尚未把储能投资纳入优化目标。
         total_capex = pv_capex
 
+        # 在所有可行解中保留总投资最小的方案。
         if best is None or total_capex < best["total_capex_yuan"]:
             best = {
                 "pv_kwp": float(pv_kwp),
@@ -179,6 +205,8 @@ def plan_pv_bess_min_capex_fast(df_2025: pd.DataFrame,
 # ------------------------------
 # data check
 # ------------------------------
+# 这是一个“年能量下界估算器”，不看逐时曲线错配，只用年电量与年利用小时做量级校验。
+# 适合快速回答“如果要达到某个覆盖率，大概要配多少 MWp”。
 def simple_energy_sanity_check(df_2025: pd.DataFrame,
                                time_col="Time",
                                load_col="P_kw",
@@ -210,6 +238,8 @@ def simple_energy_sanity_check(df_2025: pd.DataFrame,
         "pv_required_table": pd.DataFrame(rows)
     }
 
+# 这是一个“基于单位 PV 曲线总年发电量”的量级校验器。
+# 它比固定年利用小时更贴近本项目的 PV 曲线，但本质上仍是能量法估算，不是正式优化模型。
 def curve_based_energy_check(df_2025: pd.DataFrame,
                              pv_unit_kw: pd.Series,
                              time_col="Time",
@@ -243,6 +273,8 @@ def curve_based_energy_check(df_2025: pd.DataFrame,
 
 # 测试代码 main 函数
 def main():
+    # 这是研究脚本式的演示入口，用来串起数据准备、PV 曲线生成、规划求解和结果对比。
+    # 它适合本地快速验证思路，不代表稳定的产品化入口。
     # ------------------------------
     # 负荷数据
     # ------------------------------
@@ -259,7 +291,7 @@ def main():
     from ba_eva.eva_PV_optim_version.data_pv_simu import generate_pv_data
     # data path
     pv_data_path = Path("src/ba_eva/dataset/temp/df_pv_2025.csv")
-    # data load
+    # 这里生成的是 1.0 kWp 光伏对应的逐时出力曲线，后续通过线性缩放得到任意装机容量。
     pv_kw = generate_pv_data(df=df_2025, lat=40.55, lon=113.4, capacity_kwp=1.0, pv_data_path=pv_data_path, plot_img=False)
     print(pv_kw)
     # ------------------------------
@@ -286,9 +318,10 @@ def main():
     print("口径:", cfg.constraint_mode)
     print("PV自用率 PV_used / PV_gen:", res["self_use_ratio"])
     print("PV覆盖率 PV_used / Load:", res["load_cover_ratio"])
+    # 导出的是规划结果对应的月度 PV 发电量，便于和外部报表或后续分析衔接。
     res["pv_monthly_kwh"].to_csv("src/ba_eva/dataset/temp/pv_monthly_kwh.csv")
     # ------------------------------
-    # 
+    # 两个 sanity check 用于判断规划结果的量级是否合理，不替代正式优化模型。
     # ------------------------------
     out_A = simple_energy_sanity_check(df_2025)
     print("年用电量(GWh):", out_A["load_gwh_year"])
@@ -297,6 +330,8 @@ def main():
     out_B = curve_based_energy_check(df_2025, pv_kw)
     print(out_B)
     
+    # comparison 里的 C 项目前是手工对照值 244.0，不是从 res 动态读取出来的规划结果。
+    # 它更像一次研究比对时留下的参考数，而不是正式报表字段。
     comparison = pd.DataFrame([
         {
             "method": "A-年能量下界(1200h)",

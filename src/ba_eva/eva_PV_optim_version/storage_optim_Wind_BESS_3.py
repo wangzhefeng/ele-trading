@@ -12,7 +12,6 @@
 # ***************************************************
 
 # python libraries
-import os
 import sys
 from pathlib import Path
 ROOT = str(Path.cwd())
@@ -20,12 +19,9 @@ if ROOT not in sys.path:
     sys.path.append(ROOT)
 import warnings
 warnings.filterwarnings("ignore")
-from dataclasses import dataclass
-from typing import Optional, Dict, Any, Tuple, Union
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from ba_eva.eva_PV_optim_version.storage_optim_common import (
     njit, NUMBA_OK,
     BESSConfig, Targets,
@@ -128,7 +124,7 @@ def find_min_capacity(load_kw, wind_kw, dt_h, bess, targets, cap_max=5000, tol=0
 
 
 # ============================================================
-# 5. 主函数（你只调用这个）
+# 主函数（你只调用这个）
 # ============================================================
 def run_wind_bess_planning_min_cap(
     load_file,
@@ -198,6 +194,8 @@ def main():
     res = run_wind_bess_planning_min_cap(
         load_file=df_2025,
         wind_file=df_wind,
+        load_col_kw="P_kw",
+        wind_col_mw="WindPower_MW",
         cap_max_mwh=3000,
     )
     print("储能容量(MWh):", res["bess_capacity_mwh"])
