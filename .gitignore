@@ -175,3 +175,4 @@ __marimo__/
 docs/superpowers/
 src/ba_eva/dataset/output.json
 src/ba_eva/dataset/output.json
+.claude/

@@ -98,6 +98,7 @@ def series_plot(df: pd.DataFrame, time_col, value_col):
     font_name = ['Arial Unicode MS', 'SimHei']
     mpl.rcParams['font.sans-serif'] = font_name[0]
     mpl.rcParams['axes.unicode_minus'] = False
+    
     plt.figure(figsize=(25, 8))
     plt.plot(df[time_col], df[value_col], marker = ".", linestyle = "-.", color='C0', linewidth=1.0)
     plt.legend()
@@ -110,6 +111,11 @@ def series_plot(df: pd.DataFrame, time_col, value_col):
 
 
 def plot_ele_series(df, year: str, month: str):
+    import matplotlib as mpl
+    font_name = ['Arial Unicode MS', 'SimHei']
+    mpl.rcParams['font.sans-serif'] = font_name[0]
+    mpl.rcParams['axes.unicode_minus'] = False
+    
     plt.figure(figsize=(16, 6))
     plt.plot(df.index, df["Load_kW"], label="负荷 Load (kW)", linewidth=1.5)
     plt.plot(df.index, df["Wind_kW"], label="风电 Wind (kW)", linewidth=1.2, alpha=0.85)
@@ -120,6 +126,27 @@ def plot_ele_series(df, year: str, month: str):
     plt.grid(alpha=0.3)
     plt.tight_layout()
     plt.show();
+
+
+def plot_load_pv_wind_netload(df):
+    import matplotlib as mpl
+    font_name = ['Arial Unicode MS', 'SimHei']
+    mpl.rcParams['font.sans-serif'] = font_name[0]
+    mpl.rcParams['axes.unicode_minus'] = False
+    
+    plt.figure(figsize=(16, 6))
+    # plt.plot(df["Time"], df["P_kw"], label="负荷 Load (kW)", linewidth=1.8)
+    plt.plot(df["Time"], df["PV_kw"], label="光伏 PV (kW)", linewidth=1.5)
+    plt.plot(df["Time"], df["Wind_kw"], label="风电 Wind (kW)", linewidth=1.5)
+    plt.plot(df["Time"], df["NetLoad_kw"], label="Net Load (kW)", linewidth=1.6, color="black")
+    # plt.axhline(0, linestyle="--", color="red", alpha=0.7)
+    plt.xlabel("Time")
+    plt.ylabel("Power (kW)")
+    plt.title("Load / PV / Wind / NetLoad(Net Load = Load - PV - Wind) Power Time Series")
+    plt.legend(loc="upper right")
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
 
 
 

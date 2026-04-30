@@ -110,17 +110,17 @@ class PlanConfigFast:
     soc_min_frac: float = 0.1
     soc_max_frac: float = 1.0
     # ---- 约束比例（默认值）----
-    self_use_ratio_min: float = 0.60    # PV_used / PV_gen
-    load_cover_ratio_min: float = 0.20  # PV_used / Load
+    self_use_ratio_min: float = 0.60    # PV_used / PV_gen, 新能源整体自用率 ≥ 60%
+    load_cover_ratio_min: float = 0.20  # PV_used / Load, 新能源覆盖负荷 ≥ 30%
     # ---- 约束口径 ----
     constraint_mode: str = "annual"     # "annual" or "monthly"
     monthly_all_must_meet: bool = True
     # ---------- PV 搜索 ----------
-    pv_step_coarse_kwp: float = 2000.0
+    pv_step_coarse_kwp: float = 2000.0  # PV 扫描步长（2MWp）
     pv_step_fine_kwp: float = 250.0
     pv_refine_window_kwp: float = 8000.0
     pv_min_kwp: float = 0.0
-    pv_max_kwp: Optional[float] = None
+    pv_max_kwp: Optional[float] = None  # None => 自动 = max(step, 3*peak_load)
     # ---------- 储能搜索 ----------
     enable_bess: bool = True
     batt_hi_init_kwh: float = 500.0
@@ -128,7 +128,7 @@ class PlanConfigFast:
     batt_bisect_iter: int = 26
     batt_tol_kwh: float = 1.0
     # ---------- 工程 ----------
-    use_numba: bool = True
+    use_numba: bool = True             # 有 numba 就会自动启用
 
 # ============================================================
 # 时间工具
@@ -183,12 +183,13 @@ def as_time_series(
 ) -> pd.Series:
     """
     将 Series 或 DataFrame 规范为 Series(index=DatetimeIndex)。
-    value_cols 按顺序尝试匹配列名；scale 用于单位换算（如 MW→kW 传 1000.0）。
+        - value_cols 按顺序尝试匹配列名；
+        - scale 用于单位换算（如 MW→kW 传 1000.0）。
     """
     if isinstance(x, pd.Series):
-        s = pd.to_numeric(x, errors="coerce").fillna(0.0)
+        s = pd.to_numeric(x, errors="coerce").fillna(0.0) * float(scale)
         s.index = pd.to_datetime(s.index)
-        return s * scale
+        return s
     elif isinstance(x, pd.DataFrame):
         df = x.copy()
         if time_col in df.columns:
@@ -204,7 +205,7 @@ def as_time_series(
                 s.index = t
                 return s * scale
         raise ValueError(f"未找到有效数值列，尝试过：{value_cols}")
-    elif not isinstance(x, pd.DataFrame):
+    else:
         raise TypeError("输入必须是 pd.Series 或 pd.DataFrame")
 
 
@@ -245,6 +246,31 @@ def normalize_time_and_load(
     t = t.iloc[order].reset_index(drop=True)
     load = load[order]
     return t, load, warn
+
+def ensure_time_sorted(df, time_col: str) -> pd.DataFrame:
+    """
+    统一处理：
+    - Series / DataFrame
+    - Time 在列 / Time 在 DatetimeIndex
+    返回：一定是 DataFrame，且 Time 在列
+    """
+    # ---------- 1. Series → DataFrame ----------
+    if isinstance(df, pd.Series):
+        name = df.name if df.name is not None else "value"
+        df = df.to_frame(name)
+
+    df = df.copy()
+    # ---------- 2. Time 在 index ----------
+    if time_col not in df.columns:
+        if isinstance(df.index, pd.DatetimeIndex):
+            df = df.reset_index()
+        else:
+            raise KeyError(f"找不到时间列 '{time_col}'，且 index 不是 DatetimeIndex")
+    # ---------- 3. 确保 Time 可解析 ----------
+    df[time_col] = pd.to_datetime(df[time_col])
+
+    return df.sort_values(time_col)
+
 
 # ============================================================
 # I/O

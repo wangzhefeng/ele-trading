@@ -12,7 +12,6 @@
 # ***************************************************
 
 # python libraries
-import os
 import sys
 from pathlib import Path
 ROOT = str(Path.cwd())
@@ -20,57 +19,30 @@ if ROOT not in sys.path:
     sys.path.append(ROOT)
 import warnings
 warnings.filterwarnings("ignore")
-from dataclasses import dataclass
-from typing import Optional, Dict, Any, Tuple, Union
+from typing import Optional, Dict, Any
 
 import numpy as np
 import pandas as pd
 from src.ba_eva.eva_PV_optim_version.storage_optim_common import (
-    BESSConfig
+    BESSConfig, 
+    ensure_time_sorted
 )
 
 
-def _ensure_time_sorted(df, time_col: str) -> pd.DataFrame:
-    """
-    统一处理：
-    - Series / DataFrame
-    - Time 在列 / Time 在 DatetimeIndex
-    返回：一定是 DataFrame，且 Time 在列
-    """
-    # ---------- 1. Series → DataFrame ----------
-    if isinstance(df, pd.Series):
-        name = df.name if df.name is not None else "value"
-        df = df.to_frame(name)
-
-    df = df.copy()
-    # ---------- 2. Time 在 index ----------
-    if time_col not in df.columns:
-        if isinstance(df.index, pd.DatetimeIndex):
-            df = df.reset_index()
-        else:
-            raise KeyError(f"找不到时间列 '{time_col}'，且 index 不是 DatetimeIndex")
-    # ---------- 3. 确保 Time 可解析 ----------
-    df[time_col] = pd.to_datetime(df[time_col])
-
-    return df.sort_values(time_col)
-
-
-def align_curves(
-    df_load: pd.DataFrame,
-    df_pv: pd.DataFrame,
-    df_wind: pd.DataFrame,
-    load_col: str,
-    pv_col: str,
-    wind_col: str,
-    time_col: str = "Time",
-) -> pd.DataFrame:
+def align_curves(df_load: pd.DataFrame,
+                 df_pv: pd.DataFrame,
+                 df_wind: pd.DataFrame,
+                 load_col: str,
+                 pv_col: str,
+                 wind_col: str,
+                 time_col: str = "Time") -> pd.DataFrame:
     """
     输出统一表：Time, load_kw, pv_kw, wind_kw, gen_kw
-    wind_col 输入为 MW 时会自动转 kW
+        - wind_col 输入为 MW 时会自动转 kW
     """
-    df_load = _ensure_time_sorted(df_load, time_col)
-    df_pv = _ensure_time_sorted(df_pv, time_col)
-    df_wind = _ensure_time_sorted(df_wind, time_col)
+    df_load = ensure_time_sorted(df_load, time_col)
+    df_pv = ensure_time_sorted(df_pv, time_col)
+    df_wind = ensure_time_sorted(df_wind, time_col)
 
     a = df_load[[time_col, load_col]].rename(columns={load_col: "load_kw"})
     b = df_pv[[time_col, pv_col]].rename(columns={pv_col: "pv_kw"})
@@ -82,25 +54,23 @@ def align_curves(
     df["load_kw"] = pd.to_numeric(df["load_kw"], errors="coerce").fillna(0.0)
     df["pv_kw"] = pd.to_numeric(df["pv_kw"], errors="coerce").fillna(0.0)
     df["wind_kw"] = pd.to_numeric(df["wind_mw"], errors="coerce").fillna(0.0) * 1000.0
-    df = df.drop(columns=["wind_mw"])
-
     df["gen_kw"] = df["pv_kw"] + df["wind_kw"]
+    df = df.drop(columns=["wind_mw"])
+        
     return df
 
 
-def energy_gate_check(
-    df_mix: pd.DataFrame,
-    freq: str = "15T",
-    target_ratio: float = 0.30
-) -> Dict[str, Any]:
+def energy_gate_check(df_mix: pd.DataFrame, freq: str = "15T", target_ratio: float = 0.30) -> Dict[str, Any]:
     """
     先判断：发电量(风+光) / 用电量 是否 >= target_ratio
     仅能量层面，不考虑弃电与储能。
     """
     dt_h = pd.to_timedelta(freq).total_seconds() / 3600.0
-
+    # 负荷电能量
     load_kwh = float(df_mix["load_kw"].sum() * dt_h)
+    # 发电电能量
     gen_kwh = float(df_mix["gen_kw"].sum() * dt_h)
+    # 发电量/负荷用电量
     ratio = 0.0 if load_kwh <= 0 else gen_kwh / load_kwh
 
     return {
@@ -111,11 +81,7 @@ def energy_gate_check(
     }
 
 
-def simulate_bess_for_coverage(
-    df_mix: pd.DataFrame,
-    bess_kwh: float,
-    cfg: BESSConfig,
-) -> Dict[str, Any]:
+def simulate_bess_for_coverage(df_mix: pd.DataFrame, bess_kwh: float, cfg: BESSConfig) -> Dict[str, Any]:
     """
     贪心调度：最大化可再生对负荷的供给。
     充电仅来自 surplus=gen-load（弃电候选）。
@@ -193,26 +159,29 @@ def simulate_bess_for_coverage(
     }
 
 
-def estimate_min_bess_capacity(
-    df_mix: pd.DataFrame,
-    cfg: BESSConfig,
-    target_cover_ratio: float = 0.30,
-    cap_high_kwh: Optional[float] = None,
-    max_iter: int = 28,
-) -> Dict[str, Any]:
+def estimate_min_bess_capacity(df_mix: pd.DataFrame,
+                               cfg: BESSConfig,
+                               target_cover_ratio: float = 0.30,
+                               cap_high_kwh: Optional[float] = None, 
+                               max_iter: int = 28) -> Dict[str, Any]:
     """
     二分搜索最小 BESS 容量，使 cover_ratio >= target_cover_ratio
     """
+    # 无需储能
     baseline = simulate_bess_for_coverage(df_mix, 0.0, cfg)
     if baseline["cover_ratio"] >= target_cover_ratio:
-        return {"status": "no_bess_needed", "baseline": baseline, "best": baseline}
+        return {
+            "status": "no_bess_needed", 
+            "baseline": baseline, 
+            "best": baseline
+        }
 
+    # TODO 补充注释
     if cap_high_kwh is None:
         surplus_kw = np.maximum(df_mix["gen_kw"].values - df_mix["load_kw"].values, 0.0)
         cap_high_kwh = max(1_000.0, float(np.max(surplus_kw)) * 6.0)
-
+    # 储能容量上下界
     lo, hi = 0.0, float(cap_high_kwh)
-
     # 扩边界直到可行
     res_hi = simulate_bess_for_coverage(df_mix, hi, cfg)
     expand = 0
@@ -222,7 +191,11 @@ def estimate_min_bess_capacity(
         expand += 1
 
     if res_hi["cover_ratio"] < target_cover_ratio:
-        return {"status": "not_reachable", "baseline": baseline, "try_hi": res_hi}
+        return {
+            "status": "not_reachable", 
+            "baseline": baseline, 
+            "try_hi": res_hi
+        }
 
     best = res_hi
     for _ in range(max_iter):
@@ -238,7 +211,11 @@ def estimate_min_bess_capacity(
         if (hi - lo) / max(hi, 1.0) < 0.01:
             break
 
-    return {"status": "ok", "baseline": baseline, "best": best}
+    return {
+        "status": "ok", 
+        "baseline": baseline, 
+        "best": best
+    }
 
 
 def evaluate_50wind_50pv_with_bess(df_2025: pd.DataFrame,
@@ -253,9 +230,7 @@ def evaluate_50wind_50pv_with_bess(df_2025: pd.DataFrame,
     """
     先能量门槛：gen/load >= 30% 才做储能评估
     """
-    if cfg is None:
-        cfg = BESSConfig(soc_min=0.0)
-
+    # 负荷、光电、风电、总发电
     df_mix = align_curves(
         df_load=df_2025,
         df_pv=pv_kw_50m,
@@ -265,9 +240,10 @@ def evaluate_50wind_50pv_with_bess(df_2025: pd.DataFrame,
         wind_col=wind_col,
         time_col=time_col,
     )
-
+    # 先判断：发电量(风+光) / 用电量 是否 >= target_ratio
     gate = energy_gate_check(df_mix, freq=cfg.freq, target_ratio=target_ratio)
-
+    
+    # 输出
     out = {
         "df_mix": df_mix,
         "gate": gate,
@@ -281,15 +257,15 @@ def evaluate_50wind_50pv_with_bess(df_2025: pd.DataFrame,
             f"低于目标{target_ratio:.2f}。在只允许用风光充电的前提下，储能无法把覆盖率提高到30%。"
         )
         return out
-
     # 门槛通过：再做储能评估（以实现“实际覆盖率>=30%”）
-    bess_res = estimate_min_bess_capacity(
-        df_mix=df_mix,
-        cfg=cfg,
-        target_cover_ratio=target_ratio,
-    )
-    out["bess_result"] = bess_res
-    return out
+    else:
+        bess_res = estimate_min_bess_capacity(
+            df_mix=df_mix,
+            cfg=cfg,
+            target_cover_ratio=target_ratio,
+        )
+        out["bess_result"] = bess_res
+        return out
 
 
 
@@ -335,9 +311,11 @@ def main():
     )
     print(pv_kw_50m)
     # ------------------------------
-    # 
+    # run
     # ------------------------------
+    # config
     cfg = BESSConfig(soc_min=0.0)
+    # evaluate
     res = evaluate_50wind_50pv_with_bess(
         df_2025=df_2025,
         pv_kw_50m=pv_kw_50m,
@@ -353,6 +331,7 @@ def main():
     print("年负荷(kWh):", res["gate"]["load_total_kwh"])
     print("年发电(kWh):", res["gate"]["gen_total_kwh"])
     print("发电/负荷比例:", res["gate"]["gen_ratio"])
+
     if res["status"] == "gate_passed":
         br = res["bess_result"]
         print("\n储能评估状态:", br["status"])
