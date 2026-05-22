@@ -20,12 +20,9 @@ class EsArbitraryRangeScheduler_withMaxDemand:
                  pv_sell_price: float = 0.319438,
                  smooth_penalty_weight: float = 1e-4,
                  discharge_priority_weight: float = 1e-6,
-                 noon_pv_to_battery_priority_weight: float = 10.0,
-                 noon_pv_to_load_priority_weight: float = 0.0,
-                 noon_pv_to_grid_priority_weight: float = 0.0,
-                 noon_grid_to_battery_penalty_weight: float = 0.0,
                  charge_target_penalty_weight: float = 10.0,
-                 discharge_target_penalty_weight: float = 10.0):
+                 discharge_target_penalty_weight: float = 10.0,
+                 noon_pv_to_grid_penalty_weight: float = 10.0):
         self.schedule_time_range = pd.to_datetime(schedule_time_range)
         self.schedule_time_length = len(self.schedule_time_range)
         self.demand_load = np.array(demand_load, dtype=float)
@@ -45,12 +42,9 @@ class EsArbitraryRangeScheduler_withMaxDemand:
         self.pv_sell_price = pv_sell_price
         self.smooth_penalty_weight = smooth_penalty_weight
         self.discharge_priority_weight = discharge_priority_weight
-        self.noon_pv_to_battery_priority_weight = noon_pv_to_battery_priority_weight
-        self.noon_pv_to_load_priority_weight = noon_pv_to_load_priority_weight
-        self.noon_pv_to_grid_priority_weight = noon_pv_to_grid_priority_weight
-        self.noon_grid_to_battery_penalty_weight = noon_grid_to_battery_penalty_weight
         self.charge_target_penalty_weight = charge_target_penalty_weight
         self.discharge_target_penalty_weight = discharge_target_penalty_weight
+        self.noon_pv_to_grid_penalty_weight = noon_pv_to_grid_penalty_weight
 
         if not (self.schedule_time_length == len(self.demand_load) == len(self.ele_prices) == len(self.pv_load)):
             raise ValueError("time, demand_load, ele_prices, and pv_load must have the same length")
@@ -295,31 +289,28 @@ class EsArbitraryRangeScheduler_withMaxDemand:
         else:
             priority_reward = 0.0
 
-        noon_charge_mask = np.array([
-            1.0 if 12 <= ts.hour < 14 else 0.0
-            for ts in self.schedule_time_range
-        ])
-        noon_pv_dispatch_reward = time_ratio * (
-            self.noon_pv_to_battery_priority_weight
-            * cp.sum(cp.multiply(noon_charge_mask, pv_to_battery))
-            + self.noon_pv_to_load_priority_weight
-            * cp.sum(cp.multiply(noon_charge_mask, pv_to_load))
-            + self.noon_pv_to_grid_priority_weight
-            * cp.sum(cp.multiply(noon_charge_mask, pv_to_grid))
-        )
-        noon_grid_charge_penalty = (
-            self.noon_grid_to_battery_penalty_weight
-            * time_ratio
-            * cp.sum(cp.multiply(noon_charge_mask, grid_to_battery))
-        )
+        if self.noon_pv_to_grid_penalty_weight > 0:
+            # v4 对比策略：中午谷时段优先让光伏被园区负荷或储能消纳。
+            # 这里不区分 pv_to_load 与 pv_to_battery 的先后，只对中午上网电量加高权重惩罚；
+            # 当负荷与储能都无法继续接收光伏时，剩余光伏仍可上网以保持模型可行。
+            noon_mask = np.array([
+                1.0 if 12 <= ts.hour < 14 else 0.0
+                for ts in self.schedule_time_range
+            ])
+            noon_pv_grid_penalty = (
+                self.noon_pv_to_grid_penalty_weight
+                * time_ratio
+                * cp.sum(cp.multiply(noon_mask, pv_to_grid))
+            )
+        else:
+            noon_pv_grid_penalty = 0.0
 
         obj = cp.Minimize(
             net_cost
             + smooth_penalty
             - priority_reward
             + soc_target_penalty
-            - noon_pv_dispatch_reward
-            + noon_grid_charge_penalty
+            + noon_pv_grid_penalty
         )
         # ------------------------------
         # 模型求解

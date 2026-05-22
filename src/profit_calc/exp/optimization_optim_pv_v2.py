@@ -123,7 +123,7 @@ if __name__ == '__main__':
     start_time = datetime(2025, 1, 1, 0, 0, 0)
     end_time = datetime(2026, 1, 1, 0, 0, 0)
     freq_minutes = 15
-    es_scale_list = list(range(0, 3750, 150))
+    es_scale_list = list(range(0, 150, 10)) + list(range(150, 3750, 150))
     node_name_list = ["route_B"]
     max_demand_price = 33.8
     
@@ -141,4 +141,4 @@ if __name__ == '__main__':
     for result_i in mp_result_list:
         es_scale = result_i[0]
         node_name = result_i[1]
-        result_i[2].to_csv(f"./data/{exp_name}/{node_name}/opt_result/es_scale_experiment_optim/schedule_result_scale_{es_scale}.csv")
+        result_i[2].to_csv(f"./data/{exp_name}/{node_name}/opt_result-v2.1/es_scale_experiment_optim/schedule_result_scale_{es_scale}.csv")

@@ -20,10 +20,12 @@ class EsArbitraryRangeScheduler_withMaxDemand:
                  pv_sell_price: float = 0.319438,
                  smooth_penalty_weight: float = 1e-4,
                  discharge_priority_weight: float = 1e-6,
-                 noon_pv_to_battery_priority_weight: float = 5.0,
+                 noon_pv_to_battery_priority_weight: float = 0.0,
                  noon_pv_to_load_priority_weight: float = 10.0,
                  noon_pv_to_grid_priority_weight: float = 0.0,
-                 noon_grid_to_battery_penalty_weight: float = 1.0):
+                 noon_grid_to_battery_penalty_weight: float = 0.0,
+                 charge_target_penalty_weight: float = 10.0,
+                 discharge_target_penalty_weight: float = 10.0):
         self.schedule_time_range = pd.to_datetime(schedule_time_range)
         self.schedule_time_length = len(self.schedule_time_range)
         self.demand_load = np.array(demand_load, dtype=float)
@@ -47,6 +49,8 @@ class EsArbitraryRangeScheduler_withMaxDemand:
         self.noon_pv_to_load_priority_weight = noon_pv_to_load_priority_weight
         self.noon_pv_to_grid_priority_weight = noon_pv_to_grid_priority_weight
         self.noon_grid_to_battery_penalty_weight = noon_grid_to_battery_penalty_weight
+        self.charge_target_penalty_weight = charge_target_penalty_weight
+        self.discharge_target_penalty_weight = discharge_target_penalty_weight
 
         if not (self.schedule_time_length == len(self.demand_load) == len(self.ele_prices) == len(self.pv_load)):
             raise ValueError("time, demand_load, ele_prices, and pv_load must have the same length")
@@ -107,6 +111,24 @@ class EsArbitraryRangeScheduler_withMaxDemand:
             ele_types,
         )
         return allowed
+
+    def _build_daily_soc_target_indices(self) -> tuple[list[int], list[int]]:
+        charge_target_indices = []
+        discharge_target_indices = []
+        indexed_times = pd.Series(range(self.schedule_time_length), index=self.schedule_time_range)
+
+        for _, day_indices in indexed_times.groupby(indexed_times.index.normalize()):
+            day_times = day_indices.index
+            for start_hour, end_hour in ((0, 6), (12, 14)):
+                mask = (day_times.hour >= start_hour) & (day_times.hour < end_hour)
+                if mask.any():
+                    charge_target_indices.append(int(day_indices.loc[mask].iloc[-1]))
+            for start_hour, end_hour in ((6, 12), (16, 24)):
+                mask = (day_times.hour >= start_hour) & (day_times.hour < end_hour)
+                if mask.any():
+                    discharge_target_indices.append(int(day_indices.loc[mask].iloc[-1]))
+
+        return charge_target_indices, discharge_target_indices
 
     @staticmethod
     def _solve_with_fallback(prob: cp.Problem):
@@ -173,8 +195,10 @@ class EsArbitraryRangeScheduler_withMaxDemand:
             battery_charge <= np.sum(self.es_charge_max_list),
             # 每台设备的放电功率上限。
             battery_discharge <= charge_max,
-            # 站内负荷叠加充电功率后，不能超过主变容量。
-            self.demand_load + battery_charge <= self.transform_capacity_list[0],
+            # 关口变压器购电方向容量限制；光伏自用和光伏充储不占用购电方向容量。
+            grid_import <= self.transform_capacity_list[0],
+            # 关口变压器上网反送方向容量限制。
+            pv_to_grid <= self.transform_capacity_list[0],
         ]
 
         for i in range(row):
@@ -222,6 +246,19 @@ class EsArbitraryRangeScheduler_withMaxDemand:
                     grid_to_battery[j] == 0,
                     battery_discharge_agg[j] == 0,
                 ]
+
+        charge_target_indices, discharge_target_indices = self._build_daily_soc_target_indices()
+        soc_target_penalty = 0.0
+        if self.charge_target_penalty_weight > 0 and charge_target_indices:
+            charge_shortfall = cp.Variable((row, len(charge_target_indices)), nonneg=True)
+            for k, target_idx in enumerate(charge_target_indices):
+                constraints.append(soc[:, target_idx] + charge_shortfall[:, k] >= soc_max[:, 0])
+            soc_target_penalty += self.charge_target_penalty_weight * cp.sum(charge_shortfall)
+        if self.discharge_target_penalty_weight > 0 and discharge_target_indices:
+            discharge_surplus = cp.Variable((row, len(discharge_target_indices)), nonneg=True)
+            for k, target_idx in enumerate(discharge_target_indices):
+                constraints.append(soc[:, target_idx] - discharge_surplus[:, k] <= soc_min[:, 0])
+            soc_target_penalty += self.discharge_target_penalty_weight * cp.sum(discharge_surplus)
         # ------------------------------
         # 目标函数
         # ------------------------------
@@ -280,6 +317,7 @@ class EsArbitraryRangeScheduler_withMaxDemand:
             net_cost
             + smooth_penalty
             - priority_reward
+            + soc_target_penalty
             - noon_pv_dispatch_reward
             + noon_grid_charge_penalty
         )
