@@ -178,6 +178,9 @@ src/ba_eva/dataset/output.json
 .claude/
 
 # custom
+.agents/
+.claude/
+.venv/
 data/
 results/
 src/demand_response/result/
