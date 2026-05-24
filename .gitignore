@@ -181,8 +181,10 @@ src/ba_eva/dataset/output.json
 .cache/
 .agents/
 .claude/
+.hermes/
 .venv/
 data/
+logs/
 results/
 src/demand_response/todo/result/
 .DS_Store

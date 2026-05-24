@@ -126,3 +126,35 @@
 ### TODO 016 — 工作区生成物清理与忽略规则
 
 - [ ] 当前工作区存在 `.DS_Store` 与 `logs/None/service*` 等生成物变更；需要确认这些文件是否应纳入版本管理，若不是，应补充 `.gitignore` 或日志目录策略，避免后续文档更新时混入无关噪音。
+
+## 2026-05-23
+
+### 状态对齐 017 — 聚焦 ele_trading 核心包后的全面对齐
+
+本次对齐范围限定在 `src/ele_trading/` 核心包及其关联的 app 入口、configs、data，不再关注 `src/demand_response/`、`src/es_rolling_schedule/`、`src/profit_calc/`、`src/wind_pv_es_calc/` 等独立子包。
+
+#### 已完成事项确认
+
+以下 TODO 项的代码已在仓库中实现，对照源码逐一确认：
+
+- [x] **TODO 003** — `two_stage_cvar.py` 已包含完整收益等式约束（`revenue_rule`）、SOC 动态递推（`soc_dynamics_rule`）、偏差约束（`deviation_rule`）、CVaR 线性化（`cvar_rule`，含 `1/(1-α)` 系数）。`app/run_two_stage_skeleton.py` 可用 glpk/cbc 求解。
+- [x] **TODO 004** — `sampler.py` 已升级为 LHS（`scipy.stats.qmc.LatinHypercube`）+ Cholesky 时序相关性，保留 `method='mc'`。`reduction.py` 已实现 Kantorovich L1 后向缩减（`scipy.spatial.distance.cdist`）。
+- [x] **TODO 005** — `mpc_storage.py` 已包含 `terminal_soc_fraction` 参数（默认 0.0 向后兼容），返回值含 `soc_terminal` 字段。
+- [x] **TODO 006** — `metrics.py` 已包含 `compute_extended_metrics()`，输出 sharpe、max_drawdown、efc_count、revenue_per_efc、rte、utilization。
+- [x] **TODO 007** — `settlement.py` 已包含 `compute_deviation_penalty()`（广东分层罚款）。`configs/market_guangdong.yaml` 已配置 96 时段/日、价格限幅。
+- [x] **TODO 014 部分** — 风光储链路已落地：`capacity_planning/` 含 SolarSimulator（pvlib）、WindSimulator（windpowerlib）、CapacityOptimizer、simulate_operation；`forecasting/` 含 SolarPowerForecaster（harmonic + physics）、WindPowerForecaster（statistical + physics）；`app/run_wind_solar_storage.py` 为一体化入口。
+
+#### tests 目录缺失
+
+`tests/` 目录在当前工作区不存在。历史记录中提到的 test_two_stage.py、test_scenario.py、test_mpc_storage.py、test_metrics.py、test_settlement.py 等测试文件均已丢失。这使得 TODO 008（测试覆盖）的全部子项、以及 TODO 010（雨流退化测试）均无法验证。
+
+#### 当前真实待办（精简）
+
+以下为对照代码后仍然未完成的真实残留项，重新编号以避免与历史 TODO 混淆：
+
+- [ ] **TODO-A 测试重建**（承接 TODO 008）：重建 `tests/` 目录，至少覆盖 storage_arbitrage、mpc_storage、two_stage、scenario、metrics、settlement、backtest 七个测试模块 + 5 个 app 入口脚本的冒烟测试。
+- [ ] **TODO-B 15 分钟颗粒度适配**（承接 TODO 009）：生成 96 点插值数据、确认 `dt=0.25` 参数在 storage_arbitrage 和 mpc_storage 中可正确工作。
+- [ ] **TODO-C 离线雨流退化**（承接 TODO 010）：在 `metrics.py` 新增 `compute_rainflow_degradation()`，在 `run_backtest.py` 并列输出。
+- [ ] **TODO-D 价格预测升级**（承接 TODO 011）：新增 `ARIMAForecaster`，添加 `statsmodels` 依赖。
+- [ ] **TODO-E 文档补齐**（承接 TODO 015）：`capacity_planning/README.md`、`tests/README.md`（待测试重建后编写）。
+- [ ] **TODO-F 生成物清理**（承接 TODO 016）：`.gitignore` 补充 `.DS_Store`、`logs/`、`__pycache__/`。
