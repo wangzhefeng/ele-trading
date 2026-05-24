@@ -466,7 +466,7 @@ class PriceBasedStorageMILP:
         if cfg.max_daily_cycles is not None:
             model += total_discharge_energy <= cfg.max_daily_cycles * cap_mwh * self.days
 
-        solver = pulp.PULP_CBC_CMD(msg=False)
+        solver = pulp.COIN_CMD(msg=False)
         model.solve(solver)
 
         status = pulp.LpStatus[model.status]
