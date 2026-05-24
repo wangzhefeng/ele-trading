@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from optimization_optim_dist_v3 import (
+from src.es_calc.es_calc_distribution_version.optimization_optim_dist_v3 import (
     CABINET_CAPACITY_KWH,
     CABINET_POWER_KW,
     CONSTRAINT_TOLERANCE_KW,

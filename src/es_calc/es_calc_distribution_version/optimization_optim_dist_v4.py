@@ -22,7 +22,7 @@ for _thread_env_name in (
 
 import pandas as pd
 
-from models.optimization.EsArbitraryRangeScheduler_withMaxDemand_optim_dist_v5 import (
+from src.es_calc.es_calc_distribution_version.optimization.EsArbitraryRangeScheduler_withMaxDemand_optim_dist_v4 import (
     EsArbitraryRangeScheduler_withMaxDemand,
 )
 
@@ -191,7 +191,7 @@ def is_combo_feasible(
     system_config: SystemConfig,
     min_cabinets_per_transformer: int = 0,
 ) -> bool:
-    """校验 v5 柜数组合：单变压器上下限 + 338/342 组内柜数相等。"""
+    """校验 v4 柜数组合：单变压器上下限 + 338/342 组内柜数相等。"""
     if len(cabinet_counts) != len(system_config.transformers):
         return False
     count_by_name = {
@@ -241,7 +241,7 @@ def capped_max_capacity_combo(
     min_cabinets_per_transformer: int = 0,
 ) -> tuple[int, ...]:
     """
-    v5 max_capacity 诊断模式使用各分组共同最大等柜数组合。
+    v4 max_capacity 诊断模式使用各分组共同最大等柜数组合。
     """
     for cfg in system_config.transformers:
         if cfg.max_cabinets < min_cabinets_per_transformer:
@@ -433,7 +433,7 @@ def candidate_neighbors(
     min_cabinets_per_transformer: int = 0,
 ) -> Iterable[tuple[int, ...]]:
     """
-    v5 坐标增量搜索的邻域：每次只给 338 或 342 分组同步增加 1 台柜。
+    v4 坐标增量搜索的邻域：每次只给 338 或 342 分组同步增加 1 台柜。
     """
     if not cabinet_counts:
         return
@@ -454,7 +454,7 @@ def full_grid_candidates(
     min_cabinets_per_transformer: int = 0,
 ) -> Iterable[tuple[int, ...]]:
     """
-    v5 全量组合枚举入口：枚举 338/342 分组内等柜、分组间独立的组合。
+    v4 全量组合枚举入口：枚举 338/342 分组内等柜、分组间独立的组合。
     """
     cfg_by_name = {cfg.name: cfg for cfg in system_config.transformers}
     group_ranges = []
@@ -860,7 +860,7 @@ def run_systems(
     selected_systems = ["park"] if system_name == "all" else [system_name]
     results = {}
     for name in selected_systems:
-        output_dir = opt_result_dir / f"es_scale_experiment_optim_dist_{name}-v5"
+        output_dir = opt_result_dir / f"es_scale_experiment_optim_dist_{name}-v4"
         results[name] = run_capacity_search(
             base_dir=base_dir,
             output_dir=output_dir,

@@ -7,14 +7,16 @@ from pathlib import Path
 
 import pandas as pd
 
-from optimization_optim_dist_v1 import (
+from src.es_calc.es_calc_distribution_version.optimization_optim_dist_v4 import (
     CABINET_CAPACITY_KWH,
     CABINET_POWER_KW,
     CONSTRAINT_TOLERANCE_KW,
     SYSTEMS,
     SystemConfig,
-    calculate_system_max_cabinets,
+    calculate_system_power_limit,
     combo_key,
+    group_cabinet_count,
+    group_equal_cabinet_violation_count,
 )
 
 
@@ -32,14 +34,18 @@ OUTPUT_COLUMN_CN = {
     "discharge_balance": "储能放电收益",
     "transformer_violation_count": "变压器容量违规次数",
     "system_power_limit_kw": "系统原始峰值负荷",
-    "system_max_cabinets": "系统最大允许柜数",
+    "equal_cabinets_required": "要求各变压器柜数相等",
+    "equal_cabinet_violation_count": "等柜数约束违规次数",
     "min_cabinets_per_transformer": "单变压器最小柜数",
     "min_required_total_cabinets": "系统最小必需柜数",
     "min_cabinet_violation_count": "最小柜数违规台数",
     "total_cabinets": "总储能柜数",
-    "system_cabinet_limit_violation": "系统柜数上限违规",
     "total_power_kw": "储能总功率",
     "total_capacity_kwh": "储能总电容量",
+    "cabinet_group_rule": "储能柜分组规则",
+    "338_group_cabinets": "338分组柜数",
+    "342_group_cabinets": "342分组柜数",
+    "group_equal_cabinet_violation_count": "分组等柜数违规次数",
 }
 
 
@@ -70,14 +76,18 @@ class SimulationResult:
     discharge_balance: float
     transformer_violation_count: int
     system_power_limit_kw: float
-    system_max_cabinets: int
+    equal_cabinets_required: bool
+    equal_cabinet_violation_count: int
     min_cabinets_per_transformer: int
     min_required_total_cabinets: int
     min_cabinet_violation_count: int
     total_cabinets: int
-    system_cabinet_limit_violation: int
     total_power_kw: float
     total_capacity_kwh: float
+    cabinet_group_rule: str
+    group_equal_cabinet_violation_count: int
+    group_338_cabinets: int
+    group_342_cabinets: int
 
 
 def monthly_max_cost(load: pd.Series, max_demand_price: float) -> float:
@@ -122,12 +132,13 @@ def load_base_data(
     start_time: datetime,
     end_time: datetime,
 ):
-    """读取系统仿真所需的局部负荷和电价，并校验时间轴。"""
+    """读取系统仿真所需的局部负荷、园区总负荷和电价，并校验时间轴。"""
 
     local_load_dfs = {
         cfg.name: load_timeseries(base_dir / cfg.load_file, start_time, end_time)
         for cfg in system_config.transformers
     }
+    park_load_df = load_timeseries(base_dir / system_config.park_load_file, start_time, end_time)
     ele_price_df = pd.read_csv(base_dir / "ele_price.csv")
     ele_price_df["time"] = pd.to_datetime(ele_price_df["time"])
     ele_price_df["value"] = pd.to_numeric(ele_price_df["value"], errors="raise")
@@ -138,11 +149,12 @@ def load_base_data(
     for name, frame in local_load_dfs.items():
         if not frame.index.equals(expected_index):
             raise ValueError(f"{name} load time index does not match the system index")
+    if not park_load_df.index.equals(expected_index):
+        raise ValueError(f"{system_config.park_load_file} time index does not match system load index")
     if not ele_price_df.index.equals(expected_index):
         raise ValueError("ele_price.csv time index does not match system load index")
 
-    system_load = pd.concat([frame["value"] for frame in local_load_dfs.values()], axis=1).sum(axis=1)
-    return system_load, local_load_dfs, ele_price_df
+    return park_load_df["value"], local_load_dfs, ele_price_df
 
 
 def simulate_schedule(
@@ -173,13 +185,14 @@ def simulate_schedule(
 
     cabinet_counts = parse_cabinet_counts_from_schedule(schedule_df.reset_index(), schedule_path)
     combo = combo_key(cabinet_counts, system_config.transformers)
-    system_power_limit_kw, system_max_cabinets = calculate_system_max_cabinets(system_load)
+    system_power_limit_kw = calculate_system_power_limit(system_load)
     total_cabinets = sum(cabinet_counts)
     min_required_total_cabinets = len(system_config.transformers) * min_cabinets_per_transformer
     min_cabinet_violation_count = sum(
         int(count < min_cabinets_per_transformer)
         for count in cabinet_counts
     )
+    group_violation_count = group_equal_cabinet_violation_count(cabinet_counts, system_config)
     transformer_violation_count = 0
     charge_energy = 0.0
     discharge_energy = 0.0
@@ -233,14 +246,18 @@ def simulate_schedule(
         discharge_balance=discharge_balance,
         transformer_violation_count=transformer_violation_count,
         system_power_limit_kw=system_power_limit_kw,
-        system_max_cabinets=system_max_cabinets,
+        equal_cabinets_required=True,
+        equal_cabinet_violation_count=group_violation_count,
         min_cabinets_per_transformer=min_cabinets_per_transformer,
         min_required_total_cabinets=min_required_total_cabinets,
         min_cabinet_violation_count=min_cabinet_violation_count,
         total_cabinets=total_cabinets,
-        system_cabinet_limit_violation=int(total_cabinets > system_max_cabinets),
         total_power_kw=total_cabinets * CABINET_POWER_KW,
         total_capacity_kwh=total_cabinets * CABINET_CAPACITY_KWH,
+        cabinet_group_rule="338_equal__342_equal",
+        group_equal_cabinet_violation_count=group_violation_count,
+        group_338_cabinets=group_cabinet_count(cabinet_counts, system_config, "338"),
+        group_342_cabinets=group_cabinet_count(cabinet_counts, system_config, "342"),
     )
 
 
@@ -288,10 +305,85 @@ def simulate_all(
             min_cabinets_per_transformer,
         )
         rows.append(result.__dict__)
-    result_df = pd.DataFrame(rows).sort_values("revenue", ascending=False)
+    result_df = pd.DataFrame(rows).rename(
+        columns={
+            "group_338_cabinets": "338_group_cabinets",
+            "group_342_cabinets": "342_group_cabinets",
+        }
+    ).sort_values("revenue", ascending=False)
     output_df = with_chinese_output_columns(result_df)
     output_df.to_csv(strategy_path / "simulation_summary.csv", index=False, encoding="utf-8-sig")
     return result_df
+
+
+def _combo_keys_from_strategy(strategy_path: Path) -> list[str]:
+    """按优化 summary 顺序读取 combo；无 summary 时回退扫描 schedule 文件。"""
+
+    summary_path = strategy_path / "capacity_search_summary.csv"
+    if summary_path.exists():
+        summary_df = pd.read_csv(summary_path)
+        combo_col = _find_summary_column(summary_df, "combo_key")
+        if combo_col is None:
+            raise ValueError(f"{summary_path} must contain combo_key")
+        return summary_df[combo_col].astype(str).tolist()
+
+    prefix = "schedule_result_combo_"
+    combo_keys = []
+    for schedule_file in sorted(strategy_path.glob(f"{prefix}*.csv")):
+        combo_keys.append(schedule_file.stem[len(prefix):])
+    if not combo_keys:
+        raise FileNotFoundError(f"no schedule_result_combo_*.csv files found in {strategy_path}")
+    return combo_keys
+
+
+def _default_plot_windows(month: str = "06") -> list[tuple[str, str]]:
+    return [
+        (f"2025-{month}-01 00:00:00", f"2025-{month}-05 23:45:00"),
+        (f"2025-{month}-06 00:00:00", f"2025-{month}-10 23:45:00"),
+        (f"2025-{month}-11 00:00:00", f"2025-{month}-15 23:45:00"),
+        (f"2025-{month}-16 00:00:00", f"2025-{month}-20 23:45:00"),
+        (f"2025-{month}-21 00:00:00", f"2025-{month}-25 23:45:00"),
+        (f"2025-{month}-26 00:00:00", f"2025-{month}-30 23:45:00"),
+    ]
+
+
+def run_simulation_and_plots(
+    base_dir: Path,
+    system_name: str,
+    max_demand_price: float,
+    start_time: datetime,
+    end_time: datetime,
+    min_cabinets_per_transformer: int,
+) -> dict[str, pd.DataFrame]:
+    selected_systems = ["park"] if system_name == "all" else [system_name]
+    results = {}
+    for name in selected_systems:
+        strategy_dir = f"es_scale_experiment_optim_dist_{name}-v4"
+        strategy_path = base_dir / "opt_result" / strategy_dir
+        summary = simulate_all(
+            base_dir=base_dir,
+            strategy_dir=strategy_dir,
+            system_config=SYSTEMS[name],
+            max_demand_price=max_demand_price,
+            start_time=start_time,
+            end_time=end_time,
+            min_cabinets_per_transformer=min_cabinets_per_transformer,
+        )
+        results[name] = summary
+        print(f"system={name}")
+        print(summary.head(10).to_string(index=False))
+
+        combo_keys = _combo_keys_from_strategy(strategy_path)
+        for combo_key in combo_keys:
+            for plot_s_time, plot_e_time in _default_plot_windows("06"):
+                plot_strategy_power_detail(
+                    system_name=name,
+                    combo_key_value=combo_key,
+                    strategy_dir=strategy_dir,
+                    start_time=plot_s_time,
+                    end_time=plot_e_time,
+                )
+    return results
 
 
 def _select_combo_key(strategy_path: Path, combo_key_value: str | None) -> str:
@@ -408,7 +500,7 @@ def plot_strategy_power_detail(
     show: bool = False,
     result_name: str = "opt_result",
 ):
-    """绘制 dist 模型的系统负荷、储能出力、电价背景和月最大需量线。"""
+    """绘制 dist v4 模型的园区负荷、储能出力、电价背景和月最大需量线。"""
 
     import matplotlib.pyplot as plt
     from simulation_pv import add_price_type_background, configure_matplotlib_chinese_font
@@ -419,7 +511,7 @@ def plot_strategy_power_detail(
 
     system_config = SYSTEMS[system_name]
     base_dir = Path("data") / exp_name / node_name
-    strategy_name = strategy_dir or f"es_scale_experiment_optim_dist_{system_name}"
+    strategy_name = strategy_dir or f"es_scale_experiment_optim_dist_{system_name}-v4"
     strategy_path = base_dir / result_name / strategy_name
     selected_combo_key = _select_combo_key(strategy_path, combo_key_value)
     schedule_path = strategy_path / f"schedule_result_combo_{selected_combo_key}.csv"
@@ -473,7 +565,7 @@ def plot_strategy_power_detail(
     ax_power = axes[0]
     label_suffix = f"Date {date}" if date is not None else f"{schedule_df.index.min()} ~ {schedule_df.index.max()}"
     fig.suptitle(
-        f"{exp_name}/{node_name}/{system_name} - dist strategy {selected_combo_key} - {label_suffix}",
+        f"{exp_name}/{node_name}/{system_name} - dist v4 strategy {selected_combo_key} - {label_suffix}",
         fontsize=14,
     )
     price_background_handles = add_price_type_background(ax_power, ele_price_df)
@@ -520,16 +612,7 @@ def plot_strategy_power_detail(
     cross_storage_in_lines = []
     cross_storage_out_lines = []
     transformer_after_storage_lines = []
-    color_cycle = ["#166534", "#7C3AED", "#0E7490", "#EA580C", "#DB2777"]
-    subplot_colors = {
-        "load": "#111827",
-        "grid_buy": "#2563EB",
-        "cross_in": "#F97316",
-        "cross_out": "#DB2777",
-        "after_storage": "#16A34A",
-        "storage": "#7C3AED",
-        "soc": "#475569",
-    }
+    color_cycle = ["#166534", "#581C87", "#0E7490", "#92400E", "#9D174D"]
     for idx, cfg in enumerate(system_config.transformers):
         color = color_cycle[idx % len(color_cycle)]
         local_load_lines.append(
@@ -627,9 +710,9 @@ def plot_strategy_power_detail(
             local_load_dfs[cfg.name].index,
             local_load_dfs[cfg.name]["value"],
             label=f"load_{cfg.name}(kW)",
-            color=subplot_colors["load"],
-            linewidth=2.0,
-            alpha=0.88,
+            color=color,
+            linewidth=1.9,
+            alpha=0.9,
             zorder=4,
         )
         grid_buy_lines.append(
@@ -637,7 +720,7 @@ def plot_strategy_power_detail(
                 schedule_df.index,
                 grid_buy,
                 label=f"grid_buy_{cfg.name}(kW)",
-                color=subplot_colors["grid_buy"],
+                color="#1D4ED8",
                 linewidth=1.5,
                 alpha=0.85,
                 zorder=4,
@@ -648,7 +731,7 @@ def plot_strategy_power_detail(
                 schedule_df.index,
                 cross_storage_in,
                 label=f"cross_storage_in_{cfg.name}(kW)",
-                color=subplot_colors["cross_in"],
+                color="#B45309",
                 linewidth=1.5,
                 linestyle="-.",
                 alpha=0.85,
@@ -660,7 +743,7 @@ def plot_strategy_power_detail(
                 schedule_df.index,
                 cross_storage_out,
                 label=f"cross_storage_out_{cfg.name}(kW)",
-                color=subplot_colors["cross_out"],
+                color="#A21CAF",
                 linewidth=1.5,
                 linestyle=":",
                 alpha=0.85,
@@ -672,9 +755,9 @@ def plot_strategy_power_detail(
                 schedule_df.index,
                 transformer_after_storage,
                 label=f"transformer_power_after_storage_{cfg.name}(kW)",
-                color=subplot_colors["after_storage"],
-                linewidth=1.9,
-                alpha=0.9,
+                color="#0F766E",
+                linewidth=1.8,
+                alpha=0.85,
                 zorder=4,
             )[0]
         )
@@ -682,7 +765,7 @@ def plot_strategy_power_detail(
             schedule_df.index,
             schedule_df[f"power_{cfg.name}"],
             label=f"storage_power_{cfg.name}(kW)",
-            color=subplot_colors["storage"],
+            color=color,
             linewidth=1.5,
             linestyle="--",
             alpha=0.8,
@@ -692,7 +775,7 @@ def plot_strategy_power_detail(
             soc_df.index,
             soc_df[f"soc_{cfg.name}"],
             label=f"soc_{cfg.name}(kWh)",
-            color=subplot_colors["soc"],
+            color="#64748B",
             linewidth=1.4,
             alpha=0.85,
             zorder=3,
@@ -723,14 +806,14 @@ def plot_strategy_power_detail(
         (
             "变压器侧",
             [*grid_buy_lines, *cross_storage_in_lines, *cross_storage_out_lines, *transformer_after_storage_lines],
-            (0.50, 0.078),
+            (0.28, 0.095),
             6,
         ),
-        ("系统负荷", [system_load_line, *local_load_lines], (0.12, 0.010), 4),
-        ("优化结果", [grid_import_line, power_total_line, *storage_power_lines], (0.36, 0.010), 5),
-        ("月最大需量", [line for line in monthly_handles if line.get_label() != "_nolegend_"], (0.59, 0.010), 2),
-        ("电池 SOC", [soc_total_line], (0.72, 0.010), 1),
-        ("电价", price_background_handles, (0.86, 0.010), 4),
+        ("优化结果", [grid_import_line, power_total_line, *storage_power_lines], (0.62, 0.095), 5),
+        ("系统负荷", [system_load_line, *local_load_lines], (0.14, 0.025), 4),
+        ("月最大需量", [line for line in monthly_handles if line.get_label() != "_nolegend_"], (0.36, 0.025), 2),
+        ("电池 SOC", [soc_total_line], (0.52, 0.025), 1),
+        ("电价", price_background_handles, (0.72, 0.025), 4),
     ]
     for legend_title, handles, anchor, ncol in legend_groups:
         if not handles:
@@ -753,7 +836,7 @@ def plot_strategy_power_detail(
     for ax in axes:
         ax.tick_params(axis="x", labelrotation=0)
     axes[-1].set_xlabel("Time")
-    fig.tight_layout(rect=(0, 0.150, 0.98, 0.95))
+    fig.tight_layout(rect=(0, 0.165, 0.98, 0.95))
 
     if date is not None:
         range_label = _safe_plot_filename(date if isinstance(date, str) else "_".join(str(i) for i in date))
@@ -771,8 +854,8 @@ def plot_strategy_power_detail(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Simulate distributed ESS schedules for 338/342 systems.")
-    parser.add_argument("--system", choices=["338", "342", "all"], default="338")
+    parser = argparse.ArgumentParser(description="Simulate distributed ESS schedules for the park bus.")
+    parser.add_argument("--system", choices=["park", "all"], default="park")
     parser.add_argument(
         "--min-cabinets-per-transformer",
         type=int,
@@ -787,23 +870,15 @@ if __name__ == "__main__":
     exp_name = "hongtaiyang"
     node_name = "route_A"
     print("start!", exp_name, node_name, args.system)
-
     save_range_start = datetime(2025, 1, 1, 0, 0, 0)
     save_range_end = datetime(2026, 1, 1, 0, 0, 0)
     max_demand_price = 33.8
     base_dir = Path("data") / exp_name / node_name
-
-    selected_systems = list(SYSTEMS) if args.system == "all" else [args.system]
-    for system_name in selected_systems:
-        strategy_dir = f"es_scale_experiment_optim_dist_{system_name}"
-        summary = simulate_all(
-            base_dir=base_dir,
-            strategy_dir=strategy_dir,
-            system_config=SYSTEMS[system_name],
-            max_demand_price=max_demand_price,
-            start_time=save_range_start,
-            end_time=save_range_end,
-            min_cabinets_per_transformer=args.min_cabinets_per_transformer,
-        )
-        print(f"system={system_name}")
-        print(summary.head(10).to_string(index=False))
+    run_simulation_and_plots(
+        base_dir=base_dir,
+        system_name=args.system,
+        max_demand_price=max_demand_price,
+        start_time=save_range_start,
+        end_time=save_range_end,
+        min_cabinets_per_transformer=args.min_cabinets_per_transformer,
+    )

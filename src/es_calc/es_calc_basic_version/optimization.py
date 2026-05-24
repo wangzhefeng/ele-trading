@@ -1,24 +1,15 @@
-import sys
-from pathlib import Path
-ROOT = str(Path.cwd())
-if ROOT not in sys.path:
-    sys.path.append(ROOT)
 import copy
 from datetime import datetime
 import multiprocessing as mp
 
 import pandas as pd
-import matplotlib.pyplot as plt
 
-from models.optimization.EsArbitraryRangeScheduler_withMaxDemand_basic import EsArbitraryRangeScheduler_withMaxDemand
+from src.es_calc.es_calc_basic_version.optimization.EsArbitraryRangeScheduler_withMaxDemand_basic import EsArbitraryRangeScheduler_withMaxDemand
 from utils.time_process import (
     generate_hourly_datetime_pairs, 
     get_month_range, 
     generate_day_pairs
 )
-
-plt.rcParams['font.sans-serif']=['SimHei']    # 用来正常显示中文标签
-plt.rcParams['axes.unicode_minus'] = False    # 用来显示负号
 
 
 def flat_valley_price_diff(ele_price_df):

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from optimization_optim_dist_v4 import (
+from src.es_calc.es_calc_distribution_version.optimization_optim_dist_v5 import (
     CABINET_CAPACITY_KWH,
     CABINET_POWER_KW,
     CONSTRAINT_TOLERANCE_KW,
@@ -358,7 +358,7 @@ def run_simulation_and_plots(
     selected_systems = ["park"] if system_name == "all" else [system_name]
     results = {}
     for name in selected_systems:
-        strategy_dir = f"es_scale_experiment_optim_dist_{name}-v4"
+        strategy_dir = f"es_scale_experiment_optim_dist_{name}-v5"
         strategy_path = base_dir / "opt_result" / strategy_dir
         summary = simulate_all(
             base_dir=base_dir,
@@ -500,7 +500,7 @@ def plot_strategy_power_detail(
     show: bool = False,
     result_name: str = "opt_result",
 ):
-    """绘制 dist v4 模型的园区负荷、储能出力、电价背景和月最大需量线。"""
+    """绘制 dist v5 规则模型的园区负荷、储能出力、电价背景和月最大需量线。"""
 
     import matplotlib.pyplot as plt
     from simulation_pv import add_price_type_background, configure_matplotlib_chinese_font
@@ -511,7 +511,7 @@ def plot_strategy_power_detail(
 
     system_config = SYSTEMS[system_name]
     base_dir = Path("data") / exp_name / node_name
-    strategy_name = strategy_dir or f"es_scale_experiment_optim_dist_{system_name}-v4"
+    strategy_name = strategy_dir or f"es_scale_experiment_optim_dist_{system_name}-v5"
     strategy_path = base_dir / result_name / strategy_name
     selected_combo_key = _select_combo_key(strategy_path, combo_key_value)
     schedule_path = strategy_path / f"schedule_result_combo_{selected_combo_key}.csv"
@@ -565,7 +565,7 @@ def plot_strategy_power_detail(
     ax_power = axes[0]
     label_suffix = f"Date {date}" if date is not None else f"{schedule_df.index.min()} ~ {schedule_df.index.max()}"
     fig.suptitle(
-        f"{exp_name}/{node_name}/{system_name} - dist v4 strategy {selected_combo_key} - {label_suffix}",
+        f"{exp_name}/{node_name}/{system_name} - dist v5 strategy {selected_combo_key} - {label_suffix}",
         fontsize=14,
     )
     price_background_handles = add_price_type_background(ax_power, ele_price_df)

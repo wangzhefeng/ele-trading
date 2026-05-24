@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from itertools import product
 import os
 from dataclasses import dataclass
 from datetime import datetime
@@ -21,7 +22,7 @@ for _thread_env_name in (
 
 import pandas as pd
 
-from models.optimization.EsArbitraryRangeScheduler_withMaxDemand_optim_dist_v2 import (
+from src.es_calc.es_calc_distribution_version.optimization.EsArbitraryRangeScheduler_withMaxDemand_optim_dist_v5 import (
     EsArbitraryRangeScheduler_withMaxDemand,
 )
 
@@ -47,6 +48,8 @@ class SystemConfig:
     """
     name: str
     transformers: tuple[TransformerConfig, ...]
+    cabinet_groups: tuple[tuple[str, ...], ...] = ()
+    park_load_file: str = "demand_load.csv"
 
 
 # 单柜规格固定为 150kW/300kWh；搜索时只枚举柜数，避免出现不可落地的任意容量。
@@ -63,19 +66,18 @@ TRANSFORMERS = [
 ]
 TRANSFORMER_BY_NAME = {cfg.name: cfg for cfg in TRANSFORMERS}
 SYSTEMS = {
-    "338": SystemConfig(
-        "338",
+    "park": SystemConfig(
+        "park",
         (
             TRANSFORMER_BY_NAME["338_1"],
             TRANSFORMER_BY_NAME["338_2"],
             TRANSFORMER_BY_NAME["338_3"],
-        ),
-    ),
-    "342": SystemConfig(
-        "342",
-        (
             TRANSFORMER_BY_NAME["342_1"],
             TRANSFORMER_BY_NAME["342_2"],
+        ),
+        (
+            ("338_1", "338_2", "338_3"),
+            ("342_1", "342_2"),
         ),
     ),
 }
@@ -127,12 +129,13 @@ def load_inputs(
     end_time: datetime,
     system_config: SystemConfig,
 ):
-    """读取系统内局部变压器负荷和电价，并强制校验时间轴一致。"""
+    """读取局部变压器负荷、园区总负荷和电价，并强制校验时间轴一致。"""
 
     local_loads = {
         cfg.name: load_series(base_dir / cfg.load_file, start_time, end_time)
         for cfg in system_config.transformers
     }
+    park_load = load_series(base_dir / system_config.park_load_file, start_time, end_time)
     ele_price = pd.read_csv(base_dir / "ele_price.csv")
     ele_price["time"] = pd.to_datetime(ele_price["time"])
     ele_price["value"] = pd.to_numeric(ele_price["value"], errors="raise")
@@ -143,13 +146,14 @@ def load_inputs(
     for name, series in local_loads.items():
         if not series.index.equals(expected_index):
             raise ValueError(f"{name} load time index does not match the system index")
+    if not park_load.index.equals(expected_index):
+        raise ValueError(f"{system_config.park_load_file} time index does not match the system index")
     if not ele_price.index.equals(expected_index):
         raise ValueError("ele_price.csv time index does not match system load index")
     if expected_index.to_series().diff().dropna().nunique() != 1:
         raise ValueError("demand time index must have a constant frequency")
 
-    system_load = pd.concat(local_loads.values(), axis=1).sum(axis=1)
-    return system_load, local_loads, ele_price
+    return park_load, local_loads, ele_price
 
 
 def build_devices_info(
@@ -187,11 +191,16 @@ def is_combo_feasible(
     system_config: SystemConfig,
     min_cabinets_per_transformer: int = 0,
 ) -> bool:
-    """校验 v2 柜数组合：单变压器上下限 + 系统内柜数相等。"""
+    """校验 v5 柜数组合：单变压器上下限 + 338/342 组内柜数相等。"""
     if len(cabinet_counts) != len(system_config.transformers):
         return False
-    if len(set(cabinet_counts)) != 1:
-        return False
+    count_by_name = {
+        cfg.name: cabinet_counts[idx]
+        for idx, cfg in enumerate(system_config.transformers)
+    }
+    for group in cabinet_groups(system_config):
+        if len({count_by_name[name] for name in group}) != 1:
+            return False
     return all(
         min_cabinets_per_transformer <= count <= cfg.max_cabinets
         for count, cfg in zip(cabinet_counts, system_config.transformers)
@@ -203,12 +212,36 @@ def min_required_total_cabinets(system_config: SystemConfig, min_cabinets_per_tr
     return len(system_config.transformers) * min_cabinets_per_transformer
 
 
+def cabinet_groups(system_config: SystemConfig) -> tuple[tuple[str, ...], ...]:
+    if system_config.cabinet_groups:
+        return system_config.cabinet_groups
+    groups: dict[str, list[str]] = {}
+    for cfg in system_config.transformers:
+        groups.setdefault(cfg.name.split("_", 1)[0], []).append(cfg.name)
+    return tuple(tuple(names) for names in groups.values())
+
+
+def cabinet_count_by_name(cabinet_counts: tuple[int, ...], system_config: SystemConfig) -> dict[str, int]:
+    return {cfg.name: cabinet_counts[idx] for idx, cfg in enumerate(system_config.transformers)}
+
+
+def group_equal_cabinet_violation_count(cabinet_counts: tuple[int, ...], system_config: SystemConfig) -> int:
+    counts = cabinet_count_by_name(cabinet_counts, system_config)
+    return sum(int(len({counts[name] for name in group}) != 1) for group in cabinet_groups(system_config))
+
+
+def group_cabinet_count(cabinet_counts: tuple[int, ...], system_config: SystemConfig, group_prefix: str) -> int:
+    counts = cabinet_count_by_name(cabinet_counts, system_config)
+    group = next(group for group in cabinet_groups(system_config) if group[0].startswith(group_prefix))
+    return counts[group[0]]
+
+
 def capped_max_capacity_combo(
     system_config: SystemConfig,
     min_cabinets_per_transformer: int = 0,
 ) -> tuple[int, ...]:
     """
-    v2 max_capacity 诊断模式使用共同最大等柜数组合。
+    v5 max_capacity 诊断模式使用各分组共同最大等柜数组合。
     """
     for cfg in system_config.transformers:
         if cfg.max_cabinets < min_cabinets_per_transformer:
@@ -216,8 +249,13 @@ def capped_max_capacity_combo(
                 f"transformer={cfg.name} max_cabinets={cfg.max_cabinets} "
                 f"is less than min_cabinets_per_transformer={min_cabinets_per_transformer}"
             )
-    common_max = min(cfg.max_cabinets for cfg in system_config.transformers)
-    return tuple(common_max for _ in system_config.transformers)
+    counts = {}
+    cfg_by_name = {cfg.name: cfg for cfg in system_config.transformers}
+    for group in cabinet_groups(system_config):
+        common_max = min(cfg_by_name[name].max_cabinets for name in group)
+        for name in group:
+            counts[name] = common_max
+    return tuple(counts[cfg.name] for cfg in system_config.transformers)
 
 
 def zero_schedule(index: pd.DatetimeIndex, system_config: SystemConfig, cabinet_counts: tuple[int, ...]) -> pd.DataFrame:
@@ -366,7 +404,11 @@ def evaluate_schedule(
         "transformer_violation_count": transformer_violation_count,
         "system_power_limit_kw": system_power_limit_kw,
         "equal_cabinets_required": True,
-        "equal_cabinet_violation_count": int(len(set(cabinet_counts)) != 1),
+        "equal_cabinet_violation_count": group_equal_cabinet_violation_count(cabinet_counts, system_config),
+        "cabinet_group_rule": "338_equal__342_equal",
+        "338_group_cabinets": group_cabinet_count(cabinet_counts, system_config, "338"),
+        "342_group_cabinets": group_cabinet_count(cabinet_counts, system_config, "342"),
+        "group_equal_cabinet_violation_count": group_equal_cabinet_violation_count(cabinet_counts, system_config),
         "min_cabinets_per_transformer": min_cabinets_per_transformer,
         "min_required_total_cabinets": min_required_total_cabinets(system_config, min_cabinets_per_transformer),
         "min_cabinet_violation_count": sum(
@@ -391,18 +433,19 @@ def candidate_neighbors(
     min_cabinets_per_transformer: int = 0,
 ) -> Iterable[tuple[int, ...]]:
     """
-    v2 坐标增量搜索的邻域：每次给系统内所有变压器同步增加 1 台柜。
+    v5 坐标增量搜索的邻域：每次只给 338 或 342 分组同步增加 1 台柜。
     """
     if not cabinet_counts:
         return
-    next_count = cabinet_counts[0] + 1
-    candidate_tuple = tuple(next_count for _ in system_config.transformers)
-    if is_combo_feasible(
-        candidate_tuple,
-        system_config,
-        min_cabinets_per_transformer,
-    ):
-        yield candidate_tuple
+    index_by_name = {cfg.name: idx for idx, cfg in enumerate(system_config.transformers)}
+    for group in cabinet_groups(system_config):
+        candidate = list(cabinet_counts)
+        next_count = cabinet_counts[index_by_name[group[0]]] + 1
+        for name in group:
+            candidate[index_by_name[name]] = next_count
+        candidate_tuple = tuple(candidate)
+        if is_combo_feasible(candidate_tuple, system_config, min_cabinets_per_transformer):
+            yield candidate_tuple
 
 
 def full_grid_candidates(
@@ -411,13 +454,21 @@ def full_grid_candidates(
     min_cabinets_per_transformer: int = 0,
 ) -> Iterable[tuple[int, ...]]:
     """
-    v2 全量组合枚举入口：只枚举系统内各变压器柜数相等的组合。
+    v5 全量组合枚举入口：枚举 338/342 分组内等柜、分组间独立的组合。
     """
-    common_max = min(cfg.max_cabinets for cfg in system_config.transformers)
-    if max_cabinets_override is not None:
-        common_max = min(common_max, max_cabinets_override)
-    for count in range(min_cabinets_per_transformer, common_max + 1):
-        yield tuple(count for _ in system_config.transformers)
+    cfg_by_name = {cfg.name: cfg for cfg in system_config.transformers}
+    group_ranges = []
+    for group in cabinet_groups(system_config):
+        common_max = min(cfg_by_name[name].max_cabinets for name in group)
+        if max_cabinets_override is not None:
+            common_max = min(common_max, max_cabinets_override)
+        group_ranges.append(range(min_cabinets_per_transformer, common_max + 1))
+    for group_counts in product(*group_ranges):
+        count_by_name = {}
+        for group, count in zip(cabinet_groups(system_config), group_counts):
+            for name in group:
+                count_by_name[name] = count
+        yield tuple(count_by_name[cfg.name] for cfg in system_config.transformers)
 
 
 def write_schedule(output_dir: Path,
@@ -806,10 +857,10 @@ def run_systems(
     charge_target_penalty_weight: float = 0.0,
     discharge_target_penalty_weight: float = 0.0,
 ) -> dict[str, pd.DataFrame]:
-    selected_systems = list(SYSTEMS) if system_name == "all" else [system_name]
+    selected_systems = ["park"] if system_name == "all" else [system_name]
     results = {}
     for name in selected_systems:
-        output_dir = opt_result_dir / f"es_scale_experiment_optim_dist_{name}-v2"
+        output_dir = opt_result_dir / f"es_scale_experiment_optim_dist_{name}-v5"
         results[name] = run_capacity_search(
             base_dir=base_dir,
             output_dir=output_dir,
@@ -831,8 +882,8 @@ def run_systems(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Distributed ESS optimization for 338/342 systems.")
-    parser.add_argument("--system", choices=["338", "342", "all"], default="342")
+    parser = argparse.ArgumentParser(description="Distributed ESS optimization for the park bus.")
+    parser.add_argument("--system", choices=["park", "all"], default="park")
     parser.add_argument("--search-mode", choices=["max_capacity", "coordinate", "full_grid"], default="full_grid")
     parser.add_argument("--workers", type=int, default=8, help="Number of worker processes for full_grid search.")
     parser.add_argument(

@@ -3,7 +3,7 @@ import multiprocessing as mp
 import copy
 from datetime import datetime
 
-from models.optimization.EsArbitraryRangeScheduler_withMaxDemand_optim_pv_v4 import (
+from src.pv_es_calc.optimization.EsArbitraryRangeScheduler_withMaxDemand_optim_pv_v4 import (
     EsArbitraryRangeScheduler_withMaxDemand
 )
 

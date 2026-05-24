@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from itertools import product
+import itertools
 import os
 from dataclasses import dataclass
 from datetime import datetime
@@ -22,7 +22,7 @@ for _thread_env_name in (
 
 import pandas as pd
 
-from models.optimization.EsArbitraryRangeScheduler_withMaxDemand_optim_dist_v3 import (
+from src.es_calc.es_calc_distribution_version.optimization.EsArbitraryRangeScheduler_withMaxDemand_optim_dist_v1 import (
     EsArbitraryRangeScheduler_withMaxDemand,
 )
 
@@ -48,8 +48,6 @@ class SystemConfig:
     """
     name: str
     transformers: tuple[TransformerConfig, ...]
-    cabinet_groups: tuple[tuple[str, ...], ...] = ()
-    park_load_file: str = "demand_load.csv"
 
 
 # 单柜规格固定为 150kW/300kWh；搜索时只枚举柜数，避免出现不可落地的任意容量。
@@ -66,18 +64,19 @@ TRANSFORMERS = [
 ]
 TRANSFORMER_BY_NAME = {cfg.name: cfg for cfg in TRANSFORMERS}
 SYSTEMS = {
-    "park": SystemConfig(
-        "park",
+    "338": SystemConfig(
+        "338",
         (
             TRANSFORMER_BY_NAME["338_1"],
             TRANSFORMER_BY_NAME["338_2"],
             TRANSFORMER_BY_NAME["338_3"],
+        ),
+    ),
+    "342": SystemConfig(
+        "342",
+        (
             TRANSFORMER_BY_NAME["342_1"],
             TRANSFORMER_BY_NAME["342_2"],
-        ),
-        (
-            ("338_1", "338_2", "338_3"),
-            ("342_1", "342_2"),
         ),
     ),
 }
@@ -129,13 +128,12 @@ def load_inputs(
     end_time: datetime,
     system_config: SystemConfig,
 ):
-    """读取局部变压器负荷、园区总负荷和电价，并强制校验时间轴一致。"""
+    """读取系统内局部变压器负荷和电价，并强制校验时间轴一致。"""
 
     local_loads = {
         cfg.name: load_series(base_dir / cfg.load_file, start_time, end_time)
         for cfg in system_config.transformers
     }
-    park_load = load_series(base_dir / system_config.park_load_file, start_time, end_time)
     ele_price = pd.read_csv(base_dir / "ele_price.csv")
     ele_price["time"] = pd.to_datetime(ele_price["time"])
     ele_price["value"] = pd.to_numeric(ele_price["value"], errors="raise")
@@ -146,14 +144,13 @@ def load_inputs(
     for name, series in local_loads.items():
         if not series.index.equals(expected_index):
             raise ValueError(f"{name} load time index does not match the system index")
-    if not park_load.index.equals(expected_index):
-        raise ValueError(f"{system_config.park_load_file} time index does not match the system index")
     if not ele_price.index.equals(expected_index):
         raise ValueError("ele_price.csv time index does not match system load index")
     if expected_index.to_series().diff().dropna().nunique() != 1:
         raise ValueError("demand time index must have a constant frequency")
 
-    return park_load, local_loads, ele_price
+    system_load = pd.concat(local_loads.values(), axis=1).sum(axis=1)
+    return system_load, local_loads, ele_price
 
 
 def build_devices_info(
@@ -180,27 +177,29 @@ def build_devices_info(
     return devices_info
 
 
-def calculate_system_power_limit(system_load: pd.Series) -> float:
-    """保留系统无储能峰值负荷作为诊断字段，v2 不再把它转换为柜数上限。"""
+def calculate_system_max_cabinets(system_load: pd.Series) -> tuple[float, int]:
+    """
+    根据无储能系统总负荷峰值计算系统级储能功率上限。
 
-    return float(system_load.max())
+    用户定义的“储能容量”是最大充/放电功率，因此总柜数上限为
+    floor(max(system_load) / 150kW)。储能电容量继续由柜数按 300kWh/柜派生。
+    """
+    system_power_limit_kw = float(system_load.max())
+    system_max_cabinets = int(system_power_limit_kw // CABINET_POWER_KW)
+    return system_power_limit_kw, max(system_max_cabinets, 0)
 
 
 def is_combo_feasible(
     cabinet_counts: tuple[int, ...],
     system_config: SystemConfig,
+    system_max_cabinets: int,
     min_cabinets_per_transformer: int = 0,
 ) -> bool:
-    """校验 v3 柜数组合：单变压器上下限 + 338/342 组内柜数相等。"""
+    """校验柜数组合同时满足单变压器上限和系统总功率上限。"""
     if len(cabinet_counts) != len(system_config.transformers):
         return False
-    count_by_name = {
-        cfg.name: cabinet_counts[idx]
-        for idx, cfg in enumerate(system_config.transformers)
-    }
-    for group in cabinet_groups(system_config):
-        if len({count_by_name[name] for name in group}) != 1:
-            return False
+    if sum(cabinet_counts) > system_max_cabinets:
+        return False
     return all(
         min_cabinets_per_transformer <= count <= cfg.max_cabinets
         for count, cfg in zip(cabinet_counts, system_config.transformers)
@@ -212,59 +211,34 @@ def min_required_total_cabinets(system_config: SystemConfig, min_cabinets_per_tr
     return len(system_config.transformers) * min_cabinets_per_transformer
 
 
-def cabinet_groups(system_config: SystemConfig) -> tuple[tuple[str, ...], ...]:
-    if system_config.cabinet_groups:
-        return system_config.cabinet_groups
-    groups: dict[str, list[str]] = {}
-    for cfg in system_config.transformers:
-        groups.setdefault(cfg.name.split("_", 1)[0], []).append(cfg.name)
-    return tuple(tuple(names) for names in groups.values())
-
-
-def cabinet_count_by_name(cabinet_counts: tuple[int, ...], system_config: SystemConfig) -> dict[str, int]:
-    return {cfg.name: cabinet_counts[idx] for idx, cfg in enumerate(system_config.transformers)}
-
-
-def group_equal_cabinet_violation_count(cabinet_counts: tuple[int, ...], system_config: SystemConfig) -> int:
-    counts = cabinet_count_by_name(cabinet_counts, system_config)
-    return sum(int(len({counts[name] for name in group}) != 1) for group in cabinet_groups(system_config))
-
-
-def group_cabinet_count(cabinet_counts: tuple[int, ...], system_config: SystemConfig, group_prefix: str) -> int:
-    counts = cabinet_count_by_name(cabinet_counts, system_config)
-    group = next(group for group in cabinet_groups(system_config) if group[0].startswith(group_prefix))
-    return counts[group[0]]
-
-
-def allocation_group_labels(system_config: SystemConfig) -> list[str]:
-    labels_by_name = {}
-    for group in cabinet_groups(system_config):
-        label = group[0].split("_", 1)[0]
-        for name in group:
-            labels_by_name[name] = label
-    return [labels_by_name[cfg.name] for cfg in system_config.transformers]
-
-
 def capped_max_capacity_combo(
     system_config: SystemConfig,
+    system_max_cabinets: int,
     min_cabinets_per_transformer: int = 0,
 ) -> tuple[int, ...]:
     """
-    v3 max_capacity 诊断模式使用各分组共同最大等柜数组合。
+    max_capacity 诊断模式使用的确定性满配组合。
+
+    存在系统总柜数约束后，“每台变压器都取 max_cabinets”通常不可行；这里先满足
+    每台变压器最小柜数，再按配置顺序填满系统总柜数上限，仅用于快速诊断。
     """
+    counts = [min_cabinets_per_transformer for _ in system_config.transformers]
     for cfg in system_config.transformers:
         if cfg.max_cabinets < min_cabinets_per_transformer:
             raise ValueError(
                 f"transformer={cfg.name} max_cabinets={cfg.max_cabinets} "
                 f"is less than min_cabinets_per_transformer={min_cabinets_per_transformer}"
             )
-    counts = {}
-    cfg_by_name = {cfg.name: cfg for cfg in system_config.transformers}
-    for group in cabinet_groups(system_config):
-        common_max = min(cfg_by_name[name].max_cabinets for name in group)
-        for name in group:
-            counts[name] = common_max
-    return tuple(counts[cfg.name] for cfg in system_config.transformers)
+    remaining = system_max_cabinets - sum(counts)
+    if remaining < 0:
+        raise ValueError(
+            f"system_max_cabinets={system_max_cabinets} is less than min_required_total_cabinets={sum(counts)}"
+        )
+    for idx, cfg in enumerate(system_config.transformers):
+        extra = min(cfg.max_cabinets - counts[idx], remaining)
+        counts[idx] += extra
+        remaining -= extra
+    return tuple(counts)
 
 
 def zero_schedule(index: pd.DatetimeIndex, system_config: SystemConfig, cabinet_counts: tuple[int, ...]) -> pd.DataFrame:
@@ -305,10 +279,6 @@ def optimize_combo(
     start_time: datetime,
     end_time: datetime,
     freq_minutes: int,
-    smooth_penalty_weight: float = 1e-4,
-    ramp_rate_fraction_per_step: float | None = 0.5,
-    charge_target_penalty_weight: float = 0.0,
-    discharge_target_penalty_weight: float = 0.0,
 ) -> tuple[pd.DataFrame, float]:
     """
     对一个系统内的柜数组合求全年调度策略。
@@ -334,11 +304,6 @@ def optimize_combo(
             [0.0] * len(system_config.transformers),
             max_demand_price,
             freq_minutes,
-            allocation_group_labels=allocation_group_labels(system_config),
-            smooth_penalty_weight=smooth_penalty_weight,
-            ramp_rate_fraction_per_step=ramp_rate_fraction_per_step,
-            charge_target_penalty_weight=charge_target_penalty_weight,
-            discharge_target_penalty_weight=discharge_target_penalty_weight,
         )
         schedule_list = scheduler.run()
         solution = scheduler.last_solution
@@ -378,6 +343,7 @@ def evaluate_schedule(
     ele_price: pd.DataFrame,
     max_demand_price: float,
     system_power_limit_kw: float,
+    system_max_cabinets: int,
     min_cabinets_per_transformer: int,
 ) -> dict:
     """
@@ -413,12 +379,7 @@ def evaluate_schedule(
         "opt_max_demand_cost": opt_max_demand_cost,
         "transformer_violation_count": transformer_violation_count,
         "system_power_limit_kw": system_power_limit_kw,
-        "equal_cabinets_required": True,
-        "equal_cabinet_violation_count": group_equal_cabinet_violation_count(cabinet_counts, system_config),
-        "cabinet_group_rule": "338_equal__342_equal",
-        "338_group_cabinets": group_cabinet_count(cabinet_counts, system_config, "338"),
-        "342_group_cabinets": group_cabinet_count(cabinet_counts, system_config, "342"),
-        "group_equal_cabinet_violation_count": group_equal_cabinet_violation_count(cabinet_counts, system_config),
+        "system_max_cabinets": system_max_cabinets,
         "min_cabinets_per_transformer": min_cabinets_per_transformer,
         "min_required_total_cabinets": min_required_total_cabinets(system_config, min_cabinets_per_transformer),
         "min_cabinet_violation_count": sum(
@@ -426,6 +387,7 @@ def evaluate_schedule(
             for count in cabinet_counts
         ),
         "total_cabinets": sum(cabinet_counts),
+        "system_cabinet_limit_violation": int(sum(cabinet_counts) > system_max_cabinets),
         "total_power_kw": sum(cabinet_counts) * CABINET_POWER_KW,
         "total_capacity_kwh": sum(cabinet_counts) * CABINET_CAPACITY_KWH,
     }
@@ -440,45 +402,42 @@ def evaluate_schedule(
 def candidate_neighbors(
     cabinet_counts: tuple[int, ...],
     system_config: SystemConfig,
+    system_max_cabinets: int,
     min_cabinets_per_transformer: int = 0,
 ) -> Iterable[tuple[int, ...]]:
     """
-    v3 坐标增量搜索的邻域：每次只给 338 或 342 分组同步增加 1 台柜。
+    坐标增量搜索的邻域：每次只给一个变压器增加 1 台柜。
     """
-    if not cabinet_counts:
-        return
-    index_by_name = {cfg.name: idx for idx, cfg in enumerate(system_config.transformers)}
-    for group in cabinet_groups(system_config):
-        candidate = list(cabinet_counts)
-        next_count = cabinet_counts[index_by_name[group[0]]] + 1
-        for name in group:
-            candidate[index_by_name[name]] = next_count
-        candidate_tuple = tuple(candidate)
-        if is_combo_feasible(candidate_tuple, system_config, min_cabinets_per_transformer):
-            yield candidate_tuple
+    for idx, cfg in enumerate(system_config.transformers):
+        if cabinet_counts[idx] < cfg.max_cabinets:
+            candidate = list(cabinet_counts)
+            candidate[idx] += 1
+            candidate_tuple = tuple(candidate)
+            if is_combo_feasible(
+                candidate_tuple,
+                system_config,
+                system_max_cabinets,
+                min_cabinets_per_transformer,
+            ):
+                yield candidate_tuple
 
 
 def full_grid_candidates(
     system_config: SystemConfig,
     max_cabinets_override: int | None = None,
+    system_max_cabinets: int | None = None,
     min_cabinets_per_transformer: int = 0,
 ) -> Iterable[tuple[int, ...]]:
     """
-    v3 全量组合枚举入口：枚举 338/342 分组内等柜、分组间独立的组合。
+    全量组合枚举入口，仅建议小范围验证时使用。
     """
-    cfg_by_name = {cfg.name: cfg for cfg in system_config.transformers}
-    group_ranges = []
-    for group in cabinet_groups(system_config):
-        common_max = min(cfg_by_name[name].max_cabinets for name in group)
-        if max_cabinets_override is not None:
-            common_max = min(common_max, max_cabinets_override)
-        group_ranges.append(range(min_cabinets_per_transformer, common_max + 1))
-    for group_counts in product(*group_ranges):
-        count_by_name = {}
-        for group, count in zip(cabinet_groups(system_config), group_counts):
-            for name in group:
-                count_by_name[name] = count
-        yield tuple(count_by_name[cfg.name] for cfg in system_config.transformers)
+    ranges = []
+    for cfg in system_config.transformers:
+        max_count = min(cfg.max_cabinets, max_cabinets_override) if max_cabinets_override is not None else cfg.max_cabinets
+        ranges.append(range(min_cabinets_per_transformer, max_count + 1))
+    for combo in itertools.product(*ranges):
+        if system_max_cabinets is None or sum(combo) <= system_max_cabinets:
+            yield combo
 
 
 def write_schedule(output_dir: Path,
@@ -504,22 +463,20 @@ def _evaluate_and_write_combo(
     max_demand_price: float,
     freq_minutes: int,
     system_power_limit_kw: float,
+    system_max_cabinets: int,
     min_cabinets_per_transformer: int,
     iteration: int,
-    smooth_penalty_weight: float,
-    ramp_rate_fraction_per_step: float | None,
-    charge_target_penalty_weight: float,
-    discharge_target_penalty_weight: float,
 ) -> dict:
     """
     求解单个柜数组合、写调度文件并返回汇总指标。
 
     该函数同时服务串行和多进程 full_grid，保证两条路径的指标口径完全一致。
     """
-    if not is_combo_feasible(cabinet_counts, system_config, min_cabinets_per_transformer):
+    if not is_combo_feasible(cabinet_counts, system_config, system_max_cabinets, min_cabinets_per_transformer):
         raise ValueError(
             f"infeasible cabinet combo for system={system_config.name}: "
             f"{combo_key(cabinet_counts, system_config.transformers)}; "
+            f"system_max_cabinets={system_max_cabinets}; "
             f"min_cabinets_per_transformer={min_cabinets_per_transformer}"
         )
 
@@ -539,10 +496,6 @@ def _evaluate_and_write_combo(
         start_time,
         end_time,
         freq_minutes,
-        smooth_penalty_weight,
-        ramp_rate_fraction_per_step,
-        charge_target_penalty_weight,
-        discharge_target_penalty_weight,
     )
     metrics = evaluate_schedule(
         cabinet_counts,
@@ -553,6 +506,7 @@ def _evaluate_and_write_combo(
         ele_price,
         max_demand_price,
         system_power_limit_kw,
+        system_max_cabinets,
         min_cabinets_per_transformer,
     )
     metrics["first_seen_iteration"] = iteration
@@ -576,15 +530,11 @@ def _init_full_grid_worker(
     freq_minutes: int,
     system_config: SystemConfig,
     min_cabinets_per_transformer: int,
-    smooth_penalty_weight: float,
-    ramp_rate_fraction_per_step: float | None,
-    charge_target_penalty_weight: float,
-    discharge_target_penalty_weight: float,
 ) -> None:
     """每个 full_grid 子进程启动时读取一次只读输入数据，避免每个组合重复加载 CSV。"""
     global _FULL_GRID_WORKER_CONTEXT
     system_load, local_loads, ele_price = load_inputs(base_dir, start_time, end_time, system_config)
-    system_power_limit_kw = calculate_system_power_limit(system_load)
+    system_power_limit_kw, system_max_cabinets = calculate_system_max_cabinets(system_load)
     _FULL_GRID_WORKER_CONTEXT = {
         "base_dir": base_dir,
         "output_dir": output_dir,
@@ -597,11 +547,8 @@ def _init_full_grid_worker(
         "local_loads": local_loads,
         "ele_price": ele_price,
         "system_power_limit_kw": system_power_limit_kw,
+        "system_max_cabinets": system_max_cabinets,
         "min_cabinets_per_transformer": min_cabinets_per_transformer,
-        "smooth_penalty_weight": smooth_penalty_weight,
-        "ramp_rate_fraction_per_step": ramp_rate_fraction_per_step,
-        "charge_target_penalty_weight": charge_target_penalty_weight,
-        "discharge_target_penalty_weight": discharge_target_penalty_weight,
     }
 
 
@@ -622,12 +569,9 @@ def _evaluate_full_grid_combo_worker(task: tuple[int, tuple[int, ...]]) -> dict:
         _FULL_GRID_WORKER_CONTEXT["max_demand_price"],
         _FULL_GRID_WORKER_CONTEXT["freq_minutes"],
         _FULL_GRID_WORKER_CONTEXT["system_power_limit_kw"],
+        _FULL_GRID_WORKER_CONTEXT["system_max_cabinets"],
         _FULL_GRID_WORKER_CONTEXT["min_cabinets_per_transformer"],
         iteration,
-        _FULL_GRID_WORKER_CONTEXT["smooth_penalty_weight"],
-        _FULL_GRID_WORKER_CONTEXT["ramp_rate_fraction_per_step"],
-        _FULL_GRID_WORKER_CONTEXT["charge_target_penalty_weight"],
-        _FULL_GRID_WORKER_CONTEXT["discharge_target_penalty_weight"],
     )
 
 
@@ -652,10 +596,6 @@ def run_parallel_full_grid_search(
     system_config: SystemConfig,
     workers: int,
     min_cabinets_per_transformer: int,
-    smooth_penalty_weight: float,
-    ramp_rate_fraction_per_step: float | None,
-    charge_target_penalty_weight: float,
-    discharge_target_penalty_weight: float,
 ) -> dict[tuple[int, ...], dict]:
     """按柜数组合并行执行 full_grid 搜索。"""
     evaluated: dict[tuple[int, ...], dict] = {}
@@ -673,10 +613,6 @@ def run_parallel_full_grid_search(
             freq_minutes,
             system_config,
             min_cabinets_per_transformer,
-            smooth_penalty_weight,
-            ramp_rate_fraction_per_step,
-            charge_target_penalty_weight,
-            discharge_target_penalty_weight,
         ),
     ) as executor:
         future_to_combo = {executor.submit(_evaluate_full_grid_combo_worker, task): task[1] for task in tasks}
@@ -697,10 +633,6 @@ def run_capacity_search(
     system_name: str = "338",
     workers: int = 1,
     min_cabinets_per_transformer: int = 1,
-    smooth_penalty_weight: float = 1e-4,
-    ramp_rate_fraction_per_step: float | None = 0.5,
-    charge_target_penalty_weight: float = 0.0,
-    discharge_target_penalty_weight: float = 0.0,
 ):
     """
     执行指定系统的容量搜索并写出每个候选调度与汇总表。
@@ -713,7 +645,13 @@ def run_capacity_search(
         raise ValueError("min_cabinets_per_transformer must be >= 0")
     system_config = SYSTEMS[system_name]
     system_load, local_loads, ele_price = load_inputs(base_dir, start_time, end_time, system_config)
-    system_power_limit_kw = calculate_system_power_limit(system_load)
+    system_power_limit_kw, system_max_cabinets = calculate_system_max_cabinets(system_load)
+    min_required_total = min_required_total_cabinets(system_config, min_cabinets_per_transformer)
+    if system_max_cabinets < min_required_total:
+        raise ValueError(
+            f"system={system_config.name} system_max_cabinets={system_max_cabinets} "
+            f"is less than min_required_total_cabinets={min_required_total}"
+        )
     for cfg in system_config.transformers:
         if cfg.max_cabinets < min_cabinets_per_transformer:
             raise ValueError(
@@ -726,10 +664,11 @@ def run_capacity_search(
     # 
     # ------------------------------
     def evaluate(cabinet_counts: tuple[int, ...], iteration: int, selected: bool = False):
-        if not is_combo_feasible(cabinet_counts, system_config, min_cabinets_per_transformer):
+        if not is_combo_feasible(cabinet_counts, system_config, system_max_cabinets, min_cabinets_per_transformer):
             raise ValueError(
                 f"infeasible cabinet combo for system={system_config.name}: "
                 f"{combo_key(cabinet_counts, system_config.transformers)}; "
+                f"system_max_cabinets={system_max_cabinets}; "
                 f"min_cabinets_per_transformer={min_cabinets_per_transformer}"
             )
         
@@ -750,10 +689,6 @@ def run_capacity_search(
                 start_time,
                 end_time,
                 freq_minutes,
-                smooth_penalty_weight,
-                ramp_rate_fraction_per_step,
-                charge_target_penalty_weight,
-                discharge_target_penalty_weight,
             )
             metrics = evaluate_schedule(
                 cabinet_counts,
@@ -764,6 +699,7 @@ def run_capacity_search(
                 ele_price,
                 max_demand_price,
                 system_power_limit_kw,
+                system_max_cabinets,
                 min_cabinets_per_transformer,
             )
             metrics["first_seen_iteration"] = iteration
@@ -788,6 +724,7 @@ def run_capacity_search(
         combos = list(
             full_grid_candidates(
                 system_config,
+                system_max_cabinets=system_max_cabinets,
                 min_cabinets_per_transformer=min_cabinets_per_transformer,
             )
         )
@@ -803,10 +740,6 @@ def run_capacity_search(
                 system_config,
                 workers,
                 min_cabinets_per_transformer,
-                smooth_penalty_weight,
-                ramp_rate_fraction_per_step,
-                charge_target_penalty_weight,
-                discharge_target_penalty_weight,
             )
         else:
             for iteration, combo in enumerate(combos):
@@ -815,7 +748,7 @@ def run_capacity_search(
     elif search_mode == "max_capacity":
         current = tuple(min_cabinets_per_transformer for _ in system_config.transformers)
         evaluate(current, iteration=0, selected=True)
-        max_combo = capped_max_capacity_combo(system_config, min_cabinets_per_transformer)
+        max_combo = capped_max_capacity_combo(system_config, system_max_cabinets, min_cabinets_per_transformer)
         evaluate(max_combo, iteration=1, selected=True)
     elif search_mode == "coordinate":
         current = tuple(min_cabinets_per_transformer for _ in system_config.transformers)
@@ -826,6 +759,7 @@ def run_capacity_search(
             for candidate in candidate_neighbors(
                 current,
                 system_config,
+                system_max_cabinets,
                 min_cabinets_per_transformer,
             ):
                 candidates.append((candidate, evaluate(candidate, iteration=iteration)))
@@ -862,15 +796,11 @@ def run_systems(
     system_name: str,
     workers: int,
     min_cabinets_per_transformer: int,
-    smooth_penalty_weight: float = 1e-4,
-    ramp_rate_fraction_per_step: float | None = 0.5,
-    charge_target_penalty_weight: float = 0.0,
-    discharge_target_penalty_weight: float = 0.0,
 ) -> dict[str, pd.DataFrame]:
-    selected_systems = ["park"] if system_name == "all" else [system_name]
+    selected_systems = list(SYSTEMS) if system_name == "all" else [system_name]
     results = {}
     for name in selected_systems:
-        output_dir = opt_result_dir / f"es_scale_experiment_optim_dist_{name}-v3"
+        output_dir = opt_result_dir / f"es_scale_experiment_optim_dist_{name}"
         results[name] = run_capacity_search(
             base_dir=base_dir,
             output_dir=output_dir,
@@ -882,18 +812,14 @@ def run_systems(
             system_name=name,
             workers=workers,
             min_cabinets_per_transformer=min_cabinets_per_transformer,
-            smooth_penalty_weight=smooth_penalty_weight,
-            ramp_rate_fraction_per_step=ramp_rate_fraction_per_step,
-            charge_target_penalty_weight=charge_target_penalty_weight,
-            discharge_target_penalty_weight=discharge_target_penalty_weight,
         )
     
     return results
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Distributed ESS optimization for the park bus.")
-    parser.add_argument("--system", choices=["park", "all"], default="park")
+    parser = argparse.ArgumentParser(description="Distributed ESS optimization for 338/342 systems.")
+    parser.add_argument("--system", choices=["338", "342", "all"], default="342")
     parser.add_argument("--search-mode", choices=["max_capacity", "coordinate", "full_grid"], default="full_grid")
     parser.add_argument("--workers", type=int, default=8, help="Number of worker processes for full_grid search.")
     parser.add_argument(
@@ -901,35 +827,6 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=1,
         help="Minimum cabinet count required for each transformer in the selected system.",
-    )
-    parser.add_argument(
-        "--smooth-penalty-weight",
-        type=float,
-        default=1e-4,
-        help="Penalty weight for total variation of per-transformer storage net power.",
-    )
-    parser.add_argument(
-        "--ramp-rate-fraction-per-step",
-        type=float,
-        default=0.5,
-        help="Max net-power change per step as a fraction of rated power.",
-    )
-    parser.add_argument(
-        "--disable-ramp-constraint",
-        action="store_true",
-        help="Disable the hard per-step net-power ramp constraint.",
-    )
-    parser.add_argument(
-        "--charge-target-penalty-weight",
-        type=float,
-        default=0.0,
-        help="Soft penalty weight for charging-window-end SOC shortfall.",
-    )
-    parser.add_argument(
-        "--discharge-target-penalty-weight",
-        type=float,
-        default=0.0,
-        help="Soft penalty weight for discharge-window-end SOC surplus.",
     )
     
     return parser.parse_args()
@@ -951,14 +848,6 @@ if __name__ == "__main__":
         args.workers,
         "min_cabinets_per_transformer",
         args.min_cabinets_per_transformer,
-        "smooth_penalty_weight",
-        args.smooth_penalty_weight,
-        "ramp_rate_fraction_per_step",
-        None if args.disable_ramp_constraint else args.ramp_rate_fraction_per_step,
-        "charge_target_penalty_weight",
-        args.charge_target_penalty_weight,
-        "discharge_target_penalty_weight",
-        args.discharge_target_penalty_weight,
     )
 
     start_time = datetime(2025, 1, 1, 0, 0, 0)
@@ -978,10 +867,6 @@ if __name__ == "__main__":
         system_name=args.system,
         workers=args.workers,
         min_cabinets_per_transformer=args.min_cabinets_per_transformer,
-        smooth_penalty_weight=args.smooth_penalty_weight,
-        ramp_rate_fraction_per_step=None if args.disable_ramp_constraint else args.ramp_rate_fraction_per_step,
-        charge_target_penalty_weight=args.charge_target_penalty_weight,
-        discharge_target_penalty_weight=args.discharge_target_penalty_weight,
     )
     for name, result in result_map.items():
         print(f"system={name}")

@@ -153,18 +153,21 @@ class EssSimulationModel:
         time_diff_hour = time_diff.total_seconds() / (60 * 60)
         origin_balance_i = demand_load_i * time_diff_hour * ele_price_i
         opt_balance_i = (demand_load_i - es_load_i) * time_diff_hour * ele_price_i
-
+        
+        # 无储能、有储能的需量功率
         ori_max_load = max(ori_max_load, demand_load_i)
         opt_max_load = max(opt_max_load, demand_load_i - es_load_i)
         
+        # 无储能、有储能的无储能、有储能的电费成本(不包含需量电费)
         origin_balance = origin_balance + origin_balance_i
         opt_balance = opt_balance + opt_balance_i
         
+        # 总时长
         total_hours = total_hours + time_diff_hour
         
         # 需量电费计算
-        time_diff_month = total_hours / 24 / calendar.monthrange(time_i.year, time_i.month)[1]
-        origin_balance += max_demand_price * ori_max_load * time_diff_month
-        opt_balance += max_demand_price * opt_max_load * time_diff_month
+        # time_diff_month = total_hours / 24 / calendar.monthrange(time_i.year, time_i.month)[1]
+        # origin_balance += max_demand_price * ori_max_load * time_diff_month
+        # opt_balance += max_demand_price * opt_max_load * time_diff_month
 
         return origin_balance, opt_balance
