@@ -184,6 +184,8 @@ src/ba_eva/dataset/output.json
 .hermes/
 .venv/
 data/
+data_test/
+opt_result/
 logs/
 results/
 src/demand_response/todo/result/
