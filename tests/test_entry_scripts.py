@@ -51,3 +51,11 @@ def test_run_backtest():
     combined = result.stdout + result.stderr
     assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
     assert len(combined) > 0
+
+
+def test_run_user_side_storage_dispatch():
+    """run_user_side_storage_dispatch.py 应退出码为 0 且有用户侧调度输出。"""
+    result = _run_script('run_user_side_storage_dispatch.py')
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
+    assert '用户侧储能调度' in combined or 'total_cost' in combined

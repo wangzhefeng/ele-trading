@@ -7,6 +7,18 @@
 - `schemas.py`：定义价格序列、储能参数和场景样本结构。
 - `loader.py`：读取 CSV / YAML 样例文件。
 - `sample_data.py`：提供内置样例路径和快捷加载函数。
+- `user_side_storage_sample.py`：读取用户侧储能调度 demo 配置，并生成确定性的负荷 / 电价 / 电价类型模拟数据。
+
+## 用户侧储能调度模拟数据
+
+`user_side_storage_sample.py` 服务 `app/run_user_side_storage_dispatch.py` 和相关测试。它根据 `configs/user_side_storage_dispatch.yaml` 生成一个确定性的调度窗口：
+
+- `timestamp`：调度时段时间戳。
+- `load_forecast`：未来负荷预测样例。
+- `buy_price`：购电价格样例。
+- `price_type`：分时电价类型样例。
+
+这组数据只用于 demo 和回归测试，不代表真实负荷预测模型。真实项目接入时应由预测模块或外部数据源提供 `load_forecast`，再构造 `UserSideStorageDispatchInput`。
 
 ## 上下游关系
 

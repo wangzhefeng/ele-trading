@@ -8,6 +8,7 @@
 - `storage_arbitrage.py`：单市场储能套利。
 - `mpc_storage.py`：MPC 单窗口与滚动优化。
 - `two_stage_cvar.py`：Two-stage + CVaR 可求解模型。
+- `user_side_storage_dispatch.py`：用户侧 / 园区侧储能调度模型。
 
 ## 市场储能纯价格套利
 
@@ -88,6 +89,138 @@ max sum_t price[t] * (p_dis[t] - p_ch[t]) * dt
 市场储能纯价格套利只关心市场价格和储能物理约束，适合做套利基准和收益上限评估。用户侧 / 园区侧调度还需要负荷预测、光伏 / 风电预测、购售电规则、需量电费、并网限制和反送电约束，目标通常是最小化综合用能成本或最大化园区综合收益。
 
 如果后续需要加入负荷预测，不应直接把 `load_forecast` 塞进当前模型，而应新增或拆出用户侧储能调度模型，显式建模 `grid_import`、`grid_export`、负荷平衡、需量电费和新能源消纳等约束。
+
+## 用户侧 / 园区侧储能调度
+
+`user_side_storage_dispatch.py` 实现的是电表后用户侧储能调度模型。它与市场储能纯价格套利不同：模型输入包含未来负荷预测，目标是最小化园区购电成本和需量电费，而不是让储能作为独立市场资产按价格买低卖高。
+
+当前版本只考虑储能设备、负荷预测、购电价格、分时电价类型和需量电费；暂不考虑光伏 / 风电出力、售电价格、上网电量和站点策略后处理。
+
+### 模型定位
+
+市场储能纯价格套利是表前或独立储能视角，储能按市场价格低买高卖。用户侧 / 园区侧储能调度是电表后成本优化视角，储能的动作会改变园区电表购电曲线，因此必须同时考虑负荷预测、购电价格、需量电费和储能状态。
+
+当前模型是用户侧调度的核心优化层，不包含平台数据接入、预测模型生成、站点策略后处理或多设备滚动执行编排。
+
+### 当前数学模型
+
+核心输入包括：
+
+- `load_forecast[t]`：未来各时段负荷预测。
+- `buy_price[t]`：未来各时段购电价格。
+- `price_type[t]`：分时电价类型，当前作为结果上下文保留，暂不施加硬规则。
+- `storage`：储能容量、SOC 上下限、充放电功率上限和效率。
+- `initial_soc`：调度窗口初始 SOC。
+- `demand_charge_rate`：最大需量电价。
+- `step_hours`：时间步长。
+- `terminal_soc_target`：可选末端 SOC 目标。
+- `cycle_cost_rate`：可选储能吞吐成本。
+
+决策变量包括：
+
+- `charge_power[t]`：充电功率。
+- `discharge_power[t]`：放电功率。
+- `soc[t]`：时段末 SOC。
+- `grid_import[t]`：电表购电功率。
+- `max_grid_import`：调度窗口最大电表购电功率。
+- `is_charging[t]`、`is_discharging[t]`：充放电互斥状态。
+
+目标函数是最小化：
+
+```text
+energy_cost + demand_cost + cycle_cost
+```
+
+其中：
+
+```text
+energy_cost = sum_t buy_price[t] * grid_import[t] * step_hours
+demand_cost = demand_charge_rate * max_grid_import
+cycle_cost = sum_t cycle_cost_rate
+                  * (charge_power[t] + discharge_power[t])
+                  * step_hours
+```
+
+核心电表侧平衡为：
+
+```text
+grid_import[t] = load_forecast[t] + charge_power[t] - discharge_power[t]
+```
+
+其中 `grid_import[t] >= 0`，并且 `discharge_power[t] <= load_forecast[t]`，因此当前模型默认禁止反送电。需量电费通过最大购电功率变量建模：
+
+```text
+max_grid_import >= grid_import[t]
+demand_cost = demand_charge_rate * max_grid_import
+```
+
+SOC 动态为：
+
+```text
+soc[t] = soc[t-1]
+         + eta_ch * charge_power[t] * step_hours
+         - discharge_power[t] * step_hours / eta_dis
+```
+
+首时段使用 `initial_soc` 作为上一时段 SOC。若设置 `terminal_soc_target`，模型会约束窗口末端 SOC 等于该目标。
+
+充放电互斥为：
+
+```text
+is_charging[t] + is_discharging[t] <= 1
+charge_power[t] <= p_ch_max * is_charging[t]
+discharge_power[t] <= p_dis_max * is_discharging[t]
+```
+
+结果包括充电功率、放电功率、净储能功率、SOC、电表购电功率、最大需量、能量电费、需量电费、总成本和约束违约检查。解释结果时应同时看 `grid_import` 和 `max_grid_import`：前者反映逐时购电曲线，后者决定需量电费。
+
+### 当前实现程度
+
+| 能力 | 当前状态 |
+| --- | --- |
+| 负荷预测输入 | 已实现 |
+| 储能 SOC 递推 | 已实现 |
+| 充放电互斥 | 已实现 |
+| 电表侧购电功率 | 已实现 |
+| 最大需量建模 | 已实现 |
+| 禁止反送电 | 已实现 |
+| 放电不超过负荷 | 已实现 |
+| 结果约束检查 | 已实现 |
+| 多设备联合调度 | 未实现 |
+| 滚动控制封装 | 未实现 |
+| 光伏 / 风电出力 | 暂不考虑 |
+| 售电 / 上网电量 | 暂不考虑 |
+| legacy 策略后处理 | 暂不接入 |
+| `price_type` 峰谷平尖硬规则 | 暂未使用 |
+| 平台数据预处理适配层 | 未实现 |
+
+### 相对 `es_rolling_schedule` 未迁入的内容
+
+当前 `ele_trading` 新模型没有原样搬迁 `src/es_rolling_schedule/`，以下能力仍保留在 legacy 目录或尚未进入主线：
+
+- 5 分钟平台数据预处理，包括 `df_load`、`df_price`、`df_soc`、`df_date`、`df_weather` 的时间索引对齐、缺失插值和负荷负值处理。
+- 按 `es_cycle_division_hour` 拆分第一优化周期和第二优化周期的滚动执行逻辑。
+- 多设备逐设备策略输出和 `e_c_opt_node_id` 映射。
+- 实时 SOC 数据滞后检查。
+- 上海特化谷 / 深谷电价拉平工具。
+- 峰、谷、平、尖等电价类型硬规则。
+- 月度重复收益近似。
+- cvxpy 版本中的平滑项、SOC 偏置项和启发式惩罚。
+- `post_handler_lingang` 中的峰尖连续块识别、最大功率放电、冷静期等策略后处理。
+- `shortTerm_maxDemand_match` 短期需量匹配逻辑。
+
+这些内容没有迁入不是遗漏，而是当前版本刻意把主线收敛为可测试的优化核心。后续若要补齐，应优先增加数据适配层、滚动控制封装和多设备建模，再考虑站点策略后处理。
+
+### 新增能力
+
+相对 legacy 实现，当前 `ele_trading` 主线新增了以下工程化能力：
+
+- 使用 `UserSideStorageDispatchInput`、`UserSideStorageParams`、`UserSideStorageDispatchResult` 明确输入输出边界。
+- 使用 PuLP 建立 MILP 模型，与现有 `storage_arbitrage.py`、`mpc_storage.py` 的求解器路径一致。
+- 使用标准 `max_grid_import` 变量表达需量电费，而不是用充电功率近似需量。
+- 显式建模 `grid_import`，并通过变量下界禁止反送电。
+- 输出 `constraint_violations`，便于解释结果和发现模型约束异常。
+- 已有单元测试覆盖接口、需量削峰、峰谷价差响应、负荷敏感性和输入校验。
 
 ## 上下游关系
 
