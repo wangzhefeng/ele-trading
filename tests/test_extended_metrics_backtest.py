@@ -2,7 +2,7 @@
 
 import numpy as np
 from ele_trading.control.rolling_dispatch import run_storage_rolling_dispatch
-from ele_trading.data.sample_data import load_default_intraday_prices, load_default_storage_config
+from ele_trading.data_provider.sample_data import load_default_intraday_prices, load_default_storage_config
 from ele_trading.evaluation.settlement import compute_dispatch_revenue
 from ele_trading.evaluation.metrics import compute_extended_metrics
 

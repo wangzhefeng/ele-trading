@@ -8,7 +8,7 @@ SRC_ROOT = PROJECT_ROOT / 'src'
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from ele_trading.data.sample_data import load_default_intraday_prices, load_default_storage_config
+from ele_trading.data_provider.sample_data import load_default_intraday_prices, load_default_storage_config
 from ele_trading.optimization.mpc_storage import run_storage_mpc
 from ele_trading.utils.log_util import logger
 

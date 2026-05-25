@@ -184,6 +184,10 @@ src/ba_eva/dataset/output.json
 .hermes/
 .venv/
 data/
+src/es_calc/todo/es_schedule_for_MaxDemand_830/data/
+src/es_calc/todo/es_schedule_for_MaxDemand_FuDing/data/
+src/es_calc/todo/es_schedule_for_MaxDemand_iflytek/data/
+src/es_calc/todo/es_schedule_for_MaxDemand_tiktok_example/data/
 data_test/
 opt_result/
 logs/

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from ele_trading.data import (
+from ele_trading.data_provider import (
     build_synthetic_user_side_dispatch_frame,
     build_user_side_storage_dispatch_input,
     load_user_side_storage_dispatch_config,

@@ -10,7 +10,7 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from ele_trading.data import (
+from ele_trading.data_provider import (
     build_synthetic_user_side_dispatch_frame,
     build_user_side_storage_dispatch_input,
     load_user_side_storage_dispatch_config,
