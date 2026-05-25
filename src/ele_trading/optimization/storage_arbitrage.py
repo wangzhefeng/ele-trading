@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pulp import LpBinary, LpMaximize, LpProblem, LpVariable, COIN_CMD, lpSum, value
+from pulp import LpBinary, LpMaximize, LpProblem, LpVariable, PULP_CBC_CMD, lpSum, value
 
 from .interfaces import StorageArbitrageResult
 
@@ -54,7 +54,7 @@ def solve_storage_arbitrage(
         for t in T
     )
 
-    m.solve(COIN_CMD(msg=False))
+    m.solve(PULP_CBC_CMD(msg=False))
 
     return {
         'objective': value(m.objective),

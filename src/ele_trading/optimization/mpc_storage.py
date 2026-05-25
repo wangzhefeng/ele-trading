@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
-from pulp import LpBinary, LpMaximize, LpProblem, LpVariable, COIN_CMD, lpSum, value
+from pulp import LpBinary, LpMaximize, LpProblem, LpVariable, PULP_CBC_CMD, lpSum, value
 
 
 def solve_one_mpc_window(
@@ -53,7 +53,7 @@ def solve_one_mpc_window(
         for t in T
     )
 
-    m.solve(COIN_CMD(msg=False))
+    m.solve(PULP_CBC_CMD(msg=False))
 
     return {
         'p_ch': value(p_ch[0]),

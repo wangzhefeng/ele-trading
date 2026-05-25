@@ -14,7 +14,9 @@ from ele_trading.utils.log_util import logger
 
 
 if __name__ == '__main__':
+    # 未来分时电价
     price_series = load_default_day_ahead_prices()
+    # 储能配置参数
     storage = load_default_storage_config()
     result = solve_storage_arbitrage(
         prices=price_series.prices,

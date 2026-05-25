@@ -64,6 +64,7 @@ def generate_hourly_datetime_pairs(year, month, hour):
 
     return result
 
+
 def get_month_range(month, year=None):
     """
     返回指定月份的第一天和下个月第一天的 datetime 对象。
@@ -95,6 +96,7 @@ def get_month_range(month, year=None):
 
     return first_day, next_month_first_day
 
+
 def generate_day_pairs(start_time, end_time):
     time_point_list = []
     
@@ -103,4 +105,3 @@ def generate_day_pairs(start_time, end_time):
         time_point_list.append((current_time, current_time + timedelta(days=1)))
         current_time += timedelta(days=1)
     return time_point_list
-

@@ -71,6 +71,7 @@ def generate_month_ranges(start_time: datetime, end_time: datetime) -> List[Tupl
     
     return result
 
+
 def __calc_month_statistics(step_strategy_df: pd.DataFrame, 
                             target_col: str, 
                             vs_time: datetime, 
@@ -94,6 +95,7 @@ def __calc_month_statistics(step_strategy_df: pd.DataFrame,
     df = df[["year", "month", "time_len"]]
 
     return df
+
 
 def calc_statistics(strategy_df: pd.DataFrame, start_time: datetime, end_time: datetime, device_info: Dict=None):
     # 可用电量
@@ -150,25 +152,28 @@ def calc_statistics(strategy_df: pd.DataFrame, start_time: datetime, end_time: d
         "strategy_load_df": strategy_load_df,
     }
 
-exp_name = "chengdu"
-node_name = "route_A"
-es_scale = 1000
-data_path = f"./data/{exp_name}/{node_name}/opt_result/es_scale_experiment_optim/schedule_result_scale_{es_scale}.csv"
-df = pd.read_csv(data_path)
-df["time"] = pd.to_datetime(df["time"])
-df = df[["time", "value"]]
-df.set_index("time", inplace=True)
-print(df)
 
-
-result = calc_statistics(strategy_df=df, start_time=pd.to_datetime("2025-01-01 00:00:00"), end_time=pd.to_datetime("2026-01-01 23:59:59"))
-result["strategy_load_df"].to_csv("strategy_load_df.csv", index=False, encoding="utf-8")
-print(result["strategy_load_df"])
 
 
 # 测试代码 main 函数
 def main():
-    pass
+    exp_name = "chengdu"
+    node_name = "route_A"
+    es_scale = 1000
+    data_path = f"./data/{exp_name}/{node_name}/opt_result/es_scale_experiment_optim/schedule_result_scale_{es_scale}.csv"
+    df = pd.read_csv(data_path)
+    df["time"] = pd.to_datetime(df["time"])
+    df = df[["time", "value"]]
+    df.set_index("time", inplace=True)
+    print(df)
+
+    result = calc_statistics(
+        strategy_df=df, 
+        start_time=pd.to_datetime("2025-01-01 00:00:00"), 
+        end_time=pd.to_datetime("2026-01-01 23:59:59")
+    )
+    result["strategy_load_df"].to_csv("strategy_load_df.csv", index=False, encoding="utf-8")
+    print(result["strategy_load_df"])
 
 if __name__ == "__main__":
     main()
