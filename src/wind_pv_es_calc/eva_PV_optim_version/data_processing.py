@@ -12,13 +12,7 @@
 # ***************************************************
 
 # python libraries
-import sys
 from pathlib import Path
-ROOT = str(Path.cwd())
-if ROOT not in sys.path:
-    sys.path.append(ROOT)
-import warnings
-warnings.filterwarnings("ignore")
 
 import pandas as pd
 
@@ -34,7 +28,7 @@ def data_processor(load_transfer_coef=685436401/704234268,
     # ------------------------------
     # 负荷数据
     # ------------------------------
-    from ba_eva.eva_PV_optim_version.data_loader import load_data
+    from src.wind_pv_es_calc.eva_PV_optim_version.data_loader import load_data
     energy_data_path = Path("src/ba_eva/dataset/temp/df_2025.csv")
     df_load = load_data(energy_data_path=energy_data_path)
     if load_transfer_coef is not None:
@@ -43,7 +37,7 @@ def data_processor(load_transfer_coef=685436401/704234268,
     # ------------------------------
     # wind power data
     # ------------------------------
-    from ba_eva.eva_PV_optim_version.data_wind_simu import generate_wind_data
+    from src.wind_pv_es_calc.eva_PV_optim_version.data_wind_simu import generate_wind_data
     wind_data_path = Path("src/ba_eva/dataset/temp/df_wind_2026.csv")
     df_wind = generate_wind_data(
         farm_capacity_mw=farm_capacity_mw, 
@@ -57,7 +51,7 @@ def data_processor(load_transfer_coef=685436401/704234268,
     # ------------------------------
     # PV(Photo Voltaics) power data
     # ------------------------------
-    from ba_eva.eva_PV_optim_version.data_pv_simu import generate_pv_data
+    from src.wind_pv_es_calc.eva_PV_optim_version.data_pv_simu import generate_pv_data
     pv_data_path = Path("src/ba_eva/dataset/temp/df_pv_2025.csv")
     df_pv = generate_pv_data(
         df=df_load, 
@@ -98,7 +92,7 @@ def data_processor(load_transfer_coef=685436401/704234268,
 
 # 测试代码 main 函数
 def main():
-    from ba_eva.eva_PV_optim_version.plot_ts import plot_load_pv_wind_netload
+    from utils.plot_ts import plot_load_pv_wind_netload
     df_load, df_pv, df_wind, df = data_processor(data_combine=True)
 
     # 2025-10 数据

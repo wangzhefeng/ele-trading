@@ -149,6 +149,23 @@ def plot_load_pv_wind_netload(df):
     plt.show()
 
 
+def plot_daily_pv_shape(pv_kw, date):
+    """
+    用于抽取某一天的光伏出力曲线并作图，主要服务于结果可视化和形状检查
+
+    Args:
+        pv_kw (_type_): _description_
+        date (_type_): _description_
+    """
+    mask = pv_kw.index.date == pd.to_datetime(date).date()
+    plt.figure(figsize=(8, 4))
+    plt.plot(pv_kw.loc[mask])
+    plt.title(f"PV output on {date}")
+    plt.ylabel("kW")
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.show()
+
 
 
 # 测试代码 main 函数

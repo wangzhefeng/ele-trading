@@ -12,28 +12,16 @@
 # ***************************************************
 
 # python libraries
-import os
-import sys
-from pathlib import Path
-ROOT = str(Path.cwd())
-if ROOT not in sys.path:
-    sys.path.append(ROOT)
-import warnings
-warnings.filterwarnings("ignore")
 import copy
 import requests
+from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, Tuple, Union
 
-from calendar import monthrange
 import pandas as pd
 import numpy as np
 from windpowerlib import WindTurbine, ModelChain
 
 
-# ##############################
-# Open-Meteo 接口获取 ERA5-Land 小时级天气数据，主要使用风速和气温作为风电建模输入
-# ##############################
 def fetch_era5_land_open_meteo(
     lat: float,
     lon: float,
@@ -41,7 +29,7 @@ def fetch_era5_land_open_meteo(
     end_date: str,     # YYYY-MM-DD
 ) -> pd.DataFrame:
     """
-    通过 Open-Meteo 获取 ERA5-Land 小时级气象
+    Open-Meteo 接口获取 ERA5-Land 小时级天气数据，主要使用风速和气温作为风电建模输入
     返回列：Time, wind_speed_100m, temperature_2m
     """
     url = "https://archive-api.open-meteo.com/v1/era5"
@@ -66,10 +54,17 @@ def fetch_era5_land_open_meteo(
 
     return df.sort_values("Time").reset_index(drop=True)
 
-# ##############################
-# 把小时级气象数据插值或重采样到更细粒度，便于与 15 分钟负荷曲线对齐
-# ##############################
+
 def resample_hourly_to_15min(df_hourly: pd.DataFrame) -> pd.DataFrame:
+    """
+    把小时级气象数据插值或重采样到更细粒度，便于与 15 分钟负荷曲线对齐
+
+    Args:
+        df_hourly (pd.DataFrame): _description_
+
+    Returns:
+        pd.DataFrame: _description_
+    """
     df = df_hourly.copy()
     df["Time"] = pd.to_datetime(df["Time"])
     df = df.set_index("Time").sort_index()
@@ -85,9 +80,7 @@ def resample_hourly_to_15min(df_hourly: pd.DataFrame) -> pd.DataFrame:
     
     return df.reset_index()
 
-# ##############################
-# TODO 未使用：对原始风功率序列做年发电量校准，并施加装机上限约束
-# ##############################
+
 def calibrate_energy_with_cap(
     p_base_mw: np.ndarray,
     cap_mw: float,
@@ -97,8 +90,8 @@ def calibrate_energy_with_cap(
     max_iter: int = 60,
 ) -> np.ndarray:
     """
-    在 clip(0, cap_mw) 约束下，通过二分法寻找缩放系数，
-    使等效利用小时逼近 target_flh。
+    # TODO 未使用：对原始风功率序列做年发电量校准，并施加装机上限约束
+    在 clip(0, cap_mw) 约束下，通过二分法寻找缩放系数, 使等效利用小时逼近 target_flh。
     """
     target_energy = cap_mw * target_flh
 
@@ -133,36 +126,14 @@ def calibrate_energy_with_cap(
     return np.clip(p_base_mw * 0.5 * (lo + hi), 0.0, cap_mw)
 
 
-# ##############################
-# 定义风场级别的关键参数，如装机规模、轮毂高度、功率曲线参数、等效利用小时数目标、峰值比例限制等
-# ##############################
-# @dataclass
-# class WindFarmConfig:
-#     # 时间
-#     year: int = 2025
-#     freq: str = "15T" 
-#     # 校正目标
-#     mean_wind_speed_140m: float = 5.5
-#     eq_full_load_hours: float = 1902.7
-#     # 高度与地形
-#     meteo_height_m: float = 100.0
-#     met_mast_height_m: float = 140.0
-#     hub_height_m: float = 100.0
-#     shear_alpha: float = 0.2
-#     # 风机（≤8MW，低风速）
-#     rated_power_kw: float = 8000.0
-#     cut_in: float = 3.0
-#     rated_speed: float = 11.0
-#     cut_out: float = 25.0
-#     # others
-#     farm_capacity_mw: float = 50.0
-
-
 @dataclass
 class WindFarmConfig:
+    """
+    定义风场级别的关键参数，如装机规模、轮毂高度、功率曲线参数、等效利用小时数目标、峰值比例限制等
+    """
     # 时间
     year: int = 2025
-    freq: str = "1h" # "15min"
+    freq: str = "1h" # "15min", "15T"
     # 校正目标
     mean_wind_speed_140m: float = 5.5
     eq_full_load_hours: float = 1900.0
@@ -182,11 +153,11 @@ class WindFarmConfig:
     farm_capacity_mw: float = 80.0
     flh_tol: float = 0.3
 
-# ##############################
-# 主模型。它通过风速高度换算、自定义功率曲线、风机配置和年能量回补逻辑，把气象输入变成风电功率序列
-# ##############################
-class WindFarmPowerModelERA5Land:
 
+class WindFarmPowerModelERA5Land:
+    """
+    主模型。它通过风速高度换算、自定义功率曲线、风机配置和年能量回补逻辑，把气象输入变成风电功率序列
+    """
     def __init__(self, cfg: WindFarmConfig):
         self.cfg = cfg
         self.dt_h = pd.to_timedelta(cfg.freq).total_seconds() / 3600.0
@@ -344,10 +315,21 @@ class WindFarmPowerModelERA5Land:
             raise ValueError("output_unit must be 'MW' or 'kW'")
 
 
-# ##############################
-# 模拟数据生成
-# ##############################
 def generate_wind_data(farm_capacity_mw=200.0, mean_wind_speed_140m=7.27, eq_full_load_hours=2590, lat=40.55, lon=113.4, wind_data_path=None):
+    """
+    模拟数据生成
+
+    Args:
+        farm_capacity_mw (float, optional): _description_. Defaults to 200.0.
+        mean_wind_speed_140m (float, optional): _description_. Defaults to 7.27.
+        eq_full_load_hours (int, optional): _description_. Defaults to 2590.
+        lat (float, optional): _description_. Defaults to 40.55.
+        lon (float, optional): _description_. Defaults to 113.4.
+        wind_data_path (_type_, optional): _description_. Defaults to None.
+
+    Returns:
+        _type_: _description_
+    """
     if not wind_data_path.exists():
         # config
         cfg_wind = WindFarmConfig(
@@ -374,7 +356,7 @@ def generate_wind_data(farm_capacity_mw=200.0, mean_wind_speed_140m=7.27, eq_ful
 # 测试代码 main 函数
 def main():
     # data path
-    wind_data_path = Path("src/ba_eva/dataset/temp/df_wind_2026.csv")
+    wind_data_path = Path("data/wind_pv_es_calc/temp/df_wind_2026.csv")
     # data load
     df_wind = generate_wind_data(
         farm_capacity_mw=200.0, 

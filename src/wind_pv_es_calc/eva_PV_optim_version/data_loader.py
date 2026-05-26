@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 # ***************************************************
-# * File        : 1.py
+# * File        : data_loader.py
 # * Author      : Zhefeng Wang
 # * Email       : zfwang7@gmail.com
 # * Date        : 2026-04-20
@@ -12,14 +12,7 @@
 # ***************************************************
 
 # python libraries
-import os
-import sys
 from pathlib import Path
-ROOT = str(Path.cwd())
-if ROOT not in sys.path:
-    sys.path.append(ROOT)
-import warnings
-warnings.filterwarnings("ignore")
 
 from calendar import monthrange
 import numpy as np
@@ -266,12 +259,12 @@ def load_data(energy_data_path, raw_data_dir=None):
 # 测试代码 main 函数
 def main():
     # data path
-    raw_energy_data_dir = Path("src/ba_eva/dataset/负荷曲线/")
-    energy_data_path = Path("src/ba_eva/dataset/temp/df_2025.csv")
+    raw_energy_data_dir = Path("data/wind_pv_es_calc/负荷曲线/")
+    energy_data_path = Path("data/wind_pv_es_calc/temp/df_2025.csv")
     # data load
     df_2025 = load_data(energy_data_path=energy_data_path, raw_data_dir=raw_energy_data_dir)
     print(df_2025)
-    from ba_eva.eva_PV_optim_version.plot_ts import series_plot
+    from utils.plot_ts import series_plot
     series_plot(df=df_2025, time_col="Time", value_col="P_kw")
 
 if __name__ == "__main__":

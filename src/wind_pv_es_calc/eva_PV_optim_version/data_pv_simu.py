@@ -12,32 +12,15 @@
 # ***************************************************
 
 # python libraries
-import os
-import sys
 from pathlib import Path
-ROOT = str(Path.cwd())
-if ROOT not in sys.path:
-    sys.path.append(ROOT)
-import warnings
-warnings.filterwarnings("ignore")
-from dataclasses import dataclass
-from typing import Optional, Dict, Any, Tuple, Union
 
-import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import pvlib
 from pvlib.location import Location
-from ba_eva.storage_optim_common import njit, NUMBA_OK
+
+from utils.plot_ts import plot_daily_pv_shape
 
 
-# ##############################
-# 光伏出力模拟
-# ##############################
-# ------------------------------
-# 核心建模入口。它基于时间索引、经纬度、装机容量、倾角、方位角、系统损耗、温度系数和云量折减等参数，
-# 通过 `pvlib` 计算光伏 AC 输出功率序列。输出是以时间为索引的 `pv_kw` 序列
-# ------------------------------
 def simulate_pv_output(
     time_index,
     lat: float,
@@ -49,6 +32,23 @@ def simulate_pv_output(
     temp_coeff: float = -0.004,
     cloud_factor: float = 0.75,    # ← 新增云量折减
 ) -> pd.Series:
+    """
+    光伏出力模拟核心建模入口。它基于时间索引、经纬度、装机容量、倾角、方位角、系统损耗、温度系数和云量折减等参数，
+    通过 `pvlib` 计算光伏 AC 输出功率序列。输出是以时间为索引的 `pv_kw` 序列
+
+    Args:
+        time_index (_type_): _description_
+        lat (float): _description_
+        lon (float): _description_
+        capacity_kwp (float, optional): _description_. Defaults to 1.0.
+        tilt (float | None, optional): _description_. Defaults to None.
+        azimuth (float, optional): _description_. Defaults to 180.0.
+        system_loss (float, optional): _description_. Defaults to 0.20.
+        cloud_factor (float, optional): _description_. Defaults to 0.75.
+
+    Returns:
+        pd.Series: _description_
+    """
     # 时间标准化
     time_index = pd.to_datetime(time_index)
     if not isinstance(time_index, pd.DatetimeIndex):
@@ -91,33 +91,40 @@ def simulate_pv_output(
     
     return pv_kw.clip(lower=0, upper=capacity_kwp).rename("pv_kw").tz_localize(None)
 
-# ------------------------------
-# 用于校验光伏序列的年等效利用小时数，判断模拟结果是否落在合理范围
-# ------------------------------
+
 def validate_equivalent_hours(pv_kw: pd.Series, capacity_kwp: float):
+    """
+    用于校验光伏序列的年等效利用小时数，判断模拟结果是否落在合理范围
+
+    Args:
+        pv_kw (pd.Series): _description_
+        capacity_kwp (float): _description_
+
+    Returns:
+        _type_: _description_
+    """
     dt_h = (pv_kw.index[1] - pv_kw.index[0]).total_seconds() / 3600
     annual_kwh = (pv_kw * dt_h).sum()
     eq_hours = annual_kwh / capacity_kwp
     
     return eq_hours
 
-# ------------------------------
-# 用于抽取某一天的光伏出力曲线并作图，主要服务于结果可视化和形状检查
-# ------------------------------
-def plot_daily_pv_shape(pv_kw, date):
-    mask = pv_kw.index.date == pd.to_datetime(date).date()
-    plt.figure(figsize=(8, 4))
-    plt.plot(pv_kw.loc[mask])
-    plt.title(f"PV output on {date}")
-    plt.ylabel("kW")
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    plt.show()
 
-# ------------------------------
-# 模拟数据生成
-# ------------------------------
 def generate_pv_data(df, lat=40.55, lon=113.4, capacity_kwp=100.0, pv_data_path=None, plot_img=False):
+    """
+    模拟数据生成
+
+    Args:
+        df (_type_): _description_
+        lat (float, optional): _description_. Defaults to 40.55.
+        lon (float, optional): _description_. Defaults to 113.4.
+        capacity_kwp (float, optional): _description_. Defaults to 100.0.
+        pv_data_path (_type_, optional): _description_. Defaults to None.
+        plot_img (bool, optional): _description_. Defaults to False.
+
+    Returns:
+        _type_: _description_
+    """
     if not pv_data_path.exists():
         # 通过 `pvlib` 计算光伏 AC 输出功率序列。输出是以时间为索引的 `pv_kw` 序列
         pv_kw = simulate_pv_output(
@@ -130,8 +137,8 @@ def generate_pv_data(df, lat=40.55, lon=113.4, capacity_kwp=100.0, pv_data_path=
         eq_h = validate_equivalent_hours(pv_kw, capacity_kwp=capacity_kwp)
         print("等效小时:", round(eq_h, 1))
         # 抽取某一天的光伏出力曲线并作图，主要服务于结果可视化和形状检查
-        if plot_img:
-            plot_daily_pv_shape(pv_kw, "2025-06-15")
+        # if plot_img:
+        #     plot_daily_pv_shape(pv_kw, "2025-06-15")
         # 数据保存
         tmp = pv_kw.rename("pv_kw").to_frame()
         tmp.index.name = "Time"
@@ -150,14 +157,14 @@ def main():
     # ------------------------------
     # 负荷数据
     # ------------------------------
-    from ba_eva.eva_PV_optim_version.data_loader import load_data
-    energy_data_path = Path("src/ba_eva/dataset/temp/df_2025.csv")
+    from src.wind_pv_es_calc.eva_PV_optim_version.data_loader import load_data
+    energy_data_path = Path("data/wind_pv_es_calc/temp/df_2025.csv")
     df_2025 = load_data(energy_data_path=energy_data_path)
     print(df_2025)
     # ------------------------------
     # PV power data
     # ------------------------------
-    pv_data_path = Path("src/ba_eva/dataset/temp/df_pv_2025.csv")
+    pv_data_path = Path("data/wind_pv_es_calc/temp/df_pv_2025.csv")
     pv_kw = generate_pv_data(df=df_2025, lat=40.55, lon=113.4, capacity_kwp=100.0, pv_data_path=pv_data_path, plot_img=False)
     print(pv_kw)
 
