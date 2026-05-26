@@ -17,7 +17,7 @@
 | `optimization.py` | 读取 YAML、加载数据、构造设备参数、批量容量搜索并输出策略 CSV |
 | `simulation.py` | 读取策略 CSV，计算 baseline、优化后成本、收益拆分和汇总 CSV |
 
-旧的 `optimization_optim_pv_v1.py` 到 `optimization_optim_pv_v5.py`、旧 scheduler 和 `simulation_pv.py` 暂未删除，避免破坏历史入口。后续若要满足严格“只保留三类主文件”的目录状态，需要单独确认删除。
+旧的 `optimization_optim_pv_v1.py` 到 `optimization_optim_pv_v5.py`、旧 scheduler 和 `simulation_pv.py` 已删除；v1-v5 版本差异统一由 YAML 中的 `run.method_version` 与 `version_methods` 控制。
 
 ## 配置文件
 
@@ -60,6 +60,7 @@ data/profit_calc/pv_es/ele_price.csv
 | `v5` | rule-based | PV 先供负荷，固定窗口电网充电，放电窗口补负荷 |
 
 v1-v4 走统一 cvxpy LP 路径，版本差异只通过目标函数权重控制。v5 不求解 LP，按规则递推。
+`version_methods` 是实际生效配置；如需调整版本算法差异，应修改 YAML 中对应版本的权重或 `dispatch_mode`。
 
 ## 运行命令
 
@@ -69,23 +70,13 @@ v1-v4 走统一 cvxpy LP 路径，版本差异只通过目标函数权重控制�
 uv run python src/pv_es_calc/optimization.py
 ```
 
-指定版本：
-
-```bash
-uv run python src/pv_es_calc/optimization.py --method-version v4
-```
-
-指定配置：
-
-```bash
-uv run python src/pv_es_calc/optimization.py --config src/pv_es_calc/config/pv_es_calc.yaml --method-version v5
-```
-
 根据策略结果生成收益汇总：
 
 ```bash
 uv run python src/pv_es_calc/simulation.py
 ```
+
+脚本入口不接收命令行参数。要切换版本、时间范围、容量列表、输出目录或绘图开关，直接修改 `src/pv_es_calc/config/pv_es_calc.yaml`。
 
 默认输出路径按版本区分：
 

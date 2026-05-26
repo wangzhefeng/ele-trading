@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import importlib.util
 from pathlib import Path
 from typing import Any
@@ -114,12 +113,12 @@ def validate_strategy_detail(
 
 
 def simulate_one_scale(
-    es_scale: float,
     config: dict[str, Any],
-    method_version: str | None = None,
+    es_scale: float,
 ) -> dict[str, float]:
     optimization = _load_optimization_module()
-    method = method_version or config["run"]["method_version"]
+    config = optimization.validate_pv_es_config(config)
+    method = config["run"]["method_version"]
     frames = optimization.load_pv_es_input_data(config)
     strategy_path = (
         optimization.strategy_output_dir(config, method)
@@ -165,13 +164,11 @@ def simulate_one_scale(
     }
 
 
-def run_simulation_summary(
-    config: dict[str, Any],
-    method_version: str | None = None,
-) -> pd.DataFrame:
+def run_simulation_summary(config: dict[str, Any]) -> pd.DataFrame:
     optimization = _load_optimization_module()
-    method = method_version or config["run"]["method_version"]
-    rows = [simulate_one_scale(scale, config, method) for scale in config["run"]["es_scale_list"]]
+    config = optimization.validate_pv_es_config(config)
+    method = config["run"]["method_version"]
+    rows = [simulate_one_scale(config, scale) for scale in config["run"]["es_scale_list"]]
     summary_df = pd.DataFrame(rows).set_index("es_scale")
     output_path = optimization.strategy_result_root(config, method) / "estimate_result_scale_all_optim.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -224,15 +221,11 @@ def _scale_label(es_scale: float) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run unified PV-storage simulation.")
-    parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH))
-    parser.add_argument("--method-version", default=None)
-    args = parser.parse_args()
     optimization = _load_optimization_module()
-    config = optimization.load_pv_es_config(args.config)
-    method = args.method_version or config["run"]["method_version"]
-    optimization.run_capacity_search(config, method)
-    run_simulation_summary(config, method)
+    config = optimization.load_pv_es_config(DEFAULT_CONFIG_PATH)
+    method = config["run"]["method_version"]
+    optimization.run_capacity_search(config)
+    run_simulation_summary(config)
     print(f"pv_es_calc simulation finished: method_version={method}")
 
 

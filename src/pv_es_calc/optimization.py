@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import argparse
+from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 from pathlib import Path
 from typing import Any
@@ -32,6 +32,21 @@ def load_pv_es_config(path: str | Path = DEFAULT_CONFIG_PATH) -> dict[str, Any]:
         config = yaml.safe_load(file)
     if not isinstance(config, dict):
         raise ValueError("pv_es_calc config must be a mapping")
+    return validate_pv_es_config(config)
+
+
+def validate_pv_es_config(config: dict[str, Any]) -> dict[str, Any]:
+    run_config = config.get("run")
+    version_methods = config.get("version_methods")
+    if not isinstance(run_config, dict):
+        raise ValueError("pv_es_calc config must contain run settings")
+    if not isinstance(version_methods, dict):
+        raise ValueError("pv_es_calc config must contain version_methods")
+    method_version = run_config.get("method_version")
+    if method_version not in version_methods:
+        raise ValueError(
+            f"run.method_version={method_version!r} must exist in version_methods"
+        )
     return config
 
 
@@ -76,12 +91,10 @@ def build_devices_info(es_scale: float, config: dict[str, Any]) -> list[dict[str
     ]
 
 
-def run_one_scale(
-    es_scale: float,
-    config: dict[str, Any],
-    method_version: str | None = None,
-) -> pd.DataFrame:
-    method = method_version or config["run"]["method_version"]
+def run_one_scale(config: dict[str, Any], es_scale: float) -> pd.DataFrame:
+    config = validate_pv_es_config(config)
+    method = config["run"]["method_version"]
+    version_method = dict(config["version_methods"][method])
     frames = load_pv_es_input_data(config)
     data = (
         frames["demand"]
@@ -102,6 +115,7 @@ def run_one_scale(
         method_version=method,
         pv_sell_price=float(config["market"]["pv_sell_price"]),
         **config["objective"],
+        **version_method,
     )
     result = scheduler.run()[0]
     result["time"] = result.index
@@ -110,16 +124,17 @@ def run_one_scale(
     return result
 
 
-def run_capacity_search(
-    config: dict[str, Any],
-    method_version: str | None = None,
-) -> list[tuple[float, pd.DataFrame]]:
-    method = method_version or config["run"]["method_version"]
-    results = []
-    for es_scale in config["run"]["es_scale_list"]:
-        scale = float(es_scale)
-        results.append((scale, run_one_scale(scale, config, method)))
-    return results
+def run_capacity_search(config: dict[str, Any]) -> list[tuple[float, pd.DataFrame]]:
+    config = validate_pv_es_config(config)
+    scales = [float(es_scale) for es_scale in config["run"]["es_scale_list"]]
+    max_workers = int(config["run"].get("max_workers", 1))
+    if max_workers <= 1 or len(scales) <= 1:
+        return [(scale, run_one_scale(config, scale)) for scale in scales]
+
+    worker_count = min(max_workers, len(scales))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        frames = list(executor.map(lambda scale: run_one_scale(config, scale), scales))
+    return list(zip(scales, frames))
 
 
 def strategy_output_dir(config: dict[str, Any], method_version: str) -> Path:
@@ -158,13 +173,9 @@ def _scale_label(es_scale: float) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run unified PV-storage optimization.")
-    parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH))
-    parser.add_argument("--method-version", default=None)
-    args = parser.parse_args()
-    config = load_pv_es_config(args.config)
-    method = args.method_version or config["run"]["method_version"]
-    run_capacity_search(config, method)
+    config = load_pv_es_config(DEFAULT_CONFIG_PATH)
+    method = config["run"]["method_version"]
+    run_capacity_search(config)
     print(f"pv_es_calc optimization finished: method_version={method}")
 
 

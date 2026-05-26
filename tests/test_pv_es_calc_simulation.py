@@ -28,9 +28,10 @@ def test_simulate_one_scale_returns_consistent_revenue(tmp_path):
     config["run"]["output_dir"] = str(tmp_path)
     config["run"]["start_time"] = "2025-01-01 00:00:00"
     config["run"]["end_time"] = "2025-01-02 00:00:00"
-    optimization.run_one_scale(100, config, method_version="v4")
+    config["run"]["method_version"] = "v4"
+    optimization.run_one_scale(config, 100)
 
-    summary = simulation.simulate_one_scale(100, config, method_version="v4")
+    summary = simulation.simulate_one_scale(config, 100)
 
     assert summary["revenue"] == pytest.approx(summary["baseline_cost"] - summary["opt_cost"])
     assert summary["grid_import_energy"] >= 0
@@ -46,9 +47,10 @@ def test_run_simulation_summary_preserves_english_internal_columns(tmp_path):
     config["run"]["start_time"] = "2025-01-01 00:00:00"
     config["run"]["end_time"] = "2025-01-02 00:00:00"
     config["run"]["es_scale_list"] = [100]
-    optimization.run_capacity_search(config, method_version="v4")
+    config["run"]["method_version"] = "v4"
+    optimization.run_capacity_search(config)
 
-    summary_df = simulation.run_simulation_summary(config, method_version="v4")
+    summary_df = simulation.run_simulation_summary(config)
 
     assert "revenue" in summary_df.columns
     assert "revenue_收益" not in summary_df.columns
