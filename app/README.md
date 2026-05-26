@@ -27,6 +27,8 @@ uv sync
 | `run_user_side_storage_dispatch.py` | 运行用户侧储能调度 demo | 读取用户侧调度配置，生成确定性负荷 / 电价样例，输出成本和逐时调度结果 |
 | `run_user_side_pv_dispatch.py` | 运行用户侧光伏调度 demo | 读取用户侧光伏配置，生成确定性负荷 / 光伏 / 电价样例，输出光伏自用、上网、弃光和购电结果 |
 | `run_user_side_pv_storage_dispatch.py` | 运行用户侧光伏+储能调度 demo | 读取用户侧光伏储能配置，生成确定性负荷 / 光伏 / 电价样例，输出光伏分流、储能充放电、SOC 和成本 |
+| `run_wind_pv_legacy_profit_eval.py` | 运行 legacy 风光数据收益测算 demo | 读取 `data/wind_pv_es_calc/temp/` 下兼容 CSV，输出年度收益拆分 |
+| `run_wind_pv_legacy_market_trading.py` | 运行 legacy 风光数据交易调度 demo | 读取兼容 CSV，切交易窗口后运行用户侧风光储调度 |
 | `run_two_stage_skeleton.py` | 运行 Two-stage + CVaR 最小场景演示 | 构造 4 个时段、3 个价格场景，求解申报量和场景收益 |
 | `run_backtest.py` | 运行最小回测流程 | 串联滚动调度、收益结算和基础指标汇总 |
 | `run_wind_solar_storage.py` | 运行风光储一体化测算演示 | 合成全年 8760 小时气象和负荷，完成风光模拟、容量规划、运行测算和短期预测 |

@@ -75,3 +75,19 @@ def test_run_user_side_pv_storage_dispatch():
     combined = result.stdout + result.stderr
     assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
     assert '用户侧光伏储能调度' in combined or 'total_cost' in combined
+
+
+def test_run_wind_pv_legacy_profit_eval():
+    """run_wind_pv_legacy_profit_eval.py 应退出码为 0 且输出收益测算结果。"""
+    result = _run_script('run_wind_pv_legacy_profit_eval.py')
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
+    assert 'annual_net_profit' in combined or '收益测算' in combined
+
+
+def test_run_wind_pv_legacy_market_trading():
+    """run_wind_pv_legacy_market_trading.py 应退出码为 0 且输出交易调度结果。"""
+    result = _run_script('run_wind_pv_legacy_market_trading.py')
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
+    assert 'market trading' in combined.lower() or 'total_cost' in combined
