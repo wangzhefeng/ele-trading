@@ -12,6 +12,8 @@
 | `scenario.yaml` | 价格场景生成参数 | 场景数量、扰动幅度、随机种子、场景权重 |
 | `capacity_planning.yaml` | 风光储容量规划参数 | 粗/精搜索步长、储能默认参数、风光储单位成本 |
 | `user_side_storage_dispatch.yaml` | 用户侧储能调度 demo 配置 | 储能参数、需量电价、时间步长、确定性负荷 / 电价样例参数 |
+| `user_side_pv_dispatch.yaml` | 用户侧光伏调度 demo 配置 | 需量电价、上网/弃光规则、确定性负荷 / 光伏 / 电价样例参数 |
+| `user_side_pv_storage_dispatch.yaml` | 用户侧光伏+储能调度 demo 配置 | 储能参数、需量电价、上网/弃光规则、可选策略规则、确定性负荷 / 光伏 / 电价样例参数 |
 
 ## 使用边界
 
@@ -28,6 +30,8 @@
 uv run python app/run_storage_arbitrage.py
 uv run python app/run_mpc_demo.py
 uv run python app/run_user_side_storage_dispatch.py
+uv run python app/run_user_side_pv_dispatch.py
+uv run python app/run_user_side_pv_storage_dispatch.py
 uv run python -m pytest -q
 ```
 

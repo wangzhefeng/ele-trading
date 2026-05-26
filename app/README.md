@@ -25,6 +25,8 @@ uv sync
 | `run_storage_arbitrage.py` | 运行单市场储能套利 | 读取默认日前价格和储能参数，输出目标值、充放电功率和 SOC 序列 |
 | `run_mpc_demo.py` | 运行储能 MPC 滚动优化 demo | 读取默认日内价格和储能参数，输出逐步调度 DataFrame |
 | `run_user_side_storage_dispatch.py` | 运行用户侧储能调度 demo | 读取用户侧调度配置，生成确定性负荷 / 电价样例，输出成本和逐时调度结果 |
+| `run_user_side_pv_dispatch.py` | 运行用户侧光伏调度 demo | 读取用户侧光伏配置，生成确定性负荷 / 光伏 / 电价样例，输出光伏自用、上网、弃光和购电结果 |
+| `run_user_side_pv_storage_dispatch.py` | 运行用户侧光伏+储能调度 demo | 读取用户侧光伏储能配置，生成确定性负荷 / 光伏 / 电价样例，输出光伏分流、储能充放电、SOC 和成本 |
 | `run_two_stage_skeleton.py` | 运行 Two-stage + CVaR 最小场景演示 | 构造 4 个时段、3 个价格场景，求解申报量和场景收益 |
 | `run_backtest.py` | 运行最小回测流程 | 串联滚动调度、收益结算和基础指标汇总 |
 | `run_wind_solar_storage.py` | 运行风光储一体化测算演示 | 合成全年 8760 小时气象和负荷，完成风光模拟、容量规划、运行测算和短期预测 |

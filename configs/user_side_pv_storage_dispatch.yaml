@@ -1,0 +1,53 @@
+dispatch:
+  demand_charge_rate: 35.0
+  step_hours: 1.0
+  terminal_soc_target: 5.0
+  cycle_cost_rate: 0.02
+
+storage:
+  capacity: 12.0
+  soc_min: 1.0
+  soc_max: 12.0
+  p_ch_max: 4.0
+  p_dis_max: 4.0
+  eta_ch: 0.95
+  eta_dis: 0.95
+  initial_soc: 5.0
+
+export:
+  allow_export: true
+  sell_price: 0.32
+  export_limit: 6.0
+  curtailment_cost_rate: 0.0
+
+policy:
+  charge_allowed_hours: null
+  discharge_allowed_hours: null
+  pv_to_storage_reward_rate: 0.01
+  pv_to_load_reward_rate: 0.0
+  pv_export_penalty_rate: 0.0
+
+synthetic_data:
+  start_time: "2026-01-01 00:00:00"
+  periods: 24
+  freq_minutes: 60
+  base_load: 5.0
+  midday_peak_load: 3.0
+  evening_peak_load: 6.0
+  pv_peak_power: 9.0
+  valley_price: 0.28
+  flat_price: 0.62
+  peak_price: 1.05
+  price_type_periods:
+    - type: valley
+      start_hour: 0
+      end_hour: 7
+    - type: flat
+      start_hour: 7
+      end_hour: 17
+    - type: peak
+      start_hour: 17
+      end_hour: 22
+    - type: flat
+      start_hour: 22
+      end_hour: 24

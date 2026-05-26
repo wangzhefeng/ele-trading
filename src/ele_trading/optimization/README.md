@@ -9,6 +9,8 @@
 - `mpc_storage.py`：MPC 单窗口与滚动优化。
 - `two_stage_cvar.py`：Two-stage + CVaR 可求解模型。
 - `user_side_storage_dispatch.py`：用户侧 / 园区侧储能调度模型。
+- `user_side_pv_dispatch.py`：用户侧 / 园区侧光伏调度模型。
+- `user_side_pv_storage_dispatch.py`：用户侧 / 园区侧光伏+储能调度模型。
 
 ## 市场储能纯价格套利
 
@@ -221,6 +223,71 @@ discharge_power[t] <= p_dis_max * is_discharging[t]
 - 显式建模 `grid_import`，并通过变量下界禁止反送电。
 - 输出 `constraint_violations`，便于解释结果和发现模型约束异常。
 - 已有单元测试覆盖接口、需量削峰、峰谷价差响应、负荷敏感性和输入校验。
+
+## 用户侧 / 园区侧光伏调度
+
+`user_side_pv_dispatch.py` 处理只有光伏、没有储能的电表后调度场景。模型输入未来负荷预测、光伏预测、购电价格、分时电价类型、需量电费和光伏余电处理规则，输出光伏自用、上网、弃光、电网购电和成本。
+
+该模型没有可控储能设备，因此不引入求解器，而是做确定性能量分配：
+
+```text
+pv_to_load[t] = min(load_forecast[t], pv_forecast[t])
+grid_import[t] = max(load_forecast[t] - pv_to_load[t], 0)
+```
+
+当光伏大于负荷时，余电由 `UserSidePVExportParams` 控制：
+
+- `allow_export=True`：余电可上网，受 `export_limit` 限制。
+- `allow_export=False`：余电不可上网，进入 `pv_curtailment`。
+- `curtailment_cost_rate` 可用于给弃光加惩罚成本。
+
+成本口径为：
+
+```text
+total_cost = energy_cost + demand_cost + curtailment_cost - sell_revenue
+```
+
+该模型适合作为“光伏基准”或“无储能 baseline”，用于解释 PV-only 与 PV+storage 的增量收益。
+
+## 用户侧 / 园区侧光伏+储能调度
+
+`user_side_pv_storage_dispatch.py` 在光伏调度基础上加入储能设备，使用 PuLP 建立 MILP。它参考 `pv_es_calc` 的能量流字段，但不复刻 v1-v5 版本体系，也不默认套用固定充放电窗口。
+
+核心能量流约束：
+
+```text
+pv_to_load[t] + pv_to_storage[t] + pv_to_grid[t] + pv_curtailment[t] = pv_forecast[t]
+pv_to_load[t] + discharge_power[t] + grid_to_load[t] = load_forecast[t]
+charge_power[t] = pv_to_storage[t] + grid_to_storage[t]
+grid_import[t] = grid_to_load[t] + grid_to_storage[t]
+max_grid_import >= grid_import[t]
+```
+
+SOC 动态、充放电互斥和储能上下限沿用用户侧储能模型：
+
+```text
+soc[t] = soc[t-1]
+         + eta_ch * charge_power[t] * step_hours
+         - discharge_power[t] * step_hours / eta_dis
+
+is_charging[t] + is_discharging[t] <= 1
+charge_power[t] <= p_ch_max * is_charging[t]
+discharge_power[t] <= p_dis_max * is_discharging[t]
+```
+
+目标函数最小化：
+
+```text
+energy_cost + demand_cost + cycle_cost + curtailment_cost - sell_revenue
+```
+
+可选 `UserSideDispatchPolicy` 提供轻量策略规则：
+
+- `charge_allowed_hours`：非允许时段禁止 `pv_to_storage` 和 `grid_to_storage`。
+- `discharge_allowed_hours`：非允许时段禁止放电。
+- `pv_to_storage_reward_rate` / `pv_to_load_reward_rate` / `pv_export_penalty_rate`：作为目标函数中的软偏好项。
+
+默认不启用策略规则，此时模型是纯经济优化：由负荷预测、光伏预测、价格、需量成本、售电规则和储能约束共同决定调度。
 
 ## 上下游关系
 
