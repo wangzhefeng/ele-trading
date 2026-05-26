@@ -38,7 +38,7 @@ def data_processor(load_transfer_coef=685436401/704234268,
     # wind power data
     # ------------------------------
     from src.wind_pv_es_calc.eva_PV_optim_version.data_wind_simu import generate_wind_data
-    wind_data_path = Path("src/ba_eva/dataset/temp/df_wind_2026.csv")
+    wind_data_path = Path("src/ba_eva/dataset/temp/df_wind_2025.csv")
     df_wind = generate_wind_data(
         farm_capacity_mw=farm_capacity_mw, 
         mean_wind_speed_140m=mean_wind_speed_140m, 

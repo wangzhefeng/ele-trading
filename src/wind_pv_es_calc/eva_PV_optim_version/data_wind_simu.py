@@ -356,7 +356,7 @@ def generate_wind_data(farm_capacity_mw=200.0, mean_wind_speed_140m=7.27, eq_ful
 # 测试代码 main 函数
 def main():
     # data path
-    wind_data_path = Path("data/wind_pv_es_calc/temp/df_wind_2026.csv")
+    wind_data_path = Path("data/wind_pv_es_calc/temp/df_wind_2025.csv")
     # data load
     df_wind = generate_wind_data(
         farm_capacity_mw=200.0, 
