@@ -20,6 +20,7 @@
 - `ele_trading.data_provider.case_dataset`
 - `ele_trading.capacity_planning.pv_profile`
 - `ele_trading.capacity_planning.wind_profile`
+- `ele_trading.capacity_planning.capacity_optimizer`（已整合 `storage_optim_PV_BESS` 的调度、剪枝、能量估算能力）
 
 若需要新增主线功能，应优先修改 `src/ele_trading/` 下对应模块，而不是在本目录追加新脚本。
 
@@ -109,6 +110,66 @@
 未改动：`backup/` 目录、`ba_eva_optim_version/` 目录。
 
 验证状态：124 passed，`grep ba_eva` 在本目录 `*.py` 下已无残留。
+
+### 2026-05-27 Session 3：storage_optim_PV_BESS 算法整合
+
+#### 已完成：算法能力融合
+
+将 `storage_optim_PV_BESS.py` 的核心能力整合进 `ele_trading.capacity_planning.capacity_optimizer`，不新建模块，作为 `CapacityOptimizer` 的运行模式之一。
+
+整合内容：
+
+| legacy 能力 | 主线实现 | 状态 |
+|---|---|---|
+| `dispatch_numba` 贪心调度（C-rate、eta_roundtrip sqrt 分配） | `_simulate_op` 增强：支持 `eta_roundtrip`、`c_rate`、`soc_max_frac`、`soc_init_frac` | 已完成 |
+| 快速剪枝（年发电量 < 覆盖率目标 × 年负荷 → 跳过） | `_grid_search` 在 ess 循环前按年度能量剪枝 | 已完成 |
+| `simple_energy_sanity_check`（固定年利用小时估算 PV MWp 下界） | 新增同名函数，输出所需 PV MWp 表 | 已完成 |
+| `curve_based_energy_check`（实际曲线年发电量估算） | 新增同名函数，输出所需 PV MWp | 已完成 |
+| `infer_dt_hours`、`monthly_kwh` 工具函数 | 移入 `ele_trading.utils.time_index` | 已完成 |
+| PV-only 搜索模式（fixed_wind_mw=0） | `CapacityOptimizer.optimize` 原有 `fixed_wind_mw` 参数支持 | 已完成 |
+| `pv_monthly_kwh` 输出 | `CapacityPlanResult` 新增 `pv_monthly_kwh` 字段 | 已完成 |
+
+未引入的能力（有意不引入）：
+
+- **Numba JIT 加速**：ele_trading 无 Numba 依赖，当前规模下纯 Python 可接受
+- **`PlanConfigFast` 配置类**：沿用 dict + 默认值模式，不引入额外配置类
+- **`ShiftPolicy`（前瞻充电）**：当前场景不需要，后续按需扩展
+- **月度约束模式（`constraint_mode`）**：当前仅年度约束，后续按需扩展
+
+#### 已完成：配置与运行脚本完善
+
+`configs/capacity_planning.yaml` 补全：
+
+- 新增 `scenario` section：经纬度、时区、等效小时、负荷均值
+- 新增 `constraints` section：绿电率、自用率约束
+- 补全 `search` section：`max_wind_mw`、`max_pv_mw`、`max_ess_mwh` 搜索上界
+
+`app/run_wind_solar_storage.py` 重构：
+
+- 从 YAML 加载参数，去掉硬编码常量
+- 封装 `run_scenario(name, config)` 函数
+- 新增 3 个应用场景示例：
+  - A：风光储联合优化（北京工业用户）
+  - B：PV-only 最小投资（南方园区）
+  - C：高绿电率碳中和方案（出口型企业）
+
+#### 已完成：测试
+
+新增测试（`tests/test_capacity_optimizer.py`）：
+
+- `test_pv_only_mode`：fixed_wind_mw=0 退化为 PV-only 搜索
+- `test_eta_roundtrip_dispatch`：eta_roundtrip sqrt 分配等价性
+- `test_pv_monthly_kwh_in_result`：月度 PV 发电量输出
+- `test_infer_dt_hours`：小时级 / 15 分钟步长推断
+- `test_monthly_kwh`：月度电量汇总
+- `test_simple_energy_sanity_check`：固定利用小时估算
+- `test_curve_based_energy_check`：实际曲线估算
+
+验证状态：131 passed（全量测试通过）。
+
+#### 整合结论
+
+`storage_optim_PV_BESS.py` 的核心算法能力（调度模拟、快速剪枝、能量估算、工具函数）已全部整合进 `ele_trading.capacity_planning.capacity_optimizer`。本目录的 `storage_optim_PV_BESS.py` 保留为 legacy 参考实现，不再需要为主线功能提供算法逻辑。
 
 ---
 
