@@ -1,0 +1,36 @@
+# 场景参数
+scenario:
+  latitude: 28.42               # 纬度（江西）
+  longitude: 117.88              # 经度
+  timezone: "Asia/Shanghai"      # 时区
+  n_hours: 8760                  # 全年小时数
+  solar_equiv_hours: 1100.0      # 光伏年等效小时数
+  wind_equiv_hours: 1920.0       # 风电年等效小时数
+  load_mean_kw: 78000.0          # 用户平均负荷（kW）
+
+# 容量规划约束
+constraints:
+  self_use_ratio_min: 0.60       # 新能源自消纳率 ≥ 60%
+  load_cover_ratio_min: 0.30     # 负荷覆盖率 ≥ 30%
+
+# 储能参数
+storage:
+  eta_roundtrip: 0.92            # 往返效率
+  c_rate: 0.5                    # 充放电倍率（0.5C = 2h 充满）
+  soc_init_frac: 0.50            # 初始荷电状态
+  soc_min_frac: 0.10             # 最小荷电状态
+  soc_max_frac: 1.00             # 最大荷电状态
+
+# 成本参数
+cost:
+  bess_capex_yuan_per_kwh: 1000  # 储能单位造价（元/kWh）
+
+# 搜索参数
+search:
+  batt_hi_max_kwh: 200000        # 储能搜索上界（kWh）
+  search_points: 40              # 搜索点数
+
+# 装机容量（固定值，不参与搜索）
+capacity:
+  wind_farm_mw: 110.0            # 风电场装机（MW）
+  pv_kwp: 28250                  # 光伏装机（kWp）

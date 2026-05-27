@@ -1,0 +1,44 @@
+# Wind+BESS 容量规划配置
+
+# 场景参数
+scenario:
+  latitude: 28.42               # 纬度（江西）
+  longitude: 117.88              # 经度
+  timezone: "Asia/Shanghai"      # 时区
+  n_hours: 8760                  # 全年小时数
+  wind_equiv_hours: 1920.0       # 风电年等效小时数
+  load_mean_kw: 78000.0          # 用户平均负荷（kW）
+
+# 容量规划约束
+constraints:
+  min_green_self_consumption: 0.60  # 新能源自消纳率 ≥ 60%
+  min_load_coverage: 0.30           # 负荷覆盖率 ≥ 30%
+
+# 储能参数
+storage:
+  eta_charge: 0.92               # 充电效率
+  eta_discharge: 0.92            # 放电效率
+  c_rate: 1.0                    # 充放电倍率（1C = 1h 充满）
+  soc_init: 0.50                 # 初始荷电状态
+  soc_min: 0.10                  # 最小荷电状态
+  soc_max: 1.00                  # 最大荷电状态
+  enforce_terminal_soc: false    # 是否强制期末 SOC 回到初始值
+
+# 平移充电策略
+shift_policy:
+  enable_shift: false            # 是否启用平移充电模式
+  lookahead_steps: 8             # 前瞻步数
+  shift_max_frac_of_wind: 0.30   # 最大平移比例
+
+# 成本参数
+cost:
+  capex_cny_per_kwh: 1000        # 储能单位造价（元/kWh）
+
+# 搜索参数
+search:
+  cap_max_mwh: 5000.0            # 储能搜索上界（MWh）
+  tol_mwh: 0.1                   # 二分搜索精度（MWh）
+
+# 装机容量（固定值，不参与搜索）
+capacity:
+  wind_farm_mw: 110.0            # 风电场装机（MW）
