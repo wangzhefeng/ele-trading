@@ -1,19 +1,37 @@
+# 场景参数
+scenario:
+  latitude: 39.9               # 纬度（北京）
+  longitude: 116.4              # 经度
+  timezone: "Asia/Shanghai"     # 时区
+  n_hours: 8760                 # 全年小时数
+  solar_equiv_hours: 1200.0     # 光伏年等效小时数（华北典型值）
+  wind_equiv_hours: 2200.0      # 风电年等效小时数（华北典型值）
+  load_mean_mw: 20.0            # 工业用户平均负荷（MW）
+
+# 容量规划约束
+constraints:
+  green_ratio_min: 0.40         # 绿电消纳率 ≥ 40%
+  self_use_ratio_min: 0.80      # 绿电自用率 ≥ 80%
+
 # 搜索策略参数
 search:
-  coarse_step_mw: 10       # 粗搜索步长（风/光，MW）
-  coarse_step_mwh: 20      # 粗搜索步长（储能，MWh）
-  fine_step_mw: 1          # 精细搜索步长（风/光，MW）
-  fine_step_mwh: 2         # 精细搜索步长（储能，MWh）
-  fine_range_ratio: 0.3    # 精细搜索范围（最优解 ±30%）
+  coarse_step_mw: 10            # 粗搜索步长（风/光，MW）
+  coarse_step_mwh: 20           # 粗搜索步长（储能，MWh）
+  fine_step_mw: 1               # 精细搜索步长（风/光，MW）
+  fine_step_mwh: 2              # 精细搜索步长（储能，MWh）
+  fine_range_ratio: 0.3         # 精细搜索范围（最优解 ±30%）
+  max_wind_mw: 60               # 风电搜索上界（MW）
+  max_pv_mw: 60                 # 光伏搜索上界（MW）
+  max_ess_mwh: 120              # 储能搜索上界（MWh）
 
 # 储能默认参数
 storage:
-  c_rate: 0.5              # 充放电倍率（0.5C = 2h 充满）
-  dod: 0.90                # 放电深度
-  soc_min: 0.10            # 最小荷电状态
-  eta_charge: 0.95         # 充电效率
-  eta_discharge: 0.95      # 放电效率
-  duration_hours: 2.0      # 储能时长（h），用于从容量推算功率
+  c_rate: 0.5                   # 充放电倍率（0.5C = 2h 充满）
+  dod: 0.90                     # 放电深度
+  soc_min: 0.10                 # 最小荷电状态
+  eta_charge: 0.95              # 充电效率
+  eta_discharge: 0.95           # 放电效率
+  duration_hours: 2.0           # 储能时长（h），用于从容量推算功率
 
 # 成本参数（元/kW 或 元/kWh，2024 年参考值）
 cost:

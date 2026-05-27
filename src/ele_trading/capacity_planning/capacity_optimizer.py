@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
+
+from ele_trading.utils.time_index import infer_dt_hours, monthly_kwh
 
 
 @dataclass(slots=True)
@@ -16,6 +18,7 @@ class CapacityPlanResult:
     green_ratio: float
     self_use_ratio: float
     curtailment_ratio: float
+    pv_monthly_kwh: pd.Series | None = None
 
 
 _DEFAULT_SEARCH = {
@@ -87,8 +90,17 @@ class CapacityOptimizer:
                      wind_candidates, pv_candidates, ess_candidates,
                      green_ratio_min, self_use_ratio_min):
         best = None
+        # 预计算单位年度出力和负荷总量（dt_h 在比值中约掉，直接用功率和）
+        load_sum = float(load_series.sum())
+        wind_unit_sum = float(wind_unit_output.sum())
+        solar_unit_sum = float(solar_unit_output.sum())
+        green_threshold = green_ratio_min * load_sum
+
         for w in wind_candidates:
             for p in pv_candidates:
+                # 快速剪枝：即使完美储能也无法满足绿电比例约束
+                if wind_unit_sum * w + solar_unit_sum * p < green_threshold:
+                    continue
                 for e in ess_candidates:
                     metrics = simulate_operation(
                         load_series, wind_unit_output, solar_unit_output,
@@ -104,6 +116,7 @@ class CapacityOptimizer:
                             green_ratio=metrics['green_ratio'],
                             self_use_ratio=metrics['self_use_ratio'],
                             curtailment_ratio=metrics['curtailment_ratio'],
+                            pv_monthly_kwh=_compute_pv_monthly(load_series, solar_unit_output, p),
                         )
                         if best is None or cost < best.total_cost_wan:
                             best = candidate
@@ -119,16 +132,23 @@ def simulate_operation(load_series, wind_unit_output, solar_unit_output,
 
 
 def _simulate_op(load, wind_u, solar_u, wind_mw, pv_mw, ess_mwh, sp):
-    eta_ch = sp.get('eta_charge', 0.95)
-    eta_dis = sp.get('eta_discharge', 0.95)
-    dod = sp.get('dod', 0.90)
+    eta_roundtrip = sp.get('eta_roundtrip')
+    if eta_roundtrip is not None:
+        eta_sqrt = float(eta_roundtrip) ** 0.5
+        eta_ch = eta_sqrt
+        eta_dis = eta_sqrt
+    else:
+        eta_ch = sp.get('eta_charge', 0.95)
+        eta_dis = sp.get('eta_discharge', 0.95)
     soc_min_frac = sp.get('soc_min', 0.10)
+    soc_max_frac = sp.get('soc_max', sp.get('dod', 0.90) + soc_min_frac)
     c_rate = sp.get('c_rate', 0.5)
+    soc_init_frac = sp.get('soc_init_frac', 0.5)
 
     ess_mw_power = ess_mwh * c_rate
-    soc_hi = ess_mwh * (dod + soc_min_frac)
+    soc_hi = ess_mwh * soc_max_frac
     soc_lo = ess_mwh * soc_min_frac
-    soc = ess_mwh * 0.5
+    soc = ess_mwh * soc_init_frac
 
     n = len(load)
     total_curtailment = 0.0
@@ -169,6 +189,8 @@ def _simulate_op(load, wind_u, solar_u, wind_mw, pv_mw, ess_mwh, sp):
         'total_green_gen_mwh': float(total_green_gen),
         'total_grid_buy_mwh': float(total_grid_buy),
         'total_curtailment_mwh': float(total_curtailment),
+        'total_load_mwh': float(total_load),
+        'green_consumed_mwh': float(green_consumed),
     }
 
 
@@ -177,6 +199,47 @@ def _compute_cost(wind_mw, pv_mw, ess_mwh, cost):
     pv_cost = pv_mw * 1000 * cost.get('pv_yuan_per_kw', 3500) / 10000
     ess_cost = ess_mwh * 1000 * cost.get('ess_yuan_per_kwh', 1500) / 10000
     return wind_cost + pv_cost + ess_cost
+
+
+def _compute_pv_monthly(load_series, solar_unit_output, pv_mw):
+    if pv_mw <= 0:
+        return None
+    try:
+        dt_h = infer_dt_hours(load_series.index if isinstance(load_series.index, pd.DatetimeIndex) else load_series)
+        solar_vals = solar_unit_output.values * pv_mw
+        time_idx = load_series.index if isinstance(load_series.index, pd.DatetimeIndex) else pd.to_datetime(load_series)
+        return monthly_kwh(time_idx, solar_vals, dt_h)
+    except Exception:
+        return None
+
+
+def simple_energy_sanity_check(load_series, green_ratio_min=0.30, self_use_min=0.60,
+                               yield_kwh_per_kwp=(1000, 1100, 1200, 1300)):
+    """用固定年利用小时估算所需 PV MWp 下界。"""
+    dt_h = infer_dt_hours(load_series.index)
+    load_kwh_year = float(load_series.sum()) * dt_h
+    gen_required = green_ratio_min * load_kwh_year / self_use_min
+    return {
+        'load_gwh_year': load_kwh_year / 1e6,
+        'gen_required_gwh': gen_required / 1e6,
+        'pv_required_table': pd.DataFrame([
+            {'yield_kWh_per_kWp_yr': y, 'pv_required_MWp': gen_required / y / 1000}
+            for y in yield_kwh_per_kwp
+        ]),
+    }
+
+
+def curve_based_energy_check(load_series, solar_unit_output, green_ratio_min=0.30, self_use_min=0.60):
+    """用实际单位 PV 曲线年发电量估算所需 PV MWp。"""
+    dt_h = infer_dt_hours(load_series.index)
+    load_kwh_year = float(load_series.sum()) * dt_h
+    yield_per_kwp = float(solar_unit_output.sum()) * dt_h
+    gen_required = green_ratio_min * load_kwh_year / self_use_min
+    return {
+        'load_gwh_year': load_kwh_year / 1e6,
+        'yield_curve_kWh_per_kWp': yield_per_kwp,
+        'pv_required_MWp': gen_required / yield_per_kwp / 1000,
+    }
 
 
 def _arange(lo, hi, step):
