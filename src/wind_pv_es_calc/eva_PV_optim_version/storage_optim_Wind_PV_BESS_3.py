@@ -25,7 +25,7 @@ from typing import Optional, Dict, Any, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from ba_eva.storage_optim_common import (
+from wind_pv_es_calc.storage_optim_common import (
     njit, NUMBA_OK,
     PlanConfigFast,
     dispatch_numba,
@@ -480,8 +480,8 @@ def plan_wind_fixed_pv_bess_fast_full(
 
 # 测试代码 main 函数
 def main():
-    from ba_eva.eva_PV_optim_version.data_processing import data_processor
-    from ba_eva.eva_PV_optim_version.plot_ts import plot_load_pv_wind_netload
+    from wind_pv_es_calc.eva_PV_optim_version.data_processing import data_processor
+    from utils.plot_ts import plot_load_pv_wind_netload
     df_load, df_pv, df_wind = data_processor(
         load_transfer_coef=685436401/704234268, 
         farm_capacity_mw=110.0,
@@ -526,8 +526,8 @@ def main():
     print("\nengine:", res["engine"])
     print("debug:", res["debug"])
     print(res.keys())
-    # res["pv_gen_kwh_monthly"].to_csv("src/ba_eva/dataset/temp/pv_gen_kwh_monthly.csv")
-    # res["wind_gen_kwh_monthly"].to_csv("src/ba_eva/dataset/tempwind_gen_kwh_monthly.csv")
+    # res["pv_gen_kwh_monthly"].to_csv("data/wind_pv_es_calc/temp/pv_gen_kwh_monthly.csv")
+    # res["wind_gen_kwh_monthly"].to_csv("data/wind_pv_es_calc/temp/wind_gen_kwh_monthly.csv")
     # ------------------------------
     # version 3
     # ------------------------------
@@ -564,8 +564,8 @@ def main():
     print("\nengine:", res["engine"])
     print("debug:", res["debug"])
     print(res.keys())
-    # res["pv_gen_kwh_monthly"].to_csv("src/ba_eva/dataset/temp/pv_gen_kwh_monthly.csv")
-    # res["wind_gen_kwh_monthly"].to_csv("src/ba_eva/dataset/tempwind_gen_kwh_monthly.csv")
+    # res["pv_gen_kwh_monthly"].to_csv("data/wind_pv_es_calc/temp/pv_gen_kwh_monthly.csv")
+    # res["wind_gen_kwh_monthly"].to_csv("data/wind_pv_es_calc/temp/wind_gen_kwh_monthly.csv")
 
 if __name__ == "__main__":
     main()

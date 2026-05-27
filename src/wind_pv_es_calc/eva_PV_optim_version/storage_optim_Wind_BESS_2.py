@@ -25,7 +25,7 @@ from typing import Optional, Dict, Any, Union
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from ba_eva.storage_optim_common import (
+from wind_pv_es_calc.storage_optim_common import (
     BESSConfig, 
     Targets, 
     Investment, 
@@ -33,7 +33,7 @@ from ba_eva.storage_optim_common import (
     read_timeseries, 
     align_and_merge,
 )
-from ba_eva.eva_PV_optim_version.plot_ts import plot_ele_series
+from utils.plot_ts import plot_ele_series
 
 
 # ============================================================
@@ -536,16 +536,16 @@ def main():
     # ------------------------------
     # 负荷数据
     # ------------------------------
-    from ba_eva.eva_PV_optim_version.data_loader import load_data
-    energy_data_path = Path("src/ba_eva/dataset/temp/df_2025.csv")
+    from wind_pv_es_calc.eva_PV_optim_version.data_loader import load_data
+    energy_data_path = Path("data/wind_pv_es_calc/temp/df_2025.csv")
     df_2025 = load_data(energy_data_path=energy_data_path)
     df_2025["P_kw"] = df_2025["P_kw"] / 704234268 * 685436401
     print(df_2025)
     # ------------------------------
     # wind power data
     # ------------------------------
-    from ba_eva.eva_PV_optim_version.data_wind_simu import generate_wind_data
-    wind_data_path = Path("src/ba_eva/dataset/temp/df_wind_2026.csv")
+    from wind_pv_es_calc.eva_PV_optim_version.data_wind_simu import generate_wind_data
+    wind_data_path = Path("data/wind_pv_es_calc/temp/df_wind_2025.csv")
     df_wind = generate_wind_data(
         farm_capacity_mw=110.0, 
         mean_wind_speed_140m=5.5, 
@@ -558,8 +558,8 @@ def main():
     # ------------------------------
     # PV(Photo Voltaics) power data
     # ------------------------------
-    from ba_eva.eva_PV_optim_version.data_pv_simu import generate_pv_data
-    pv_data_path = Path("src/ba_eva/dataset/temp/df_pv_2025.csv")
+    from wind_pv_es_calc.eva_PV_optim_version.data_pv_simu import generate_pv_data
+    pv_data_path = Path("data/wind_pv_es_calc/temp/df_pv_2025.csv")
     pv_kw_28 = generate_pv_data(
         df=df_2025, 
         lat=28.42, 
@@ -575,7 +575,7 @@ def main():
     res = run_planning_min_investment(
         load_file=df_2025,   # DataFrame: Time + P_kw
         wind_file=df_wind,   # DataFrame: Time(index或列) + WindPower_MW
-        out_schedule_csv="src/ba_eva/dataset/temp/bess_schedule.csv",
+        out_schedule_csv="data/wind_pv_es_calc/temp/bess_schedule.csv",
         freq=None,           # 或指定 "15min"
         cap_max_mwh=5000.0,  # 如果确实需要更大再加
         tol_mwh=0.1,
@@ -591,11 +591,11 @@ def main():
     # 2. 计算月度指标
     # ------------------------------
     df, dt_h = align_and_merge(df_2025, df_wind)
-    # df.to_csv("src/ba_eva/dataset/temp/bess_load_wind.csv", encoding="utf-8-sig")
+    # df.to_csv("data/wind_pv_es_calc/temp/bess_load_wind.csv", encoding="utf-8-sig")
     print(df)
     monthly_metrics = calc_monthly_wind_metrics(df)
     print(monthly_metrics.round(4))
-    # monthly_metrics.to_csv("src/ba_eva/dataset/temp/bess_monthly_metrics.csv", encoding="utf-8-sig")
+    # monthly_metrics.to_csv("data/wind_pv_es_calc/temp/bess_monthly_metrics.csv", encoding="utf-8-sig")
     # ------------------------------
     # 3. 绘制容量曲线
     # ------------------------------

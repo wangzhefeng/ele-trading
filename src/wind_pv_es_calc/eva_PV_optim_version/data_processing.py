@@ -29,7 +29,7 @@ def data_processor(load_transfer_coef=685436401/704234268,
     # 负荷数据
     # ------------------------------
     from src.wind_pv_es_calc.eva_PV_optim_version.data_loader import load_data
-    energy_data_path = Path("src/ba_eva/dataset/temp/df_2025.csv")
+    energy_data_path = Path("data/wind_pv_es_calc/temp/df_2025.csv")
     df_load = load_data(energy_data_path=energy_data_path)
     if load_transfer_coef is not None:
         df_load["P_kw"] = df_load["P_kw"] * load_transfer_coef
@@ -38,7 +38,7 @@ def data_processor(load_transfer_coef=685436401/704234268,
     # wind power data
     # ------------------------------
     from src.wind_pv_es_calc.eva_PV_optim_version.data_wind_simu import generate_wind_data
-    wind_data_path = Path("src/ba_eva/dataset/temp/df_wind_2025.csv")
+    wind_data_path = Path("data/wind_pv_es_calc/temp/df_wind_2025.csv")
     df_wind = generate_wind_data(
         farm_capacity_mw=farm_capacity_mw, 
         mean_wind_speed_140m=mean_wind_speed_140m, 
@@ -52,7 +52,7 @@ def data_processor(load_transfer_coef=685436401/704234268,
     # PV(Photo Voltaics) power data
     # ------------------------------
     from src.wind_pv_es_calc.eva_PV_optim_version.data_pv_simu import generate_pv_data
-    pv_data_path = Path("src/ba_eva/dataset/temp/df_pv_2025.csv")
+    pv_data_path = Path("data/wind_pv_es_calc/temp/df_pv_2025.csv")
     df_pv = generate_pv_data(
         df=df_load, 
         lat=lat, 
@@ -80,7 +80,7 @@ def data_processor(load_transfer_coef=685436401/704234268,
         df = df_total.copy()
         df["Wind_kw"] = df["WindPower_MW"] * 1000
         df["NetLoad_kw"] = df["P_kw"] - df["PV_kw"] - df["Wind_kw"]
-        df.to_csv("src/ba_eva/dataset/temp/df_total.csv")
+        df.to_csv("data/wind_pv_es_calc/temp/df_total.csv")
         print(df)
 
         return df_load, df_pv, df_wind, df

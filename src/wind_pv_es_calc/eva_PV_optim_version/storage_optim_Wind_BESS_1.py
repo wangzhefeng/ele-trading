@@ -23,7 +23,7 @@ from typing import Optional, Dict, Any, Union
 
 import numpy as np
 import pandas as pd
-from ba_eva.storage_optim_common import (
+from wind_pv_es_calc.storage_optim_common import (
     NUMBA_OK,
     UnitsConfig, PlanConfigFast,
     infer_dt_hours, normalize_time_and_load, as_time_series, align_to_time,
@@ -168,8 +168,8 @@ def main():
     # ------------------------------
     # 负荷数据
     # ------------------------------
-    from ba_eva.eva_PV_optim_version.data_loader import load_data
-    energy_data_path = Path("src/ba_eva/dataset/temp/df_2025.csv")
+    from wind_pv_es_calc.eva_PV_optim_version.data_loader import load_data
+    energy_data_path = Path("data/wind_pv_es_calc/temp/df_2025.csv")
     df_2025 = load_data(energy_data_path=energy_data_path)
     # 对构造出的负荷曲线做一次总量比例校准，使其贴近目标年电量口径。
     df_2025["P_kw"] = df_2025["P_kw"] / 704234268 * 685436401
@@ -177,8 +177,8 @@ def main():
     # ------------------------------
     # 风电功率数据
     # ------------------------------
-    from ba_eva.eva_PV_optim_version.data_wind_simu import generate_wind_data
-    wind_data_path = Path("src/ba_eva/dataset/temp/df_wind_2026.csv")
+    from wind_pv_es_calc.eva_PV_optim_version.data_wind_simu import generate_wind_data
+    wind_data_path = Path("data/wind_pv_es_calc/temp/df_wind_2025.csv")
     df_wind = generate_wind_data(
         farm_capacity_mw=110.0,
         mean_wind_speed_140m=5.5,
@@ -191,8 +191,8 @@ def main():
     # ------------------------------
     # 光伏功率数据
     # ------------------------------
-    from ba_eva.eva_PV_optim_version.data_pv_simu import generate_pv_data
-    pv_data_path = Path("src/ba_eva/dataset/temp/df_pv_2025.csv")
+    from wind_pv_es_calc.eva_PV_optim_version.data_pv_simu import generate_pv_data
+    pv_data_path = Path("data/wind_pv_es_calc/temp/df_pv_2025.csv")
     pv_kw_28 = generate_pv_data(
         df=df_2025,
         lat=28.42,

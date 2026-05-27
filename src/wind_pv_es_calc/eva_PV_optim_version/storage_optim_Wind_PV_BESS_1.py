@@ -23,7 +23,7 @@ from typing import Optional, Dict, Any
 
 import numpy as np
 import pandas as pd
-from ba_eva.storage_optim_common import (
+from wind_pv_es_calc.storage_optim_common import (
     BESSConfig, 
     ensure_time_sorted
 )
@@ -278,15 +278,15 @@ def main():
     # ------------------------------
     # 负荷数据
     # ------------------------------
-    from ba_eva.eva_PV_optim_version.data_loader import load_data
-    energy_data_path = Path("src/ba_eva/dataset/temp/df_2025.csv")
+    from wind_pv_es_calc.eva_PV_optim_version.data_loader import load_data
+    energy_data_path = Path("data/wind_pv_es_calc/temp/df_2025.csv")
     df_2025 = load_data(energy_data_path=energy_data_path)
     print(df_2025)
     # ------------------------------
     # wind power data
     # ------------------------------
-    from ba_eva.eva_PV_optim_version.data_wind_simu import generate_wind_data
-    wind_data_path = Path("src/ba_eva/dataset/temp/df_wind_2026.csv")
+    from wind_pv_es_calc.eva_PV_optim_version.data_wind_simu import generate_wind_data
+    wind_data_path = Path("data/wind_pv_es_calc/temp/df_wind_2025.csv")
     df_wind = generate_wind_data(
         farm_capacity_mw=200.0, 
         mean_wind_speed_140m=7.27, 
@@ -299,8 +299,8 @@ def main():
     # ------------------------------
     # PV power data
     # ------------------------------
-    from ba_eva.eva_PV_optim_version.data_pv_simu import generate_pv_data
-    pv_data_path = Path("src/ba_eva/dataset/temp/df_pv_2025.csv")
+    from wind_pv_es_calc.eva_PV_optim_version.data_pv_simu import generate_pv_data
+    pv_data_path = Path("data/wind_pv_es_calc/temp/df_pv_2025.csv")
     pv_kw_50m = generate_pv_data(
         df=df_2025, 
         lat=40.55, 

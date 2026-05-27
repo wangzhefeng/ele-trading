@@ -23,7 +23,7 @@ from typing import Dict
 
 import numpy as np
 import pandas as pd
-from ba_eva.storage_optim_common import (
+from wind_pv_es_calc.storage_optim_common import (
     njit, NUMBA_OK,
     PlanConfigFast,
     dispatch_numba,
@@ -277,18 +277,18 @@ def main():
     # ------------------------------
     # 负荷数据
     # ------------------------------
-    from ba_eva.eva_PV_optim_version.data_loader import load_data
+    from wind_pv_es_calc.eva_PV_optim_version.data_loader import load_data
     # data path
-    energy_data_path = Path("src/ba_eva/dataset/temp/df_2025.csv")
+    energy_data_path = Path("data/wind_pv_es_calc/temp/df_2025.csv")
     # data load
     df_2025 = load_data(energy_data_path=energy_data_path)
     print(df_2025)
     # ------------------------------
     # PV power data
     # ------------------------------
-    from ba_eva.eva_PV_optim_version.data_pv_simu import generate_pv_data
+    from wind_pv_es_calc.eva_PV_optim_version.data_pv_simu import generate_pv_data
     # data path
-    pv_data_path = Path("src/ba_eva/dataset/temp/df_pv_2025.csv")
+    pv_data_path = Path("data/wind_pv_es_calc/temp/df_pv_2025.csv")
     # 这里生成的是 1.0 kWp 光伏对应的逐时出力曲线，后续通过线性缩放得到任意装机容量。
     pv_kw = generate_pv_data(df=df_2025, lat=40.55, lon=113.4, capacity_kwp=1.0, pv_data_path=pv_data_path, plot_img=False)
     print(pv_kw)
@@ -317,7 +317,7 @@ def main():
     print("PV自用率 PV_used / PV_gen:", res["self_use_ratio"])
     print("PV覆盖率 PV_used / Load:", res["load_cover_ratio"])
     # 导出的是规划结果对应的月度 PV 发电量，便于和外部报表或后续分析衔接。
-    res["pv_monthly_kwh"].to_csv("src/ba_eva/dataset/temp/pv_monthly_kwh.csv")
+    res["pv_monthly_kwh"].to_csv("data/wind_pv_es_calc/temp/pv_monthly_kwh.csv")
     # ------------------------------
     # 两个 sanity check 用于判断规划结果的量级是否合理，不替代正式优化模型。
     # ------------------------------
