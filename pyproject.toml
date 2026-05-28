@@ -35,6 +35,12 @@ dependencies = [
 dev = [
   "pytest>=8.0.0",
 ]
+weather = [
+  "xarray>=2025.1.0",
+  "pymongo>=4.10.0",
+  "netCDF4>=1.7.0",
+  "pykrige>=1.7.0",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
