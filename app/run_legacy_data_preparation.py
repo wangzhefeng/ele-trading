@@ -1,7 +1,22 @@
+"""遗留数据准备运行脚本
+
+从 configs/wind_pv_es_calc_data_bridge.yaml 加载参数，
+生成负荷、光伏、风电出力时序数据，支持 CSV 缓存。
+
+流程：构建负荷曲线 → 光伏出力 profile → 风电出力 profile → 合并总表
+"""
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = PROJECT_ROOT / 'src'
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+import argparse
 
 import pandas as pd
 import yaml
@@ -13,7 +28,10 @@ from ele_trading.data_provider.resource_weather import fetch_weather_open_meteo
 from ele_trading.utils.log_util import logger
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+# ─────────────────────────────────────────────
+# Config / IO helpers
+# ─────────────────────────────────────────────
+
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "wind_pv_es_calc_data_bridge.yaml"
 
 
@@ -39,6 +57,16 @@ def _read_legacy_csv(path: str | Path) -> pd.DataFrame:
     return df
 
 
+def _save_legacy_frame(df: pd.DataFrame, path: str | Path) -> None:
+    output = _resolve_path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(output, index=False, encoding="utf-8")
+
+
+# ─────────────────────────────────────────────
+# Config converters
+# ─────────────────────────────────────────────
+
 def _to_load_build_config(config: dict[str, Any], target_year: int, freq: str) -> LoadProfileBuildConfig:
     load_cfg = dict(config)
     load_cfg["target_year"] = int(load_cfg.get("target_year", target_year))
@@ -59,11 +87,9 @@ def _to_wind_config(config: dict[str, Any], target_year: int) -> WindProfileConf
     return WindProfileConfig(**cfg)
 
 
-def _save_legacy_frame(df: pd.DataFrame, path: str | Path) -> None:
-    output = _resolve_path(path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(output, index=False, encoding="utf-8")
-
+# ─────────────────────────────────────────────
+# Frame builders
+# ─────────────────────────────────────────────
 
 def _build_load_frame(config: dict[str, Any]) -> pd.DataFrame:
     run_cfg = config["run"]
@@ -164,12 +190,16 @@ def build_legacy_total_frame(
     return total
 
 
+# ─────────────────────────────────────────────
+# Public entry points
+# ─────────────────────────────────────────────
+
 def build_legacy_temp_data(config: dict[str, Any]) -> dict[str, pd.DataFrame]:
     load_df = _build_load_frame(config)
     pv_df = _build_pv_frame(config, load_df)
     wind_df = _build_wind_frame(config)
 
-    result = {"load": load_df, "pv": pv_df, "wind": wind_df}
+    result: dict[str, pd.DataFrame] = {"load": load_df, "pv": pv_df, "wind": wind_df}
     if bool(config["run"].get("write_df_total", True)):
         total = build_legacy_total_frame(
             load_df=load_df,
@@ -195,5 +225,39 @@ def ensure_legacy_temp_data(config_path: str | Path = DEFAULT_CONFIG_PATH) -> di
     return result
 
 
+# ─────────────────────────────────────────────
+# CLI
+# ─────────────────────────────────────────────
+
+def main(config_path: str | None = None) -> None:
+    path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+    config = load_bridge_config(path)
+
+    site = config.get("site", {})
+    run = config.get("run", {})
+    logger.info(
+        "starting legacy data preparation: site=(%.2f, %.2f) year=%s freq=%s mode=%s",
+        float(site.get("latitude", 0)),
+        float(site.get("longitude", 0)),
+        run.get("target_year"),
+        run.get("freq"),
+        run.get("refresh_mode"),
+    )
+
+    result = ensure_legacy_temp_data(path)
+
+    for key, df in result.items():
+        logger.info("  %s: %d rows, columns=%s", key, len(df), list(df.columns))
+
+    total_path = config.get("paths", {}).get("df_total_path")
+    if "total" in result and total_path:
+        logger.info("total frame written to: %s", total_path)
+
+    logger.info("legacy data preparation complete")
+
+
 if __name__ == "__main__":
-    ensure_legacy_temp_data(DEFAULT_CONFIG_PATH)
+    parser = argparse.ArgumentParser(description="Prepare legacy wind/PV/load data")
+    parser.add_argument("--config", type=str, default=None, help="Path to bridge config YAML")
+    args = parser.parse_args()
+    main(args.config)

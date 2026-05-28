@@ -5,8 +5,11 @@ import sys
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
+APP_ROOT = PROJECT_ROOT / "app"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
+if str(APP_ROOT) not in sys.path:
+    sys.path.insert(0, str(APP_ROOT))
 
 import pandas as pd
 import yaml
@@ -19,7 +22,7 @@ from ele_trading.optimization.interfaces import (
 )
 from ele_trading.optimization.user_side_pv_storage_dispatch import run_user_side_pv_storage_dispatch
 from ele_trading.utils.log_util import logger
-from wind_pv_es_calc.eva_PV_optim_version.prepare_legacy_temp_data import (
+from run_legacy_data_preparation import (
     build_legacy_total_frame,
     ensure_legacy_temp_data,
     load_bridge_config,

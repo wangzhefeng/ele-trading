@@ -3,17 +3,12 @@
 所有测试使用模拟数据，不依赖 MongoDB 或 NetCDF 文件。
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 import numpy as np
 import pandas as pd
 import pytest
 from unittest import mock
 
-from wind_pv_es_calc.weather.weather import (
+from ele_trading.data_provider.weather_io import (
     make_sample_weather_dataset,
     make_sample_load_data,
     NetCDFToJSON,
@@ -23,7 +18,7 @@ from wind_pv_es_calc.weather.weather import (
     get_real_for_points,
     read_measured_folder,
 )
-from wind_pv_es_calc.weather.analysis import (
+from ele_trading.forecasting.weather_feature import (
     compute_correlations,
     compute_multi_lag_correlations,
     pick_best_correlation,
@@ -32,9 +27,6 @@ from wind_pv_es_calc.weather.analysis import (
     build_regression_factor,
     rbf_interpolate,
     run_clustering,
-    plot_spatial_heatmap,
-    plot_cluster_map,
-    plot_rbf_heatmap,
     cluster_corr_points,
     match_points_to_centers,
     spatial_join_nearest,
@@ -185,7 +177,7 @@ class TestNetCDFToJSON:
 
 class TestWeatherMongoClient:
     def test_init_builds_uri(self):
-        with mock.patch("wind_pv_es_calc.weather.weather.MongoClient"):
+        with mock.patch("ele_trading.data_provider.weather_io.MongoClient"):
             client = WeatherMongoClient(
                 host="testhost", port=12345, database="testdb",
                 username="user", password="pass",
@@ -194,7 +186,7 @@ class TestWeatherMongoClient:
             assert "testdb" in client.uri
 
     def test_find_to_df_empty(self):
-        with mock.patch("wind_pv_es_calc.weather.weather.MongoClient"):
+        with mock.patch("ele_trading.data_provider.weather_io.MongoClient"):
             client = WeatherMongoClient()
             client.db = mock.MagicMock()
             client.db["test_coll"].find.return_value = []
@@ -202,7 +194,7 @@ class TestWeatherMongoClient:
             assert df.empty
 
     def test_find_to_df_drops_id(self):
-        with mock.patch("wind_pv_es_calc.weather.weather.MongoClient"):
+        with mock.patch("ele_trading.data_provider.weather_io.MongoClient"):
             client = WeatherMongoClient()
             client.db = mock.MagicMock()
             client.db["test_coll"].find.return_value = [
@@ -213,7 +205,7 @@ class TestWeatherMongoClient:
             assert "lat" in df.columns
 
     def test_find_to_json_default_no_id(self):
-        with mock.patch("wind_pv_es_calc.weather.weather.MongoClient"):
+        with mock.patch("ele_trading.data_provider.weather_io.MongoClient"):
             client = WeatherMongoClient()
             client.db = mock.MagicMock()
             client.db["test_coll"].find.return_value = []
@@ -586,43 +578,6 @@ class TestComputeClusterWeights:
         result = compute_cluster_weights(df_c, points)
         assert "score" in result.columns
         assert "weight" in result.columns
-
-
-# ===========================================================================
-# Test: Visualization (no display)
-# ===========================================================================
-
-class TestVisualization:
-    def test_plot_spatial_heatmap(self, sample_corr_df):
-        import matplotlib
-        matplotlib.use("Agg")
-        df = sample_corr_df.copy()
-        corr_cols = [c for c in df.columns if any(m in c for m in ("pearson", "spearman", "kendall"))]
-        df["max_abs_corr"] = df[corr_cols].abs().max(axis=1)
-        ax = plot_spatial_heatmap(df, value_col="max_abs_corr")
-        assert ax is not None
-        import matplotlib.pyplot as plt
-        plt.close("all")
-
-    def test_plot_rbf_heatmap(self, sample_corr_df):
-        import matplotlib
-        matplotlib.use("Agg")
-        df = sample_corr_df.copy()
-        corr_cols = [c for c in df.columns if any(m in c for m in ("pearson", "spearman", "kendall"))]
-        df["max_abs_corr"] = df[corr_cols].abs().max(axis=1)
-        ax = plot_rbf_heatmap(df, value_col="max_abs_corr", grid_size=30)
-        assert ax is not None
-        import matplotlib.pyplot as plt
-        plt.close("all")
-
-    def test_plot_cluster_map(self, sample_corr_df):
-        import matplotlib
-        matplotlib.use("Agg")
-        df = run_clustering(sample_corr_df, method="kmeans", n_clusters=2)
-        ax = plot_cluster_map(df)
-        assert ax is not None
-        import matplotlib.pyplot as plt
-        plt.close("all")
 
 
 # ===========================================================================

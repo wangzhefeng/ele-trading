@@ -10,7 +10,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_prepare_legacy_temp_data_uses_cached_outputs(tmp_path: Path):
-    from wind_pv_es_calc.eva_PV_optim_version.prepare_legacy_temp_data import (
+    import sys
+    from pathlib import Path as _Path
+    _app_dir = str(_Path(__file__).resolve().parents[1] / "app")
+    if _app_dir not in sys.path:
+        sys.path.insert(0, _app_dir)
+    from run_legacy_data_preparation import (
         build_legacy_temp_data,
     )
 
