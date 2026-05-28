@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, List
 
 
@@ -8,6 +8,24 @@ class StorageArbitrageResult:
     p_ch: List[float]
     p_dis: List[float]
     soc: List[float]
+
+
+@dataclass(slots=True)
+class CapacitySizingResult:
+    """储能容量+调度联合优化结果。"""
+    feasible: bool
+    solver_status: str = ""
+    optimal_power_kw: float = 0.0
+    optimal_capacity_kwh: float = 0.0
+    net_objective_yuan: float = 0.0
+    annualized_capex_yuan: float = 0.0
+    charge_schedule: List[float] = field(default_factory=list)
+    discharge_schedule: List[float] = field(default_factory=list)
+    soc_schedule: List[float] = field(default_factory=list)
+    charge_kwh: float = 0.0
+    discharge_kwh: float = 0.0
+    roundtrip_efficiency: float = 0.0
+    actual_utilization: float = 0.0
 
 
 @dataclass(slots=True)

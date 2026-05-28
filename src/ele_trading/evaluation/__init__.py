@@ -1,3 +1,3 @@
 from .backtest import run_simple_backtest
-from .metrics import summarize_storage_metrics
+from .metrics import compute_irr, summarize_storage_metrics, compute_extended_metrics
 from .settlement import compute_dispatch_revenue
