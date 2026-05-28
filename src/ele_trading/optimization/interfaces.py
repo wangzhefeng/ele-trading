@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, List
 
 
@@ -159,3 +160,38 @@ class UserSidePVStorageDispatchResult:
     cycle_cost: float
     total_cost: float
     constraint_violations: dict[str, float]
+
+
+@dataclass(slots=True)
+class CvxpStorageProfile:
+    """CVXPY 调度算法的行为配置。"""
+    objective_energy_multiplier: float = 1.0
+    demand_charge_type: str = "exact_max_net"
+    smoothing_enabled: bool = False
+    transformer_capacity_constraint: bool = False
+    demand_peak_guard_constraint: bool = False
+
+
+@dataclass(slots=True)
+class CvxpStorageDispatchInput:
+    """CVXPY 凸优化单节点储能调度输入。"""
+    timestamps: list[datetime]
+    demand_load: list[float]
+    ele_prices: list[float]
+    ele_types: list[str]
+    storage: UserSideStorageParams
+    initial_soc: float = 0.0
+    max_demand_price: float = 0.0
+    freq_minutes: int = 60
+    profile: CvxpStorageProfile = field(default_factory=CvxpStorageProfile)
+    transform_capacity: float = 0.0
+
+
+@dataclass(slots=True)
+class CvxpStorageDispatchResult:
+    """CVXPY 凸优化单节点储能调度输出。"""
+    charge_power: list[float]
+    discharge_power: list[float]
+    net_power: list[float]
+    soc: list[float]
+    objective_value: float

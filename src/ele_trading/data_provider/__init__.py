@@ -76,3 +76,8 @@ from .user_side_pv_storage_dispatch_sample import (
     build_user_side_pv_storage_dispatch_input,
     load_user_side_pv_storage_dispatch_config,
 )
+from .cvxp_storage_sample import (
+    build_synthetic_cvxp_dispatch_frame,
+    build_cvxp_storage_dispatch_input,
+    load_cvxp_storage_dispatch_config,
+)

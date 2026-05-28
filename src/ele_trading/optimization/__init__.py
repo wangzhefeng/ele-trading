@@ -1,5 +1,8 @@
 from .interfaces import (
     CapacitySizingResult,
+    CvxpStorageDispatchInput,
+    CvxpStorageDispatchResult,
+    CvxpStorageProfile,
     MPCStepResult,
     StorageArbitrageResult,
     UserSideDispatchPolicy,
@@ -18,3 +21,4 @@ from .two_stage_cvar import build_two_stage_cvar_model
 from .user_side_pv_dispatch import run_user_side_pv_dispatch
 from .user_side_pv_storage_dispatch import run_user_side_pv_storage_dispatch
 from .user_side_storage_dispatch import run_user_side_storage_dispatch
+from .cvxp_storage_dispatch import CVXP_PROFILES, get_cvxp_profile, run_cvxp_storage_dispatch
