@@ -24,11 +24,6 @@ def flatten_valley_price_diff(
     return result
 
 
-def flat_valley_price_diff(df_input: pd.DataFrame) -> pd.DataFrame:
-    """In-place wrapper for flatten_valley_price_diff."""
-    return flatten_valley_price_diff(df_input, inplace=True)
-
-
 def _require_columns(df: pd.DataFrame, price_col: str, type_col: str) -> None:
     missing_columns = [column for column in (price_col, type_col) if column not in df.columns]
     if missing_columns:

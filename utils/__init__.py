@@ -1,6 +1,6 @@
 """Project-level utility function entrypoints."""
 
-from .energy_price import flat_valley_price_diff, flatten_valley_price_diff
+from .energy_price import flatten_valley_price_diff
 from .pv_es_plot import plot_strategy_power_detail
 from .time_index import (
     end_of_that_day,
@@ -19,7 +19,6 @@ __all__ = [
     "end_of_that_day",
     "end_of_this_es_cycle",
     "es_cycle_window",
-    "flat_valley_price_diff",
     "flatten_valley_price_diff",
     "generate_5mins",
     "generate_days",
