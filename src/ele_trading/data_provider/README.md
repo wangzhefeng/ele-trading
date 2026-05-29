@@ -1,48 +1,44 @@
-# 数据模块说明
+# data_provider — 数据、配置与样例输入模块
 
-数据模块负责把样例数据、配置参数和场景文件读取成统一的数据结构。
+本模块负责把 CSV/YAML、负荷曲线、气象数据、legacy 兼容数据和合成样例转换为核心算法可消费的数据结构。
 
 ## 当前文件
 
-- `schemas.py`：定义价格序列、储能参数和场景样本结构。
-- `loader.py`：读取 CSV / YAML 样例文件。
-- `sample_data.py`：提供内置样例路径和快捷加载函数。
-- `user_side_storage_sample.py`：读取用户侧储能调度 demo 配置，并生成确定性的负荷 / 电价 / 电价类型模拟数据。
-- `user_side_pv_dispatch_sample.py`：读取用户侧光伏调度 demo 配置，并生成确定性的负荷 / 光伏 / 电价模拟数据。
-- `user_side_pv_storage_dispatch_sample.py`：读取用户侧光伏+储能调度 demo 配置，并生成确定性的负荷 / 光伏 / 电价模拟数据。
+| 文件 | 职责 |
+|------|------|
+| `schemas.py` | 价格、储能、场景、负荷、PV/风电 profile、case dataset 的 dataclass |
+| `loader.py` | CSV/YAML 读取函数，返回统一结构 |
+| `sample_data.py` | 内置最小样例路径和快捷加载函数 |
+| `case_dataset.py` | 构造投资测算和交易测算 case dataset |
+| `load_profile.py` | 从历史负荷 Excel 构造目标年份负荷 profile |
+| `resource_weather.py` | Open-Meteo 获取、天气 CSV 读写 |
+| `weather_io.py` | NetCDF、Mongo、样例气象、测点读取和天气模拟 |
+| `time_series_ops.py` | 时间戳清洗、重采样、对齐、质量分和异常修复 |
+| `user_side_storage_sample.py` | 用户侧储能 demo 配置读取和合成输入 |
+| `user_side_pv_dispatch_sample.py` | 用户侧 PV-only demo 配置读取和合成输入 |
+| `user_side_pv_storage_dispatch_sample.py` | 用户侧 PV+storage demo 配置读取和合成输入 |
+| `user_side_pv_sample.py` | 早期用户侧 PV/PV+storage 兼容样例构造 |
+| `cvxp_storage_sample.py` | CVXPY 储能调度 demo 配置读取和合成输入 |
 
-## 用户侧储能调度模拟数据
+## 数据来源
 
-`user_side_storage_sample.py` 服务 `app/run_user_side_storage_dispatch.py` 和相关测试。它根据 `configs/user_side_storage_dispatch.yaml` 生成一个确定性的调度窗口：
+- `data/raw/`：价格和储能最小样例。
+- `data/scenarios/`：价格场景样例。
+- `data/wind_pv_es_calc/`：legacy 风光储测算兼容数据。
+- `configs/*.yaml`：入口脚本和样例构造参数。
+- 外部天气源：Open-Meteo、NetCDF、Mongo 或本地测点文件。
 
-- `timestamp`：调度时段时间戳。
-- `load_forecast`：未来负荷预测样例。
-- `buy_price`：购电价格样例。
-- `price_type`：分时电价类型样例。
+## 典型流向
 
-这组数据只用于 demo 和回归测试，不代表真实负荷预测模型。真实项目接入时应由预测模块或外部数据源提供 `load_forecast`，再构造 `UserSideStorageDispatchInput`。
+```text
+configs/*.yaml / data/* / weather source
+→ data_provider loader / builder
+→ forecasting / optimization / capacity_planning / evaluation
+→ app demo 或 tests
+```
 
-## 用户侧光伏调度模拟数据
+## 使用边界
 
-`user_side_pv_dispatch_sample.py` 服务 `app/run_user_side_pv_dispatch.py`，根据 `configs/user_side_pv_dispatch.yaml` 生成 PV-only 调度输入。
-
-`user_side_pv_storage_dispatch_sample.py` 服务 `app/run_user_side_pv_storage_dispatch.py`，根据 `configs/user_side_pv_storage_dispatch.yaml` 生成 PV+storage 调度输入。
-
-两个脚本各自维护模拟数据构造逻辑，不互相导入 builder 函数。它们生成的表字段一致：
-
-- `timestamp`：调度时段时间戳。
-- `load_forecast`：未来负荷预测样例。
-- `pv_forecast`：未来光伏功率预测样例。
-- `buy_price`：购电价格样例。
-- `price_type`：分时电价类型样例。
-
-这两组数据只用于 demo 和测试，不代表真实光伏预测模型。真实项目接入时应由预测模块或外部数据源提供 `load_forecast` 和 `pv_forecast`。
-
-## 上下游关系
-
-- 上游来自 `data/` 目录中的原始样例数据与配置。
-- 下游被 `forecasting`、`scenario`、`optimization`、`evaluation` 调用。
-
-## 扩展建议
-
-后续可增加数据库读取、接口拉取、市场数据版本管理与设备状态快照加载能力。
+- 本模块负责数据形状、路径解析、样例生成和轻量质量处理，不负责优化目标函数。
+- 真实项目接入时，应在这里建立稳定的数据 contract，再让算法模块消费 contract。
+- legacy 桥接代码用于兼容历史 CSV 字段，不应成为新主线字段命名的来源。

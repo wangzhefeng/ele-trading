@@ -1,147 +1,140 @@
 # 电力交易算法架构
 
-`ele-trading` 是一个面向虚拟电厂、电力现货交易、储能调度与风光储测算研究的研究型原型项目。当前主线聚焦 `src/ele_trading/` 核心包，把“数据 / 气象 → 预测 / 资源模拟 → 场景 → 优化 → 控制 → 结算 → 回测 / 容量测算”拆成可持续扩展的工程模块。
+`ele-trading` 是面向虚拟电厂、电力现货交易、用户侧/分布式储能调度、风光储容量规划和气象特征工程的研究型原型项目。当前主线集中在 `src/ele_trading/` 核心包，并通过 `app/` 入口脚本和 `configs/` 配置样例串起可运行链路。
 
 ## 项目目标
 
-1. 把储能单市场套利、MPC 滚动优化、Two-stage + CVaR 沉淀成模块化实现。
-2. 给风光功率预测、偏差考核优化、风光储联合调度与容量规划测算预留稳定接口。
-3. 为中国电力现货市场场景（广东、山东等）提供可扩展的工程骨架。
+1. 沉淀储能套利、MPC、Two-stage + CVaR、用户侧储能、用户侧光伏、光伏+储能和分布式储能调度算法。
+2. 打通风电、光伏、BESS、Wind+BESS、Wind+PV+BESS 容量规划与运行测算链路。
+3. 提供数据构造、气象处理、预测、场景、优化、控制、结算、回测的可扩展工程骨架。
 
-## 系统闭环架构
+## 系统闭环
 
 ```text
-原始数据采集 / 气象数据构造 → 数据清洗与特征工程 → 预测 / 资源模拟
-→ 场景生成模块 → 优化求解模块 → 策略生成与下发
-→ 实时执行 / MPC 修正 → 结算与收益分析 → 回测评估 / 容量测算
+数据 / 配置 / 气象 → 数据清洗与特征工程 → 预测 / 资源模拟
+→ 场景生成与缩减 → 优化调度 / 容量规划 → 滚动控制
+→ 结算与指标 → 回测 / 收益测算 / 可视化
 ```
 
-当前版本重点落地了两条链路：
+当前主要链路：
 
-1. **电力交易最小闭环**：样例数据、价格预测、场景生成、储能套利优化、MPC 滚动优化、Two-stage + CVaR、结算指标与回测入口。
-2. **风光储测算链路**：合成气象数据、光伏 / 风电物理模拟、风光功率预测、容量规划优化与一体化运行演示入口。
+- **市场储能链路**：价格读取、储能套利、MPC、Two-stage + CVaR、结算、回测。
+- **用户侧链路**：负荷/电价/PV 样例构造，储能、PV-only、PV+storage 调度与需量电费核算。
+- **分布式储能链路**：多变压器、多柜组合、容量搜索、调度模拟和收益汇总。
+- **风光储链路**：负荷构造、PV/风电出力 profile、BESS/Wind+BESS/Wind+PV+BESS 容量规划。
+- **天气特征链路**：气象数据生成、读取、空间插值、相关性分析、聚类选点和权重计算。
 
 ## 仓库结构
 
 ```text
 ele-trading/
-├── src/ele_trading/          # 核心包（当前 README 聚焦这条主线）
-│   ├── data/                 # CSV/YAML 数据加载、样例路径、dataclass schema
-│   ├── forecasting/          # 价格、光伏、风电预测接口与实现
-│   ├── scenario/             # 价格场景采样与缩减
-│   ├── optimization/         # 储能套利、MPC、Two-stage + CVaR
-│   ├── control/              # 滚动调度封装
-│   ├── evaluation/           # 收益结算、偏差考核、回测指标
-│   ├── capacity_planning/    # 风光模拟、容量规划、运行测算
-│   └── utils/                # IO 与日志工具
-├── app/                      # 可直接运行的 demo 入口
-├── configs/                  # 市场、储能、场景、容量规划配置
-├── data/                     # 人工构造的最小样例数据与研究数据
-├── docs/                     # 架构说明、Two-stage 笔记、研究文档
-├── tests/                    # 当前核心包测试与入口脚本冒烟测试
-├── LOG.md                    # append-only 待办、限制和演进记录
-├── pyproject.toml            # 项目配置与依赖
-├── .agents/AGENTS.md         # Agent 协作规范
-└── .claude/CLAUDE.md         # Claude 协作规范
+├── src/ele_trading/              # 核心 Python 包
+│   ├── data_provider/            # 配置、样例数据、负荷、气象、时间序列处理
+│   ├── forecasting/              # 价格、风光功率和天气特征工程
+│   ├── scenario/                 # 价格场景采样与缩减
+│   ├── optimization/             # 储能、用户侧、CVXPY、分布式储能、Two-stage 优化
+│   ├── control/                  # 滚动调度封装
+│   ├── evaluation/               # 结算、偏差考核、指标、回测、仿真
+│   ├── capacity_planning/        # PV/风电/BESS/风光储容量规划
+│   ├── demand/                   # 最大需量计算
+│   └── utils/                    # 包内 IO、日志、时间和数据对齐工具
+├── app/                          # 可直接运行的 demo/流程入口
+├── configs/                      # 项目级 YAML 配置样例
+├── data/                         # 最小样例数据、legacy 兼容数据、研究数据
+├── docs/                         # 架构说明、算法笔记、调研文档
+├── tests/                        # 单元测试和入口脚本冒烟测试
+├── utils/                        # 根目录 legacy/项目级辅助工具
+├── LOG.md                        # append-only 状态、限制和待办记录
+├── pyproject.toml                # 项目依赖与测试配置
+└── uv.lock                       # uv 锁文件
 ```
 
-仓库里还保留了若干历史研究目录，例如 `src/es_calc/`、`src/demand_response/`、`src/wind_pv_es_calc/` 等。它们不是当前根 README 的主线范围；接手项目时应优先阅读和修改 `src/ele_trading/` 及其关联的 `app/`、`configs/`、`data/`、`tests/`。
+## 核心模块
 
-## 七大核心模块
+### `data_provider`
 
-### 1. 数据模块 `src/ele_trading/data`
+负责把 CSV/YAML、合成样例、负荷曲线、气象数据和 legacy 数据桥接成统一输入。重点文件包括：
 
-- `schemas.py`：定义 `PriceSeries`、`StorageConfig`、`ScenarioRecord` 等 dataclass 数据结构。
-- `loader.py`：从 CSV/YAML 读取价格序列、储能参数和场景样本。
-- `sample_data.py`：提供内置样例数据路径和快捷加载函数。
+- `loader.py`、`sample_data.py`、`schemas.py`：基础价格、储能、场景和 profile 数据结构。
+- `load_profile.py`：从历史负荷 Excel 构造目标年份负荷曲线。
+- `resource_weather.py`、`weather_io.py`：Open-Meteo、NetCDF、Mongo、样例气象和测点读取。
+- `time_series_ops.py`：时间戳清洗、重采样、对齐和异常修复。
+- `*_sample.py`：用户侧储能、PV、PV+storage、CVXPY 调度的确定性 demo 输入构造。
 
-### 2. 预测模块 `src/ele_trading/forecasting`
+### `forecasting`
 
-- `base.py`：定义统一预测输出 `ForecastOutput`，包含点预测与可选上下分位数。
-- `price_forecast.py`：`SimplePriceForecaster`，基于历史均值和波动生成占位式价格预测。
-- `solar_forecast.py`：`SolarPowerForecaster`，支持 `harmonic` 傅里叶谐波回归和 `physics` pvlib 物理模拟。
-- `wind_forecast.py`：`WindPowerForecaster`，支持 `statistical` AR(p) + 气候学混合和 `physics` windpowerlib 物理模拟。
-- `renewable_forecast.py`：保留风光预测占位接口，用于向后兼容。
+包含统一 `ForecastOutput`、简单价格预测、PV/风电功率预测、可兼容的 renewable stub，以及天气特征工程：
 
-### 3. 场景模块 `src/ele_trading/scenario`
+- PV 支持 `harmonic` 谐波回归和 `physics` 物理仿真。
+- 风电支持 `statistical` 统计模型和 `physics` 物理仿真。
+- `weather_feature.py` 支持相关性、滞后相关性、聚类选点、RBF/Kriging 插值和空间权重。
 
-- `sampler.py`：默认使用 Latin Hypercube Sampling（`scipy.stats.qmc`），可通过 Cholesky 分解引入时序相关性；保留 `method='mc'` 蒙特卡洛路径。
-- `reduction.py`：Kantorovich/Wasserstein L1 后向缩减，迭代剔除并转移权重，直到剩余目标场景数量。
+### `scenario`
 
-### 4. 优化模块 `src/ele_trading/optimization`
+价格场景模块已从简单扰动升级为：
 
-- `storage_arbitrage.py`：单市场储能套利（PuLP/CBC），含充放电互斥、SOC 动态递推、可选终端 SOC 约束。
-- `mpc_storage.py`：单窗口 MPC 求解与滚动仿真，支持 `terminal_soc_fraction` 终端 SOC 下界约束。
-- `two_stage_cvar.py`：Two-stage + CVaR 模型（Pyomo），包含收益等式、SOC 动态、偏差约束与 CVaR 线性化。
-- `interfaces.py`：统一 `StorageArbitrageResult`、`MPCStepResult` 等优化结果结构。
+- Latin Hypercube Sampling（LHS）或 Monte Carlo（`method="mc"`）采样。
+- 可选 Cholesky 相关性注入。
+- Kantorovich/Wasserstein L1 后向缩减，并重新分配被删场景权重。
 
-### 5. 容量规划模块 `src/ele_trading/capacity_planning`
+### `optimization`
 
-- `solar_simulation.py`：基于 `pvlib` 的光伏物理模拟与等效小时数校准。
-- `wind_simulation.py`：基于 `windpowerlib` 的风电物理模拟与等效小时数校准。
-- `capacity_optimizer.py`：粗-精两阶段网格搜索容量优化，并提供 `simulate_operation()` 做给定装机后的全年运行测算。
+当前优化主线包括：
 
-### 6. 控制模块 `src/ele_trading/control`
+- `storage_arbitrage.py`：单市场储能套利和容量 sizing。
+- `mpc_storage.py`：单窗口 MPC 与滚动 MPC。
+- `two_stage_cvar.py`：Two-stage + CVaR 可求解模型。
+- `user_side_storage_dispatch.py`：用户侧储能成本优化。
+- `user_side_pv_dispatch.py`：用户侧 PV 自用/上网/弃光调度。
+- `user_side_pv_storage_dispatch.py`：用户侧 PV+storage 联合调度。
+- `cvxp_storage_dispatch.py`：CVXPY 版本储能调度 profile。
+- `dist_ess_dispatch.py`：分布式储能多柜容量搜索和调度模拟。
 
-- `rolling_dispatch.py`：滚动调度包装器，复用 MPC 模块，让控制层不直接依赖底层求解细节。
+### `capacity_planning`
 
-### 7. 评估模块 `src/ele_trading/evaluation`
+容量规划模块覆盖 PV、风电、BESS 和组合系统：
 
-- `backtest.py`：`run_simple_backtest()` 最小回测闭环。
-- `metrics.py`：基础收益指标与扩展绩效指标，包括 Sharpe、最大回撤、EFC、单 EFC 收益、RTE、利用率。
-- `settlement.py`：调度收益计算与广东式分层偏差考核罚款模型。
+- PV/风电物理仿真：`solar_simulation.py`、`wind_simulation.py`。
+- profile 构造与缓存：`pv_profile.py`、`wind_profile.py`。
+- 联合容量优化：`capacity_optimizer.py`。
+- BESS / Wind+BESS / Wind+PV+BESS：`bess_capacity_planner.py`、`wind_bess_planner.py`、`wind_pv_bess_planner.py`。
+- 可行性、IRR 和多节点扫描：`feasibility_analyzer.py`、`pv_storage_irr_scanner.py`、`multi_node_scanner.py`。
+
+### `evaluation`、`control`、`demand`、`utils`
+
+- `evaluation`：收益结算、偏差考核、IRR、扩展储能指标、简单回测、仿真模型。
+- `control`：基于 MPC 的滚动调度包装。
+- `demand`：固定窗口/滑动窗口最大需量和需量电费计算。
+- `src/ele_trading/utils`：包内 YAML、日志、时间切分、时间索引、数据对齐工具。
 
 ## 快速开始
 
-### 1. 安装项目依赖
-
-本项目按项目根目录 `.venv` 和 `uv` 管理 Python 环境。
+本项目使用项目根目录 `.venv` 和 `uv`：
 
 ```bash
 uv sync
 ```
 
-常用依赖包括 `pulp`、`pyomo`、`scipy`、`rainflow`、`pvlib`、`windpowerlib`、`numba`、`scikit-learn`、`cvxpy` 等。
-
-求解器是运行优化链路的前置条件：
-
-- PuLP 储能套利和 MPC 路径需要本机可执行 `cbc`。
-- Two-stage + CVaR Pyomo 演示需要 `glpk` 或兼容求解器。
-- macOS 可参考 `brew install glpk` 安装 GLPK；是否安装 CBC 取决于本机求解器管理方式。
-
-### 2. 运行储能套利样例
+常用入口：
 
 ```bash
 uv run python app/run_storage_arbitrage.py
-```
-
-### 3. 运行 MPC 样例
-
-```bash
 uv run python app/run_mpc_demo.py
-```
-
-### 4. 运行 Two-stage + CVaR 演示
-
-```bash
 uv run python app/run_two_stage_skeleton.py
-```
-
-### 5. 运行最小回测
-
-```bash
 uv run python app/run_backtest.py
-```
-
-### 6. 运行风光储测算演示
-
-```bash
+uv run python app/run_user_side_storage_dispatch.py
+uv run python app/run_user_side_pv_dispatch.py
+uv run python app/run_user_side_pv_storage_dispatch.py
 uv run python app/run_wind_solar_storage.py
 ```
 
-该脚本串起：合成全年 8760 小时气象数据 → 光伏 / 风电物理模拟 → 工业负荷合成 → 容量规划优化 → 全年时序运行测算 → 48 小时风电 / 光伏功率预测演示。它比前几个最小 demo 更重，适合用于链路演示，不适合作为每次改动后的快速冒烟命令。
+更完整的入口清单见 `app/README.md`。
 
-## 测试与当前状态
+## 配置文件
+
+`configs/` 下配置按算法链路组织，包括市场、储能、场景、用户侧调度、legacy 数据桥接、分布式储能、BESS/Wind+BESS/Wind+PV+BESS 容量规划。字段说明见 `configs/README.md`。
+
+## 验证
 
 标准验证命令：
 
@@ -149,28 +142,14 @@ uv run python app/run_wind_solar_storage.py
 uv run python -m pytest -q
 ```
 
-当前工作区实测结果：56 项测试全部通过。PuLP 储能套利和 MPC 路径使用 `PULP_CBC_CMD`，优先走项目 `.venv` 中 PuLP 自带的 CBC 求解器，避免依赖系统 `PATH` 中的 `cbc` 命令。
+当前测试包含核心算法、样例数据构造、入口脚本、气象特征、legacy 工具兼容等切片。若完整测试在 collection 阶段报 `ModuleNotFoundError: No module named 'src.es_rolling_schedule'`，这是 legacy 兼容路径缺失导致的既有问题，不代表文档更新引入算法回归。
 
-## 配置文件
+## 数据边界
 
-| 文件 | 用途 |
-|------|------|
-| `configs/storage.yaml` | 储能物理参数（SOC、功率、效率、退化成本） |
-| `configs/market.yaml` | 基础市场参数 |
-| `configs/market_guangdong.yaml` | 广东现货市场：15 分钟颗粒度、偏差考核分层阈值、价格限幅 |
-| `configs/scenario.yaml` | 场景生成参数（数量、噪声、权重） |
-| `configs/capacity_planning.yaml` | 容量规划搜索策略、储能 / 成本参数 |
+`data/` 中既有人工构造的最小样例，也有 legacy 兼容链路和研究数据。样例数据用于接口验证、demo 和回归测试，不代表真实市场数据，不能直接用于生产策略评估。
 
-## 样例数据说明
+## 协作边界
 
-`data/` 下的数据是人工构造的最小样例和研究数据，仅用于：
-
-- 演示接口形状
-- 打通最小闭环
-- 验证代码可运行
-
-不代表真实电力现货市场数据，不能用于生产策略评估。
-
-## 研究文档
-
-`docs/` 整理了架构说明、Two-stage + CVaR 工程笔记和多份调研 / 方案文档，用于解释工程设计来源与算法背景。
+- 新算法实现放入 `src/ele_trading/`，入口脚本只负责组装配置、数据和日志输出。
+- 根目录 `utils/` 是 legacy/项目级辅助工具；包内通用能力优先放入 `src/ele_trading/utils/`。
+- `LOG.md` 为 append-only 状态记录；过期历史不回写，追加新状态说明。

@@ -7,17 +7,54 @@
 - 每次新增记录都追加到文件末尾
 - 优先记录真实未完成事项、验证缺口和下一步建议
 
+## TODO
+
+本节是对历史日志中所有未关闭条目的当前状态审计结果，作为后续真正需要继续处理的统一入口。下方历史记录保持原样，不回写旧条目。
+
+### 历史未关闭项评估结论
+
+#### 已完成，不再作为待办保留
+
+- `TODO 001` 中 Two-stage 仍是骨架的问题已完成：`two_stage_cvar.py` 已具备收益等式、SOC 动态、偏差约束、CVaR 线性化和最小可解入口。
+- `TODO 001` / `TODO 008` 中回测测试、入口脚本冒烟测试、扩展指标回测测试已完成：当前存在 `tests/test_backtest.py`、`tests/test_entry_scripts.py`、`tests/test_extended_metrics_backtest.py`。
+- `TODO 004` 已完成：`scenario/sampler.py` 已支持 LHS、`method="mc"` 和 Cholesky 相关性，`scenario/reduction.py` 已实现 Kantorovich/Wasserstein L1 后向缩减。
+- `TODO 005` 中 MPC 终端 SOC 下界已完成：`mpc_storage.py` 已有 `terminal_soc_fraction`，并有 `tests/test_mpc_storage.py` 覆盖。
+- `TODO 006` 已完成：`metrics.py` 已有 `compute_extended_metrics()`，覆盖 Sharpe、MDD、EFC、单 EFC 收益、RTE、利用率。
+- `TODO 007` 中偏差考核主体已完成：`settlement.py` 已有 `compute_deviation_penalty()`，`configs/market_guangdong.yaml` 已有 15 分钟、96 时段、价格限幅和分层罚款参数。
+- `TODO 009` 中 `dt=0.25` 的优化模型能力已完成：`tests/test_storage_arbitrage.py` 和 `tests/test_mpc_storage.py` 已覆盖 15 分钟时间步长求解。
+- `TODO 015` 中 `capacity_planning/README.md` 已完成；`src/ele_trading/` 下目录级 README 已在 2026-05-29 文档对齐中更新。
+- `TODO 016` / `TODO-F` 中生成物忽略规则已完成：`.gitignore` 已包含 `.DS_Store`、`logs/`、`__pycache__/`、`*.egg-info/`、`.pytest_cache/` 等规则。
+- `TODO-A 测试重建` 已完成：`tests/` 当前已恢复，包含核心算法、样例数据、入口脚本、天气特征和 legacy 工具兼容测试。
+- `TODO-E 文档补齐` 中核心文档部分已完成：根 README、`app/README.md`、`configs/README.md`、`src/ele_trading/*/README.md`、根 `utils/README.md` 已对齐当前项目状态。
+
+#### 不建议继续作为独立待办推进
+
+- `TODO 005` 中“基于预期价格的终端价值函数”目前不建议继续作为默认待办。已有 `terminal_soc_fraction` 硬约束可控且向后兼容；只有在明确发现硬约束显著压低收益时，再单独建模比较终端价值函数。
+- `TODO 002` 中“LOG append-only 机制”已成为项目约定，不再作为工程实现待办保留。
+- 2026-05-23 记录中的“tests 目录缺失”已经过期；当前真实问题不是 tests 缺失，而是 legacy import 兼容路径缺失。
+
+### 当前待完成项
+
+- [ ] **TODO-001 legacy import 兼容修复（P0）**：修复 `tests/test_utils_energy_price.py` 和 `tests/test_utils_time_index.py` collection 阶段导入失败。当前失败原因是测试仍导入不存在的 `src.es_rolling_schedule.Utils.*`。需要二选一：恢复 `src.es_rolling_schedule` 兼容 shim，或修改测试只验证根目录 `utils` 当前稳定入口。完成标准：`uv run python -m pytest -q` 不再因 `ModuleNotFoundError: No module named 'src.es_rolling_schedule'` 中断。
+- [ ] **TODO-002 测试说明文档（P1）**：新增或更新 `tests/README.md`，说明当前测试覆盖范围、入口脚本冒烟边界、legacy 兼容测试依赖和完整测试命令。完成标准：测试目录有 README，并能解释当前 `test_entry_scripts.py` 未覆盖所有重型 app 入口的原因。
+- [ ] **TODO-003 重型入口验收策略（P1）**：为 `run_wind_solar_storage.py`、`run_bess_capacity_planning.py`、`run_wind_bess_capacity_planning.py`、`run_wind_pv_bess_capacity_planning.py`、`run_dist_ess_dispatch.py` 设计轻量 smoke 或显式人工验收策略。当前 `tests/test_entry_scripts.py` 只覆盖部分入口，未覆盖这些重型链路。完成标准：要么补轻量测试参数/测试用例，要么在 `tests/README.md` 中明确这些入口的人工验收命令和不纳入默认测试的理由。
+- [ ] **TODO-004 15 分钟样例数据与市场配置说明（P2）**：补齐 96 点 15 分钟价格样例或明确不再需要该样例；若保留广东市场配置，补充 `dt=0.25` 与 `granularity_minutes: 15` 的传参关系说明。完成标准：`data/raw/sample_day_ahead_prices_96.csv` 或替代说明存在，且文档清楚说明 15 分钟市场配置如何传入优化模型。
+- [ ] **TODO-005 离线雨流退化核算（P2）**：实现 `compute_rainflow_degradation()`，补充单元测试，并在 `run_backtest.py` 中与线性吞吐量退化成本并列输出。完成标准：`metrics.py` 暴露雨流退化函数，`tests/test_metrics.py` 覆盖典型 SOC 序列，回测输出能对比两种退化口径。
+- [ ] **TODO-006 价格预测升级（P2）**：在保留 `SimplePriceForecaster` 的基础上评估是否引入 `ARIMAForecaster`。如继续实现，需要添加 `statsmodels` 依赖、统一 `ForecastOutput` 输出、补充预测长度和上下界测试。完成标准：`price_forecast.py` 有 ARIMA 类，`pyproject.toml` 有依赖，`tests/test_forecasting.py` 覆盖 ARIMA 输出。
+- [ ] **TODO-007 项目级 AGENTS/CLAUDE 规则补齐（P2）**：将当前电力交易项目特有约束写入项目规范，包括求解器要求、场景模块兼容参数、扩展指标 `e_cap` 要求、偏差考核参数不得硬编码等。完成标准：项目级 agent 规范文件中包含这些约束，且与 README/LOG 不冲突。
+- [ ] **TODO-008 fresh 环境验收（P3）**：在全新 `.venv` 或干净 uv 环境中验证 `pvlib`、`windpowerlib`、`scipy`、`rainflow`、`cvxpy` 等关键依赖和核心 demo 可安装可运行。完成标准：记录 fresh 环境验证命令、结果和失败依赖；不要求每次普通改动都跑完整重型链路。
+
 ## 2026-04-17
 
 ### TODO 001 - 首轮项目接手与运行验证后的残留点
 
-- [ ] `src/ele_trading/optimization/two_stage_cvar.py` 当前仍是可导入、可实例化的建模骨架，尚未接入完整收益项、物理约束与可求解的最小场景版。
-- [ ] 测试覆盖仍偏薄，当前尚未单独增加 `backtest` 指标输出回归测试，也没有入口脚本级回归测试。
+- [x] `src/ele_trading/optimization/two_stage_cvar.py` 当前仍是可导入、可实例化的建模骨架，尚未接入完整收益项、物理约束与可求解的最小场景版。状态：已完成，当前 `two_stage_cvar.py` 已具备完整可求解模型。
+- [x] 测试覆盖仍偏薄，当前尚未单独增加 `backtest` 指标输出回归测试，也没有入口脚本级回归测试。状态：已完成，当前已有 `tests/test_backtest.py` 和 `tests/test_entry_scripts.py`。
 
 ### TODO 002 - 项目级 AGENTS.md 建立后的残留点
 
-- [ ] 当前 `AGENTS.md` 已覆盖项目定位、验证顺序和修改边界，但仍是第一版；后续如引入更多求解链路或工作流，需要继续补充更细的运行/审查约束。
-- [ ] `LOG.md` 的 append-only 记录机制已建立；后续每次操作结束后都应在本文件追加真实残留点，避免只在对话中口头说明。
+- [ ] 当前 `AGENTS.md` 已覆盖项目定位、验证顺序和修改边界，但仍是第一版；后续如引入更多求解链路或工作流，需要继续补充更细的运行/审查约束。状态：仍需继续，已迁移到顶部 `TODO-007`。
+- [x] `LOG.md` 的 append-only 记录机制已建立；后续每次操作结束后都应在本文件追加真实残留点，避免只在对话中口头说明。状态：已成为项目记录约定，不再作为工程待办保留。
 
 ## 2026-04-18
 
@@ -25,44 +62,44 @@
 
 参考文献：Conejo et al. (2010) *Decision Making Under Uncertainty in Electricity Markets*；Rockafellar & Uryasev (2000) CVaR 线性化。
 
-- [ ] `src/ele_trading/optimization/two_stage_cvar.py`：为每个场景 ω 添加收益等式约束，将自由变量 `m.R[w]` 绑定到实际收益表达式：`R[w] == Σ_t [π_DA[t]·q[t] + π_RT[t,w]·(p_dis[t,w] - p_ch[t,w]) - κ_pos·dev_pos[t,w] - κ_neg·dev_neg[t,w] - c_deg·(p_ch[t,w] + p_dis[t,w])]·Δt`
-- [ ] `src/ele_trading/optimization/two_stage_cvar.py`：添加每场景 SOC 动态递推约束 `soc[t,w] = soc[t-1,w] + η_ch·p_ch[t,w]·dt - p_dis[t,w]/η_dis·dt`，并施加 `soc_min ≤ soc[t,w] ≤ soc_max`、`0 ≤ p_ch[t,w] ≤ p_ch_max`、`0 ≤ p_dis[t,w] ≤ p_dis_max` 界约束
-- [ ] `src/ele_trading/optimization/two_stage_cvar.py`：检查并修正 CVaR 目标函数中 `1/(1-α)` 系数，完整形式为 `max E[R] - λ·[η + 1/(1-α)·Σ_ω p_ω·z_ω]`；当前代码缺少该系数
-- [ ] `app/run_two_stage_skeleton.py`：用最小可解场景（|T|=4，|Ω|=3，权重 0.2/0.5/0.3，α=0.95，λ=0.1，CBC 求解器）验证模型端到端可求解并输出有效目标值
+- [x] `src/ele_trading/optimization/two_stage_cvar.py`：为每个场景 ω 添加收益等式约束，将自由变量 `m.R[w]` 绑定到实际收益表达式：`R[w] == Σ_t [π_DA[t]·q[t] + π_RT[t,w]·(p_dis[t,w] - p_ch[t,w]) - κ_pos·dev_pos[t,w] - κ_neg·dev_neg[t,w] - c_deg·(p_ch[t,w] + p_dis[t,w])]·Δt`。状态：已完成。
+- [x] `src/ele_trading/optimization/two_stage_cvar.py`：添加每场景 SOC 动态递推约束 `soc[t,w] = soc[t-1,w] + η_ch·p_ch[t,w]·dt - p_dis[t,w]/η_dis·dt`，并施加 `soc_min ≤ soc[t,w] ≤ soc_max`、`0 ≤ p_ch[t,w] ≤ p_ch_max`、`0 ≤ p_dis[t,w] ≤ p_dis_max` 界约束。状态：已完成。
+- [x] `src/ele_trading/optimization/two_stage_cvar.py`：检查并修正 CVaR 目标函数中 `1/(1-α)` 系数，完整形式为 `max E[R] - λ·[η + 1/(1-α)·Σ_ω p_ω·z_ω]`；当前代码缺少该系数。状态：已完成。
+- [x] `app/run_two_stage_skeleton.py`：用最小可解场景（|T|=4，|Ω|=3，权重 0.2/0.5/0.3，α=0.95，λ=0.1，CBC 求解器）验证模型端到端可求解并输出有效目标值。状态：已完成。
 
 ### TODO 004 — 升级场景生成与缩减算法
 
 参考文献：Heitsch & Römisch (2003) *Scenario reduction algorithms in stochastic programming*；Frontiers VPP LHS+K-Means (2022)。
 
-- [ ] `src/ele_trading/scenario/sampler.py`：将当前简单高斯乘法扰动升级为 **Latin Hypercube Sampling**（`scipy.stats.qmc.LatinHypercube`），保证样本在不确定性空间均匀分层，相同样本数下可降低 30–50% 方差；初始生成建议 N_raw=500–1000
-- [ ] `src/ele_trading/scenario/sampler.py`：通过 Cholesky 分解引入时序相关性：先估计历史价格的小时间自相关矩阵，再 `L = cholesky(corr_matrix); samples = samples @ L.T`，使生成场景的跨时段结构更真实
-- [ ] `src/ele_trading/scenario/reduction.py`：将当前按权重 Top-K 剔除替换为 **Kantorovich/Wasserstein 后向缩减**：用 `scipy.spatial.distance.cdist` 计算场景间 L1 距离矩阵，迭代剔除再分配代价最小的场景，直至目标数量 K（日前 BESS 建议 K=10–20，含二元变量的 MILP 建议 K=5–15）；文献显示从 1000 缩减至 10 仍可保留约 90% 精度
+- [x] `src/ele_trading/scenario/sampler.py`：将当前简单高斯乘法扰动升级为 **Latin Hypercube Sampling**（`scipy.stats.qmc.LatinHypercube`），保证样本在不确定性空间均匀分层，相同样本数下可降低 30–50% 方差；初始生成建议 N_raw=500–1000。状态：已完成。
+- [x] `src/ele_trading/scenario/sampler.py`：通过 Cholesky 分解引入时序相关性：先估计历史价格的小时间自相关矩阵，再 `L = cholesky(corr_matrix); samples = samples @ L.T`，使生成场景的跨时段结构更真实。状态：已完成。
+- [x] `src/ele_trading/scenario/reduction.py`：将当前按权重 Top-K 剔除替换为 **Kantorovich/Wasserstein 后向缩减**：用 `scipy.spatial.distance.cdist` 计算场景间 L1 距离矩阵，迭代剔除再分配代价最小的场景，直至目标数量 K（日前 BESS 建议 K=10–20，含二元变量的 MILP 建议 K=5–15）；文献显示从 1000 缩减至 10 仍可保留约 90% 精度。状态：已完成。
 
 ### TODO 005 — MPC 终端约束与退化模型升级
 
 参考文献：Rawlings & Mayne (2009) *Model Predictive Control: Theory and Design*；Pinson et al. online rainflow (Wiley 2021)。
 
-- [ ] `src/ele_trading/optimization/mpc_storage.py`：添加滚动窗口末端 SOC 下界约束 `soc[H-1] >= soc_min + 0.3·(soc_max - soc_min)`，防止 MPC 在预测窗口末尾过度放电（当前无终端约束，求解器会在 horizon 最后时段将 SOC 耗至下界）
-- [ ] 可选：引入基于预期价格的终端价值函数 `V_f = -π_expected · soc[H-1] · η_dis · Δt` 替代硬约束，减少保守性，仅在硬约束导致实际运行收益明显偏低时启用
-- [ ] `src/ele_trading/evaluation/metrics.py`（或新建评估子模块）：集成 `rainflow` 库（`pip install rainflow`），在回测结束后对完整 SOC 序列执行离线雨流计数，输出等效循环次数及对应退化成本；MPC 内环继续保留线性吞吐量模型以维持 LP 可解性
+- [x] `src/ele_trading/optimization/mpc_storage.py`：添加滚动窗口末端 SOC 下界约束 `soc[H-1] >= soc_min + 0.3·(soc_max - soc_min)`，防止 MPC 在预测窗口末尾过度放电（当前无终端约束，求解器会在 horizon 最后时段将 SOC 耗至下界）。状态：已完成，当前参数名为 `terminal_soc_fraction`。
+- [ ] 可选：引入基于预期价格的终端价值函数 `V_f = -π_expected · soc[H-1] · η_dis · Δt` 替代硬约束，减少保守性，仅在硬约束导致实际运行收益明显偏低时启用。状态：暂不继续作为默认待办；如出现收益偏低证据，再单独建模比较。
+- [ ] `src/ele_trading/evaluation/metrics.py`（或新建评估子模块）：集成 `rainflow` 库（`pip install rainflow`），在回测结束后对完整 SOC 序列执行离线雨流计数，输出等效循环次数及对应退化成本；MPC 内环继续保留线性吞吐量模型以维持 LP 可解性。状态：仍需继续，已迁移到顶部 `TODO-005`。
 
 ### TODO 006 — 补充回测绩效指标（Sharpe / MDD / EFC）
 
 参考：NREL ATB 2024 Utility-Scale Battery Storage；业界 BESS 绩效指标体系。
 
-- [ ] `src/ele_trading/evaluation/metrics.py`：添加 **能量交易 Sharpe 比率**，以每小时净收益序列 r_t 计算：`sharpe = mean(r_t) / std(r_t) * sqrt(8760)`；参考值：>0.5 可接受，>1.0 较优；需先对收益序列去季节性再跨季度比较
-- [ ] `src/ele_trading/evaluation/metrics.py`：添加 **最大回撤（MDD）**：`cumrev = rev_series.cumsum(); mdd = ((cumrev - cumrev.cummax()) / cumrev.cummax().abs()).min()`；建议预警线为月累计收益的 15%，实盘回撤通常为回测值的 1.5–2 倍
-- [ ] `src/ele_trading/evaluation/metrics.py`：添加 **等效完整循环次数（EFC）** = `Σ p_dis·Δt / E_cap` 及**单 EFC 净收益** = 净总收益 / EFC_count（LFP 套利盈亏平衡参考值：80–200 CNY/MWh）
-- [ ] `src/ele_trading/evaluation/metrics.py`：添加 **往返效率（RTE）** = `η_ch · η_dis`（LFP 典型值 0.86–0.91）及**利用率** = `Σ(p_ch + p_dis)·Δt / (2·E_cap·T_hours)`
+- [x] `src/ele_trading/evaluation/metrics.py`：添加 **能量交易 Sharpe 比率**，以每小时净收益序列 r_t 计算：`sharpe = mean(r_t) / std(r_t) * sqrt(8760)`；参考值：>0.5 可接受，>1.0 较优；需先对收益序列去季节性再跨季度比较。状态：已完成。
+- [x] `src/ele_trading/evaluation/metrics.py`：添加 **最大回撤（MDD）**：`cumrev = rev_series.cumsum(); mdd = ((cumrev - cumrev.cummax()) / cumrev.cummax().abs()).min()`；建议预警线为月累计收益的 15%，实盘回撤通常为回测值的 1.5–2 倍。状态：已完成。
+- [x] `src/ele_trading/evaluation/metrics.py`：添加 **等效完整循环次数（EFC）** = `Σ p_dis·Δt / E_cap` 及**单 EFC 净收益** = 净总收益 / EFC_count（LFP 套利盈亏平衡参考值：80–200 CNY/MWh）。状态：已完成。
+- [x] `src/ele_trading/evaluation/metrics.py`：添加 **往返效率（RTE）** = `η_ch · η_dis`（LFP 典型值 0.86–0.91）及**利用率** = `Σ(p_ch + p_dis)·Δt / (2·E_cap·T_hours)`。状态：已完成。
 
 ### TODO 007 — 接入中国电力现货市场偏差考核规则
 
 参考：广东电力现货市场偏差考核规则（2024）；山东现货市场规则对比。
 
-- [ ] `src/ele_trading/evaluation/settlement.py`：添加**偏差考核（deviation penalty）**分层罚款模型：|偏差率| ≤ 2% 为死区无惩罚；2%–5% 按 `0.25·|dev_kWh|·π_DA` 扣罚；>5% 按 `0.5–1.0·|dev_kWh|·π_DA` 扣罚（广东标准；山东死区更紧，±1.5%）
-- [ ] `configs/market_guangdong.yaml`（新建）：配置市场参数，包括结算模式（日前+实时两阶段）、偏差分层阈值与罚款系数、价格上下限（1500 / −100 CNY/MWh，NDRC 标准）、时间颗粒度（15 分钟，96 个时段/日）
-- [ ] `src/ele_trading/optimization/two_stage_cvar.py`：在第二阶段约束中添加偏差软约束 `dev_pos[t,w] + dev_neg[t,w] ≤ 0.02·q[t]`（对应死区），超出部分通过分层罚款系数 κ_pos、κ_neg 进入收益函数
-- [ ] 数据层适配：将样本数据时间颗粒度从 24 个整点时段扩展至 96 个 15 分钟时段；可通过对现有 `sample_day_ahead_prices.csv` 三次插值生成测试用 96 点序列，用于接口验证
+- [x] `src/ele_trading/evaluation/settlement.py`：添加**偏差考核（deviation penalty）**分层罚款模型：|偏差率| ≤ 2% 为死区无惩罚；2%–5% 按 `0.25·|dev_kWh|·π_DA` 扣罚；>5% 按 `0.5–1.0·|dev_kWh|·π_DA` 扣罚（广东标准；山东死区更紧，±1.5%）。状态：已完成。
+- [x] `configs/market_guangdong.yaml`（新建）：配置市场参数，包括结算模式（日前+实时两阶段）、偏差分层阈值与罚款系数、价格上下限（1500 / −100 CNY/MWh，NDRC 标准）、时间颗粒度（15 分钟，96 个时段/日）。状态：已完成。
+- [x] `src/ele_trading/optimization/two_stage_cvar.py`：在第二阶段约束中添加偏差软约束 `dev_pos[t,w] + dev_neg[t,w] ≤ 0.02·q[t]`（对应死区），超出部分通过分层罚款系数 κ_pos、κ_neg 进入收益函数。状态：已完成。
+- [ ] 数据层适配：将样本数据时间颗粒度从 24 个整点时段扩展至 96 个 15 分钟时段；可通过对现有 `sample_day_ahead_prices.csv` 三次插值生成测试用 96 点序列，用于接口验证。状态：仍需继续，已迁移到顶部 `TODO-004`。
 
 ## 2026-04-18（续）
 
@@ -78,34 +115,34 @@
 
 ### TODO 008 — 补全测试覆盖（承接 TODO 001 未关闭项）
 
-- [ ] `tests/test_backtest.py`（新建）：为 `run_simple_backtest()` 添加指标输出回归测试，断言返回字典包含 `Total Revenue`、`Energy Arbitrage Revenue`、`Degradation Cost`、`Average SOC`，且数值在合理范围（如总收益 > 0、平均 SOC 在 [soc_min, soc_max] 区间内）。
-- [ ] `tests/test_entry_scripts.py`（新建）：为四个入口脚本添加端到端冒烟测试，通过 `subprocess.run` 调用并断言退出码为 0、stdout 非空；覆盖 `run_storage_arbitrage.py`、`run_mpc_demo.py`、`run_two_stage_skeleton.py`、`run_backtest.py`。
-- [ ] `tests/test_extended_metrics_backtest.py`（新建）：将 `compute_extended_metrics()` 接入完整 MPC 回测输出，验证 Sharpe、MDD、EFC 等指标在 24 步样本数据上的数值合理性（EFC > 0，MDD ≤ 0，0 ≤ utilization ≤ 1）。
+- [x] `tests/test_backtest.py`（新建）：为 `run_simple_backtest()` 添加指标输出回归测试，断言返回字典包含 `Total Revenue`、`Energy Arbitrage Revenue`、`Degradation Cost`、`Average SOC`，且数值在合理范围（如总收益 > 0、平均 SOC 在 [soc_min, soc_max] 区间内）。状态：已完成。
+- [x] `tests/test_entry_scripts.py`（新建）：为四个入口脚本添加端到端冒烟测试，通过 `subprocess.run` 调用并断言退出码为 0、stdout 非空；覆盖 `run_storage_arbitrage.py`、`run_mpc_demo.py`、`run_two_stage_skeleton.py`、`run_backtest.py`。状态：已完成；重型入口补充验收另迁移到顶部 `TODO-003`。
+- [x] `tests/test_extended_metrics_backtest.py`（新建）：将 `compute_extended_metrics()` 接入完整 MPC 回测输出，验证 Sharpe、MDD、EFC 等指标在 24 步样本数据上的数值合理性（EFC > 0，MDD ≤ 0，0 ≤ utilization ≤ 1）。状态：已完成。
 
 ### TODO 009 — 数据层 15 分钟颗粒度适配（承接 TODO 007 数据层遗留项）
 
-- [ ] `data/raw/`（新建 `sample_day_ahead_prices_96.csv`）：通过三次样条插值将现有 24 点日前价格扩展为 96 个 15 分钟时段，用于接口验证；插值脚本放在 `scripts/interpolate_to_15min.py`。
-- [ ] `src/ele_trading/data/loader.py`：确认 `load_price_series()` 的 `time_col` 参数可无缝读取 96 行的 15 分钟数据，无需修改调用方代码。
-- [ ] `configs/market_guangdong.yaml`：已配置 `granularity_minutes: 15`，需补充对应 `dt=0.25`（小时）的说明注释，确保优化模块传参一致。
-- [ ] `src/ele_trading/optimization/storage_arbitrage.py` 与 `mpc_storage.py`：确认 `dt` 参数可直接传入 0.25 以切换至 15 分钟颗粒度，补充对应单元测试用例（|T|=8，dt=0.25）。
+- [ ] `data/raw/`（新建 `sample_day_ahead_prices_96.csv`）：通过三次样条插值将现有 24 点日前价格扩展为 96 个 15 分钟时段，用于接口验证；插值脚本放在 `scripts/interpolate_to_15min.py`。状态：仍需继续，已迁移到顶部 `TODO-004`。
+- [x] `src/ele_trading/data/loader.py`：确认 `load_price_series()` 的 `time_col` 参数可无缝读取 96 行的 15 分钟数据，无需修改调用方代码。状态：已完成，当前 loader 按通用 CSV 行数读取，不限制 24 点。
+- [ ] `configs/market_guangdong.yaml`：已配置 `granularity_minutes: 15`，需补充对应 `dt=0.25`（小时）的说明注释，确保优化模块传参一致。状态：仍需继续，已迁移到顶部 `TODO-004`。
+- [x] `src/ele_trading/optimization/storage_arbitrage.py` 与 `mpc_storage.py`：确认 `dt` 参数可直接传入 0.25 以切换至 15 分钟颗粒度，补充对应单元测试用例（|T|=8，dt=0.25）。状态：已完成，当前 `tests/test_storage_arbitrage.py` 和 `tests/test_mpc_storage.py` 已覆盖。
 
 ### TODO 010 — 离线雨流计数退化核算（承接 TODO 005 可选项）
 
-- [ ] `src/ele_trading/evaluation/metrics.py`：新增 `compute_rainflow_degradation(soc_series, e_cap, deg_cost_per_cycle)` 函数，调用 `rainflow.count_cycles(soc_series)` 对完整 SOC 序列执行离线雨流计数，返回总循环次数、加权 DoD、估算退化成本；`rainflow` 已列入依赖，无需额外安装。
-- [ ] `tests/test_metrics.py`：追加 `test_rainflow_degradation_*` 用例，验证单次满充满放 SOC 序列（[1→10→1]）对应约 1 个完整循环，退化成本 = `deg_cost_per_cycle * 1`。
-- [ ] `app/run_backtest.py`：在最小回测结束后调用 `compute_rainflow_degradation()`，将雨流退化成本与线性吞吐量退化成本并列输出，便于对比两种模型的差异。
+- [ ] `src/ele_trading/evaluation/metrics.py`：新增 `compute_rainflow_degradation(soc_series, e_cap, deg_cost_per_cycle)` 函数，调用 `rainflow.count_cycles(soc_series)` 对完整 SOC 序列执行离线雨流计数，返回总循环次数、加权 DoD、估算退化成本；`rainflow` 已列入依赖，无需额外安装。状态：仍需继续，已迁移到顶部 `TODO-005`。
+- [ ] `tests/test_metrics.py`：追加 `test_rainflow_degradation_*` 用例，验证单次满充满放 SOC 序列（[1→10→1]）对应约 1 个完整循环，退化成本 = `deg_cost_per_cycle * 1`。状态：仍需继续，已迁移到顶部 `TODO-005`。
+- [ ] `app/run_backtest.py`：在最小回测结束后调用 `compute_rainflow_degradation()`，将雨流退化成本与线性吞吐量退化成本并列输出，便于对比两种模型的差异。状态：仍需继续，已迁移到顶部 `TODO-005`。
 
 ### TODO 011 — 价格预测模块升级（替换 SimplePriceForecaster）
 
-- [ ] `src/ele_trading/forecasting/price_forecast.py`：在保留 `SimplePriceForecaster`（向后兼容）的基础上，新增 `ARIMAForecaster` 类，基于 `statsmodels.tsa.arima.model.ARIMA`（建议初始阶数 p=2, d=0, q=1）实现 `fit(history)` 与 `predict(horizon)` 接口，输出点预测及 95% 置信区间作为上下分位数。
-- [ ] `src/ele_trading/forecasting/price_forecast.py`：统一 `ForecastOutput` 接口，使 `ARIMAForecaster` 与 `SimplePriceForecaster` 返回相同 dataclass，场景模块可无感切换预测器。
-- [ ] `tests/test_forecasting.py`（新建）：用样例 24 点日前价格序列验证 `ARIMAForecaster.predict()` 输出长度与 horizon 一致、上分位数 ≥ 点预测 ≥ 下分位数。
-- [ ] `pyproject.toml`：添加 `statsmodels>=0.14.0` 依赖。
+- [ ] `src/ele_trading/forecasting/price_forecast.py`：在保留 `SimplePriceForecaster`（向后兼容）的基础上，新增 `ARIMAForecaster` 类，基于 `statsmodels.tsa.arima.model.ARIMA`（建议初始阶数 p=2, d=0, q=1）实现 `fit(history)` 与 `predict(horizon)` 接口，输出点预测及 95% 置信区间作为上下分位数。状态：仍需继续，已迁移到顶部 `TODO-006`。
+- [ ] `src/ele_trading/forecasting/price_forecast.py`：统一 `ForecastOutput` 接口，使 `ARIMAForecaster` 与 `SimplePriceForecaster` 返回相同 dataclass，场景模块可无感切换预测器。状态：仍需继续，已迁移到顶部 `TODO-006`。
+- [ ] `tests/test_forecasting.py`（新建）：用样例 24 点日前价格序列验证 `ARIMAForecaster.predict()` 输出长度与 horizon 一致、上分位数 ≥ 点预测 ≥ 下分位数。状态：仍需继续，已迁移到顶部 `TODO-006`。
+- [ ] `pyproject.toml`：添加 `statsmodels>=0.14.0` 依赖。状态：仍需继续，已迁移到顶部 `TODO-006`。
 
 ### TODO 012 — 更新 AGENTS.md（承接 TODO 002）
 
-- [ ] `AGENTS.md`：补充新增求解链路的运行约束，包括：Two-stage CVaR 模型需系统安装 glpk（`brew install glpk`）；场景模块升级后默认使用 LHS，新代码须保留 `method='mc'` 向后兼容参数；`compute_extended_metrics()` 调用须传入正确 `e_cap` 参数，否则 EFC 计算无意义。
-- [ ] `AGENTS.md`：补充偏差考核模块的审查约束：`compute_deviation_penalty()` 的 `dead_band_pct`、`tier1_threshold_pct` 参数须与所用市场配置文件（`configs/market_*.yaml`）保持一致，不得在代码中硬编码市场参数。
+- [ ] `AGENTS.md`：补充新增求解链路的运行约束，包括：Two-stage CVaR 模型需系统安装 glpk（`brew install glpk`）；场景模块升级后默认使用 LHS，新代码须保留 `method='mc'` 向后兼容参数；`compute_extended_metrics()` 调用须传入正确 `e_cap` 参数，否则 EFC 计算无意义。状态：仍需继续，已迁移到顶部 `TODO-007`。
+- [ ] `AGENTS.md`：补充偏差考核模块的审查约束：`compute_deviation_penalty()` 的 `dead_band_pct`、`tier1_threshold_pct` 参数须与所用市场配置文件（`configs/market_*.yaml`）保持一致，不得在代码中硬编码市场参数。状态：仍需继续，已迁移到顶部 `TODO-007`。
 
 ## 2026-04-20
 
@@ -115,17 +152,17 @@
 
 ### TODO 014 — 风光储新增链路的入口级验收
 
-- [ ] `app/run_wind_solar_storage.py`：补充入口级冒烟验证，至少覆盖脚本可启动、核心阶段日志可输出、退出码为 0；如全年 8760 小时演示耗时较高，应增加 `--hours` 或 demo 级降采样参数，避免测试过重。
-- [ ] `.venv` 新依赖的 fresh 环境验收仍未记录：`pvlib`、`windpowerlib`、`scipy`、`rainflow` 需要在全新环境中补一次安装与运行验证，确保 README 中新增的风光储链路说明不是“只在当前机器偶然可跑”。
+- [ ] `app/run_wind_solar_storage.py`：补充入口级冒烟验证，至少覆盖脚本可启动、核心阶段日志可输出、退出码为 0；如全年 8760 小时演示耗时较高，应增加 `--hours` 或 demo 级降采样参数，避免测试过重。状态：仍需继续，并扩展为重型入口验收策略，已迁移到顶部 `TODO-003`。
+- [ ] `.venv` 新依赖的 fresh 环境验收仍未记录：`pvlib`、`windpowerlib`、`scipy`、`rainflow` 需要在全新环境中补一次安装与运行验证，确保 README 中新增的风光储链路说明不是“只在当前机器偶然可跑”。状态：仍需继续，已迁移到顶部 `TODO-008`。
 
 ### TODO 015 — 新增模块的文档补齐
 
-- [ ] `src/ele_trading/capacity_planning/` 当前已新增公开模块，但尚无与其他模块对齐的目录级 `README.md`；需要补充模块职责、输入输出和与 `forecasting` / `app` 的关系说明。
-- [ ] `tests/README.md` 仍停留在早期最小闭环描述，尚未覆盖 `test_capacity_optimizer.py`、`test_solar_forecast.py`、`test_wind_forecast.py`、`test_metrics.py`、`test_settlement.py`、`test_scenario.py` 等后续新增测试。
+- [x] `src/ele_trading/capacity_planning/` 当前已新增公开模块，但尚无与其他模块对齐的目录级 `README.md`；需要补充模块职责、输入输出和与 `forecasting` / `app` 的关系说明。状态：已完成，当前已有 `src/ele_trading/capacity_planning/README.md`。
+- [ ] `tests/README.md` 仍停留在早期最小闭环描述，尚未覆盖 `test_capacity_optimizer.py`、`test_solar_forecast.py`、`test_wind_forecast.py`、`test_metrics.py`、`test_settlement.py`、`test_scenario.py` 等后续新增测试。状态：仍需继续，已迁移到顶部 `TODO-002`。
 
 ### TODO 016 — 工作区生成物清理与忽略规则
 
-- [ ] 当前工作区存在 `.DS_Store` 与 `logs/None/service*` 等生成物变更；需要确认这些文件是否应纳入版本管理，若不是，应补充 `.gitignore` 或日志目录策略，避免后续文档更新时混入无关噪音。
+- [x] 当前工作区存在 `.DS_Store` 与 `logs/None/service*` 等生成物变更；需要确认这些文件是否应纳入版本管理，若不是，应补充 `.gitignore` 或日志目录策略，避免后续文档更新时混入无关噪音。状态：已完成，`.gitignore` 已覆盖 `.DS_Store`、`logs/`、`__pycache__/`、`.pytest_cache/`、`*.egg-info/`。
 
 ## 2026-05-23
 
@@ -152,9 +189,35 @@
 
 以下为对照代码后仍然未完成的真实残留项，重新编号以避免与历史 TODO 混淆：
 
-- [ ] **TODO-A 测试重建**（承接 TODO 008）：重建 `tests/` 目录，至少覆盖 storage_arbitrage、mpc_storage、two_stage、scenario、metrics、settlement、backtest 七个测试模块 + 5 个 app 入口脚本的冒烟测试。
-- [ ] **TODO-B 15 分钟颗粒度适配**（承接 TODO 009）：生成 96 点插值数据、确认 `dt=0.25` 参数在 storage_arbitrage 和 mpc_storage 中可正确工作。
-- [ ] **TODO-C 离线雨流退化**（承接 TODO 010）：在 `metrics.py` 新增 `compute_rainflow_degradation()`，在 `run_backtest.py` 并列输出。
-- [ ] **TODO-D 价格预测升级**（承接 TODO 011）：新增 `ARIMAForecaster`，添加 `statsmodels` 依赖。
-- [ ] **TODO-E 文档补齐**（承接 TODO 015）：`capacity_planning/README.md`、`tests/README.md`（待测试重建后编写）。
-- [ ] **TODO-F 生成物清理**（承接 TODO 016）：`.gitignore` 补充 `.DS_Store`、`logs/`、`__pycache__/`。
+- [x] **TODO-A 测试重建**（承接 TODO 008）：重建 `tests/` 目录，至少覆盖 storage_arbitrage、mpc_storage、two_stage、scenario、metrics、settlement、backtest 七个测试模块 + 5 个 app 入口脚本的冒烟测试。状态：已完成；当前剩余问题是 legacy import 兼容，已迁移到顶部 `TODO-001`。
+- [ ] **TODO-B 15 分钟颗粒度适配**（承接 TODO 009）：生成 96 点插值数据、确认 `dt=0.25` 参数在 storage_arbitrage 和 mpc_storage 中可正确工作。状态：部分完成，`dt=0.25` 测试已完成；96 点样例和说明仍需继续，已迁移到顶部 `TODO-004`。
+- [ ] **TODO-C 离线雨流退化**（承接 TODO 010）：在 `metrics.py` 新增 `compute_rainflow_degradation()`，在 `run_backtest.py` 并列输出。状态：仍需继续，已迁移到顶部 `TODO-005`。
+- [ ] **TODO-D 价格预测升级**（承接 TODO 011）：新增 `ARIMAForecaster`，添加 `statsmodels` 依赖。状态：仍需继续，已迁移到顶部 `TODO-006`。
+- [ ] **TODO-E 文档补齐**（承接 TODO 015）：`capacity_planning/README.md`、`tests/README.md`（待测试重建后编写）。状态：部分完成，核心 README 和 `capacity_planning/README.md` 已完成；`tests/README.md` 仍需继续，已迁移到顶部 `TODO-002`。
+- [x] **TODO-F 生成物清理**（承接 TODO 016）：`.gitignore` 补充 `.DS_Store`、`logs/`、`__pycache__/`。状态：已完成，且已覆盖 `*.egg-info/`、`.pytest_cache/`。
+
+## 2026-05-29
+
+### 状态对齐 018 — 文档与当前算法目录对齐
+
+本次只处理文档和占位目录，不修改算法代码、测试代码、配置语义或依赖。
+
+#### 已完成事项确认
+
+- [x] `examples/` 已删除。该目录仅包含占位 `README.md`，当前可运行示例统一由 `app/` 入口脚本承载。
+- [x] 根 `README.md` 已按当前项目状态重写，主线目录修正为 `src/ele_trading/data_provider/`，并同步 `forecasting`、`scenario`、`optimization`、`control`、`evaluation`、`capacity_planning`、`demand`、`utils` 等目录职责。
+- [x] `app/README.md` 已补齐当前 16 个入口脚本，覆盖储能套利、MPC、Two-stage、回测、用户侧调度、CVXPY、分布式储能、风光储容量规划和 legacy 数据桥接。
+- [x] `configs/README.md` 已补齐当前 16 个 YAML 配置，并明确对应入口或模块。
+- [x] `src/ele_trading/` 下各子目录 README 已按当前文件和算法边界更新。
+- [x] 根目录 `utils/README.md` 已新增，明确根 `utils/` 是 legacy/项目级辅助工具，不是 `src/ele_trading/utils/` 包内工具。
+
+#### 当前验证状态
+
+- `tests/` 目录当前已恢复，包含核心算法、样例数据构造、入口脚本、天气特征和根 `utils` 兼容测试。
+- 完整 `uv run python -m pytest -q` 当前仍会在 collection 阶段因 legacy import 失败中断：`tests/test_utils_energy_price.py` 和 `tests/test_utils_time_index.py` 仍导入不存在的 `src.es_rolling_schedule` 路径。
+- 上述测试失败是既有 legacy 兼容路径缺失问题，不属于本次文档对齐引入的算法回归。
+
+#### 当前真实待办
+
+- [ ] **TODO-G legacy import 兼容修复**：决定是恢复 `src.es_rolling_schedule` 兼容 shim，还是修改 `tests/test_utils_energy_price.py`、`tests/test_utils_time_index.py` 只验证根 `utils` 当前入口。状态：仍需继续，已迁移到顶部 `TODO-001`。
+- [ ] **TODO-H 测试状态文档**：如继续保留 legacy 兼容测试，应在测试说明中标注所需兼容路径和预期导入关系。状态：仍需继续，已迁移到顶部 `TODO-002`。
