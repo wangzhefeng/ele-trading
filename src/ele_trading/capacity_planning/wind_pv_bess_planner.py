@@ -320,6 +320,86 @@ def energy_gate_check(
     }
 
 
+def evaluate_fixed_wind_pv_bess_capacity(
+    df_load: pd.DataFrame,
+    *,
+    wind_unit_kw: pd.Series | pd.DataFrame,
+    pv_unit_kw: pd.Series | pd.DataFrame,
+    wind_mw: float,
+    pv_mw: float,
+    bess_mwh: float,
+    load_col: str = "P_kw",
+    time_col: str = "Time",
+    cfg: WindPVBEssPlanConfig = WindPVBEssPlanConfig(),
+    wind_unit: str = "kW",
+    pv_unit: str = "kW",
+    other_input: pd.Series | pd.DataFrame | None = None,
+    other_unit: str = "kW",
+) -> dict[str, float]:
+    """评估固定 Wind/PV/BESS 容量组合，不执行容量搜索。
+
+    wind_unit_kw 表示每 1 MW 风电装机对应的 kW 出力曲线。
+    pv_unit_kw 表示每 1 kWp 光伏装机对应的 kW 出力曲线。
+    """
+    df = df_load[[time_col, load_col]].copy()
+    df[time_col] = pd.to_datetime(df[time_col])
+    df = df.sort_values(time_col).reset_index(drop=True)
+    load_kw_arr = pd.to_numeric(df[load_col], errors="coerce").fillna(0.0).to_numpy(dtype="float64")
+    load_kw_arr = np.ascontiguousarray(load_kw_arr, dtype=np.float64)
+
+    wind_scale = 1000.0 if wind_unit.lower() == "mw" else 1.0
+    wind_s = as_time_series(
+        wind_unit_kw,
+        time_col=time_col,
+        value_cols=("wind_unit_kw", "WindPower_MW", "wind_mw", "wind_kw", "WindPower_kW", "WindPower", "value"),
+        scale=wind_scale,
+    )
+    wind_unit_arr = align_to_time(df[time_col], wind_s)
+    wind_kw_arr = np.ascontiguousarray(wind_unit_arr * float(wind_mw), dtype=np.float64)
+
+    pv_scale = 1000.0 if pv_unit.lower() == "mw" else 1.0
+    pv_s = as_time_series(
+        pv_unit_kw,
+        time_col=time_col,
+        value_cols=("pv_unit_kw", "pv_kw", "u", "value"),
+        scale=pv_scale,
+    )
+    pv_unit_arr = align_to_time(df[time_col], pv_s)
+    pv_kw_arr = np.ascontiguousarray(pv_unit_arr * float(pv_mw) * 1000.0, dtype=np.float64)
+
+    if other_input is None:
+        other_kw_arr = np.zeros_like(load_kw_arr, dtype=np.float64)
+    else:
+        other_scale = 1.0 if other_unit.lower() == "kw" else 1000.0
+        other_s = as_time_series(
+            other_input,
+            time_col=time_col,
+            value_cols=("other_kw", "OtherPower_kW", "OtherPower", "value"),
+            scale=other_scale,
+        )
+        other_kw_arr = align_to_time(df[time_col], other_s)
+
+    dt_hours = infer_dt_hours(df[time_col])
+    switch_gap_steps = int(round(cfg.switch_gap_hours / dt_hours)) if cfg.switch_gap_hours > 0 else 0
+    st = _dispatch_annual(
+        load_kw_arr,
+        wind_kw_arr,
+        pv_kw_arr,
+        other_kw_arr,
+        dt_hours,
+        float(bess_mwh) * 1000.0,
+        cfg,
+        switch_gap_steps,
+    )
+    gen = st["ren_gen_kwh"]
+    used = st["ren_used_kwh"]
+    load = st["load_kwh"]
+    st["self_use_ratio"] = used / gen if gen > 1e-9 else 0.0
+    st["load_cover_ratio"] = used / load if load > 1e-9 else 0.0
+    st["dt_hours"] = dt_hours
+    return st
+
+
 # ============================================================
 # 主规划函数
 # ============================================================

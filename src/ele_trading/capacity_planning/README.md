@@ -14,6 +14,7 @@
 | `bess_capacity_planner.py` | 固定新能源出力下 BESS 最小容量规划 |
 | `wind_bess_planner.py` | Wind+BESS 容量规划、平移充电策略和可行性诊断 |
 | `wind_pv_bess_planner.py` | Wind+PV+BESS 容量规划、能量门槛检查和运行评估 |
+| `wind_pv_bess_irr_planner.py` | IRR 目标型 Wind+PV+BESS 容量规划和 PPA 反推 |
 | `feasibility_analyzer.py` | 储能项目可行性分析，覆盖价格、负荷、变压器和匹配度 |
 | `multi_node_scanner.py` | 多节点储能容量扫描和退化收益评估 |
 | `pv_storage_irr_scanner.py` | PV+storage 年收益和 IRR 扫描 |
@@ -40,6 +41,7 @@
 - `plan_energy_system()`：在给定负荷和风光出力下搜索满足新能源自消纳率、负荷覆盖率的最小 BESS 容量。
 - `plan_wind_bess_system()`：Wind+BESS 场景，支持平移充电策略、容量二分搜索和可行性诊断。
 - `plan_wind_pv_bess()`：Wind+PV+BESS 场景，支持 PV 搜索、BESS 搜索和能量门槛检查。
+- `plan_wind_pv_bess_for_target_irr()`：扫描风、光、储容量组合，反推 PPA 并筛选 IRR 目标方案。
 
 ## 扫描与诊断
 
@@ -54,6 +56,7 @@ uv run python app/run_wind_solar_storage.py
 uv run python app/run_bess_capacity_planning.py
 uv run python app/run_wind_bess_capacity_planning.py
 uv run python app/run_wind_pv_bess_capacity_planning.py
+uv run python app/run_wind_pv_bess_irr_planning.py
 ```
 
 legacy 数据准备入口：

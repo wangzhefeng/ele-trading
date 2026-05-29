@@ -91,3 +91,11 @@ def test_run_wind_pv_legacy_market_trading():
     combined = result.stdout + result.stderr
     assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
     assert 'market trading' in combined.lower() or 'total_cost' in combined
+
+
+def test_run_wind_pv_bess_irr_planning():
+    """run_wind_pv_bess_irr_planning.py 应退出码为 0 且输出 IRR 规划结果。"""
+    result = _run_script('run_wind_pv_bess_irr_planning.py')
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
+    assert 'IRR 目标型 Wind+PV+BESS' in combined or 'wind_mw' in combined

@@ -39,6 +39,7 @@ uv sync
 | `run_bess_capacity_planning.py` | `configs/bess_capacity_planning.yaml` | 离网/绿电约束场景下 BESS 最小容量规划 |
 | `run_wind_bess_capacity_planning.py` | `configs/wind_bess_capacity_planning.yaml` | Wind+BESS 容量规划和可行性诊断 |
 | `run_wind_pv_bess_capacity_planning.py` | `configs/wind_pv_bess_capacity_planning.yaml` | Wind+PV+BESS 容量规划、能量门槛检查和运行评估 |
+| `run_wind_pv_bess_irr_planning.py` | `configs/wind_pv_bess_irr_planning.yaml` | IRR 目标型 Wind+PV+BESS 容量规划、PPA 反推和综合电价约束 |
 | `run_legacy_data_preparation.py` | `configs/wind_pv_es_calc_data_bridge.yaml` | legacy 风光储测算数据桥接，生成负荷/PV/风电兼容 CSV |
 | `run_wind_pv_legacy_profit_eval.py` | `configs/wind_pv_legacy_profit_eval.yaml` | 基于 legacy 兼容数据做年度收益拆分 |
 | `run_wind_pv_legacy_market_trading.py` | `configs/wind_pv_legacy_market_trading.yaml` | 基于 legacy 兼容数据运行用户侧风光储交易调度 |

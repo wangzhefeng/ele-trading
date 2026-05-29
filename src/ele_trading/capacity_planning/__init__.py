@@ -32,6 +32,11 @@ from .wind_bess_planner import (
 from .wind_pv_bess_planner import (
     WindPVBEssPlanConfig, WindPVBEssResult,
     plan_wind_pv_bess, evaluate_wind_pv_bess, energy_gate_check,
+    evaluate_fixed_wind_pv_bess_capacity,
+)
+from .wind_pv_bess_irr_planner import (
+    WindPVBESSIRRPlanConfig, WindPVBESSIRRResult,
+    plan_wind_pv_bess_for_target_irr,
 )
 
 __all__ = [
@@ -54,4 +59,7 @@ __all__ = [
     'plot_capacity_curve',
     'WindPVBEssPlanConfig', 'WindPVBEssResult',
     'plan_wind_pv_bess', 'evaluate_wind_pv_bess', 'energy_gate_check',
+    'evaluate_fixed_wind_pv_bess_capacity',
+    'WindPVBESSIRRPlanConfig', 'WindPVBESSIRRResult',
+    'plan_wind_pv_bess_for_target_irr',
 ]

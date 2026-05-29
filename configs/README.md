@@ -14,6 +14,7 @@
 | `bess_capacity_planning.yaml` | `run_bess_capacity_planning.py` | 固定风光容量下 BESS 最小容量规划 |
 | `wind_bess_capacity_planning.yaml` | `run_wind_bess_capacity_planning.py` | Wind+BESS 容量规划、平移充电策略、二分搜索参数 |
 | `wind_pv_bess_capacity_planning.yaml` | `run_wind_pv_bess_capacity_planning.py` | Wind+PV+BESS 容量规划、PV 搜索、BESS 搜索和能量门槛检查 |
+| `wind_pv_bess_irr_planning.yaml` | `run_wind_pv_bess_irr_planning.py` | IRR 目标型 Wind+PV+BESS 容量规划、PPA 反推和综合电价约束 |
 | `user_side_storage_dispatch.yaml` | `run_user_side_storage_dispatch.py` | 用户侧储能调度、需量电费、终端 SOC、合成负荷/电价 |
 | `user_side_pv_dispatch.yaml` | `run_user_side_pv_dispatch.py` | 用户侧 PV-only 调度、上网/弃光规则、合成负荷/PV/电价 |
 | `user_side_pv_storage_dispatch.yaml` | `run_user_side_pv_storage_dispatch.py` | 用户侧 PV+storage 联合调度、储能、上网、策略偏好 |
@@ -37,6 +38,7 @@ uv run python app/run_storage_arbitrage.py
 uv run python app/run_user_side_pv_storage_dispatch.py
 uv run python app/run_dist_ess_dispatch.py
 uv run python app/run_wind_pv_bess_capacity_planning.py
+uv run python app/run_wind_pv_bess_irr_planning.py
 ```
 
 完整验证：
