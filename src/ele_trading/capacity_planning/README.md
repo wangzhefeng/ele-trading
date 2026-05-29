@@ -1,15 +1,11 @@
-# capacity_planning — 容量规划与资源仿真模块
+# capacity_planning — 容量规划模块
 
-本模块提供 PV、风电、BESS、Wind+BESS、Wind+PV+BESS 和多节点储能容量评估工具。它分为资源出力仿真、profile 构造、容量搜索、可行性/IRR/多节点评估几类能力。
+本模块提供 PV、风电、BESS、Wind+BESS、Wind+PV+BESS 和多节点储能容量评估工具。风光资源仿真和 profile 构造已迁移到 `ele_trading.resource_simulation`，本模块只消费负荷、风电出力和光伏出力曲线。
 
 ## 当前文件
 
 | 文件 | 职责 |
 |------|------|
-| `solar_simulation.py` | 基于 `pvlib` 的 PV 物理仿真，支持等效小时数校准 |
-| `wind_simulation.py` | 基于 `windpowerlib` 的风电物理仿真，支持机型选择和等效小时数校准 |
-| `pv_profile.py` | PV profile 构造，支持 `clear_sky`、`weather_driven`、`replay` 和 CSV 缓存 |
-| `wind_profile.py` | 风电 profile 构造，支持高度外推、功率曲线和满发小时校准 |
 | `capacity_optimizer.py` | 风光储联合容量优化，粗-精两阶段网格搜索和运行测算 |
 | `bess_capacity_planner.py` | 固定新能源出力下 BESS 最小容量规划 |
 | `wind_bess_planner.py` | Wind+BESS 容量规划、平移充电策略和可行性诊断 |
@@ -23,17 +19,11 @@
 
 ```text
 气象 / 历史出力 / 负荷
-→ solar_simulation / wind_simulation / pv_profile / wind_profile
+→ resource_simulation / data_provider
 → capacity_optimizer / bess_capacity_planner / wind_bess_planner / wind_pv_bess_planner
 → feasibility_analyzer / multi_node_scanner / pv_storage_irr_scanner
 → app 容量规划入口和结果解释
 ```
-
-## 资源仿真
-
-- `SolarSimulator`：输入 GHI、温度、风速，经过辐照分解、斜面辐照、组件温度、PVWatts 和等效小时数校准，输出 MW 级 PV 出力。
-- `WindSimulator`：输入风速、温度、气压，做高度外推、机型选择、功率曲线仿真和系统折减，输出 MW 级风电出力。
-- `load_or_build_pv_profile()` / `load_or_build_wind_profile()`：面向业务流程的 profile 构造入口，支持缓存复用。
 
 ## 容量规划
 
@@ -68,5 +58,4 @@ uv run python app/run_legacy_data_preparation.py
 ## 使用边界
 
 - 容量规划里的运行测算是研究型近似，不替代生产级经济测算。
-- PV/风电物理仿真依赖气象输入质量；使用合成气象时只能验证流程，不能解释真实收益。
-- profile 缓存用于提高重复运行效率，修改核心参数后应主动刷新或更换缓存路径。
+- 风光出力仿真依赖 `ele_trading.resource_simulation`，真实项目接入时应先明确单位出力或总出力口径。

@@ -19,10 +19,10 @@ import numpy as np
 import pandas as pd
 
 from ele_trading.capacity_planning import (
-    WindSimulator, WindSimResult,
     WindBESSPlanConfig, ShiftPolicy, WindBESSResult,
     plan_wind_bess_system,
 )
+from ele_trading.resource_simulation import WindSimulator, WindSimResult
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 

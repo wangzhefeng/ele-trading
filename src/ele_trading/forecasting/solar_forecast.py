@@ -66,7 +66,7 @@ class SolarPowerForecaster:
             capacity_mw: Installed capacity (MW).
             equiv_hours: Annual equivalent full-load hours for calibration.
         """
-        from ele_trading.capacity_planning.solar_simulation import SolarSimulator
+        from ele_trading.resource_simulation.pv_simulation import SolarSimulator
         tilt = self.tilt if self.tilt is not None else self.latitude * 0.9
         sim = SolarSimulator(
             latitude=self.latitude,

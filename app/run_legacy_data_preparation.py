@@ -21,8 +21,12 @@ import argparse
 import pandas as pd
 import yaml
 
-from ele_trading.capacity_planning.pv_profile import PVProfileConfig, load_or_build_pv_profile
-from ele_trading.capacity_planning.wind_profile import WindProfileConfig, load_or_build_wind_profile
+from ele_trading.resource_simulation import (
+    PVProfileConfig,
+    WindProfileConfig,
+    load_or_build_pv_profile,
+    load_or_build_wind_profile,
+)
 from ele_trading.data_provider.load_profile import LoadProfileBuildConfig, build_load_profile_from_raw
 from ele_trading.data_provider.resource_weather import fetch_weather_open_meteo
 from ele_trading.utils.log_util import logger

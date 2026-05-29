@@ -19,10 +19,12 @@ import numpy as np
 import pandas as pd
 
 from ele_trading.capacity_planning import (
-    SolarSimulator, SolarSimResult,
-    WindSimulator, WindSimResult,
     WindPVBEssPlanConfig, WindPVBEssResult,
     plan_wind_pv_bess,
+)
+from ele_trading.resource_simulation import (
+    SolarSimulator, SolarSimResult,
+    WindSimulator, WindSimResult,
 )
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger

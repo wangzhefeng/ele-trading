@@ -21,7 +21,7 @@ if str(SRC_ROOT) not in sys.path:
 import numpy as np
 import pandas as pd
 
-from ele_trading.capacity_planning import (
+from ele_trading.resource_simulation import (
     SolarSimulator, SolarSimResult,
     WindSimulator, WindSimResult,
 )

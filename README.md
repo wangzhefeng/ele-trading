@@ -94,11 +94,16 @@ ele-trading/
 
 容量规划模块覆盖 PV、风电、BESS 和组合系统：
 
-- PV/风电物理仿真：`solar_simulation.py`、`wind_simulation.py`。
-- profile 构造与缓存：`pv_profile.py`、`wind_profile.py`。
 - 联合容量优化：`capacity_optimizer.py`。
 - BESS / Wind+BESS / Wind+PV+BESS：`bess_capacity_planner.py`、`wind_bess_planner.py`、`wind_pv_bess_planner.py`。
 - 可行性、IRR 和多节点扫描：`feasibility_analyzer.py`、`pv_storage_irr_scanner.py`、`multi_node_scanner.py`。
+
+### `resource_simulation`
+
+风光资源仿真模块覆盖物理出力模拟和 profile 构造：
+
+- PV/风电物理仿真：`pv_simulation.py`、`wind_simulation.py`。
+- profile 构造与缓存：`pv_profile.py`、`wind_profile.py`。
 
 ### `evaluation`、`control`、`demand`、`utils`
 
