@@ -35,7 +35,7 @@
 
 ### 当前待完成项
 
-- [ ] **TODO-001 legacy import 兼容修复（P0）**：修复 `tests/test_utils_energy_price.py` 和 `tests/test_utils_time_index.py` collection 阶段导入失败。当前失败原因是测试仍导入不存在的 `src.es_rolling_schedule.Utils.*`。需要二选一：恢复 `src.es_rolling_schedule` 兼容 shim，或修改测试只验证根目录 `utils` 当前稳定入口。完成标准：`uv run python -m pytest -q` 不再因 `ModuleNotFoundError: No module named 'src.es_rolling_schedule'` 中断。
+- [x] **TODO-001 legacy import 兼容修复（P0）**：修复 `tests/test_utils_energy_price.py` 和 `tests/test_utils_time_index.py` collection 阶段导入失败。已完成：移除对 `src.es_rolling_schedule.Utils.*` 的导入，测试只验证根目录 `utils` 当前稳定入口。
 - [ ] **TODO-002 测试说明文档（P1）**：新增或更新 `tests/README.md`，说明当前测试覆盖范围、入口脚本冒烟边界、legacy 兼容测试依赖和完整测试命令。完成标准：测试目录有 README，并能解释当前 `test_entry_scripts.py` 未覆盖所有重型 app 入口的原因。
 - [ ] **TODO-003 重型入口验收策略（P1）**：为 `run_wind_solar_storage.py`、`run_bess_capacity_planning.py`、`run_wind_bess_capacity_planning.py`、`run_wind_pv_bess_capacity_planning.py`、`run_dist_ess_dispatch.py` 设计轻量 smoke 或显式人工验收策略。当前 `tests/test_entry_scripts.py` 只覆盖部分入口，未覆盖这些重型链路。完成标准：要么补轻量测试参数/测试用例，要么在 `tests/README.md` 中明确这些入口的人工验收命令和不纳入默认测试的理由。
 - [ ] **TODO-004 15 分钟样例数据与市场配置说明（P2）**：补齐 96 点 15 分钟价格样例或明确不再需要该样例；若保留广东市场配置，补充 `dt=0.25` 与 `granularity_minutes: 15` 的传参关系说明。完成标准：`data/raw/sample_day_ahead_prices_96.csv` 或替代说明存在，且文档清楚说明 15 分钟市场配置如何传入优化模型。
@@ -214,10 +214,4 @@
 #### 当前验证状态
 
 - `tests/` 目录当前已恢复，包含核心算法、样例数据构造、入口脚本、天气特征和根 `utils` 兼容测试。
-- 完整 `uv run python -m pytest -q` 当前仍会在 collection 阶段因 legacy import 失败中断：`tests/test_utils_energy_price.py` 和 `tests/test_utils_time_index.py` 仍导入不存在的 `src.es_rolling_schedule` 路径。
-- 上述测试失败是既有 legacy 兼容路径缺失问题，不属于本次文档对齐引入的算法回归。
-
-#### 当前真实待办
-
-- [ ] **TODO-G legacy import 兼容修复**：决定是恢复 `src.es_rolling_schedule` 兼容 shim，还是修改 `tests/test_utils_energy_price.py`、`tests/test_utils_time_index.py` 只验证根 `utils` 当前入口。状态：仍需继续，已迁移到顶部 `TODO-001`。
-- [ ] **TODO-H 测试状态文档**：如继续保留 legacy 兼容测试，应在测试说明中标注所需兼容路径和预期导入关系。状态：仍需继续，已迁移到顶部 `TODO-002`。
+- `uv run python -m pytest -q` 可正常运行，legacy import 问题已修复（TODO-001）。

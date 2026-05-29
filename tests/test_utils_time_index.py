@@ -6,10 +6,6 @@ import pandas as pd
 import pytest
 
 import utils
-from src.es_rolling_schedule.Utils.time_index_process import (
-    generate_5mins as legacy_generate_5mins,
-    process_time_index as legacy_process_time_index,
-)
 from utils.time_index import (
     end_of_this_es_cycle,
     es_cycle_window,
@@ -114,9 +110,7 @@ def test_time_index_helpers_validate_inputs():
         process_time_index(pd.DataFrame({"value": [1]}), "ts")
 
 
-def test_legacy_and_package_time_entrypoints_are_available():
-    """根 utils 入口和 legacy 路径都应导出时间工具。"""
+def test_package_time_entrypoints_are_available():
+    """根 utils 入口应导出时间工具。"""
     assert utils.generate_5mins is generate_5mins
     assert utils.process_time_index is process_time_index
-    assert legacy_generate_5mins is generate_5mins
-    assert legacy_process_time_index is process_time_index

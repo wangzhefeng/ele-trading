@@ -25,7 +25,7 @@ def flatten_valley_price_diff(
 
 
 def flat_valley_price_diff(df_input: pd.DataFrame) -> pd.DataFrame:
-    """Legacy-compatible in-place wrapper for es_rolling_schedule."""
+    """In-place wrapper for flatten_valley_price_diff."""
     return flatten_valley_price_diff(df_input, inplace=True)
 
 

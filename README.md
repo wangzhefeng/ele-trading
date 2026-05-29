@@ -147,7 +147,7 @@ uv run python app/run_wind_solar_storage.py
 uv run python -m pytest -q
 ```
 
-当前测试包含核心算法、样例数据构造、入口脚本、气象特征、legacy 工具兼容等切片。若完整测试在 collection 阶段报 `ModuleNotFoundError: No module named 'src.es_rolling_schedule'`，这是 legacy 兼容路径缺失导致的既有问题，不代表文档更新引入算法回归。
+当前测试包含核心算法、样例数据构造、入口脚本、气象特征等切片。
 
 ## 数据边界
 

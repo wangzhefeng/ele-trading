@@ -4,9 +4,6 @@ import pandas as pd
 import pytest
 
 import utils
-from src.es_rolling_schedule.Utils.ele_price_process import (
-    flat_valley_price_diff as legacy_flat_valley_price_diff,
-)
 from utils.energy_price import flat_valley_price_diff, flatten_valley_price_diff
 
 
@@ -88,8 +85,8 @@ def test_flatten_valley_price_diff_requires_price_and_type_columns():
         flatten_valley_price_diff(pd.DataFrame({"elePrice": [0.2]}))
 
 
-def test_legacy_flat_valley_price_diff_mutates_in_place():
-    """legacy 兼容函数保持原地修改行为。"""
+def test_flat_valley_price_diff_mutates_in_place():
+    """flat_valley_price_diff 保持原地修改行为。"""
     df = pd.DataFrame({"eleType": ["谷", "深谷"], "elePrice": [0.2, 0.1]})
 
     result = flat_valley_price_diff(df)
@@ -98,8 +95,7 @@ def test_legacy_flat_valley_price_diff_mutates_in_place():
     assert df["elePrice"].tolist() == [0.1, 0.1]
 
 
-def test_legacy_and_package_price_entrypoints_are_available():
-    """根 utils 入口和 legacy 路径都应导出电价工具。"""
+def test_package_price_entrypoints_are_available():
+    """根 utils 入口应导出电价工具。"""
     assert utils.flatten_valley_price_diff is flatten_valley_price_diff
     assert utils.flat_valley_price_diff is flat_valley_price_diff
-    assert legacy_flat_valley_price_diff is flat_valley_price_diff
