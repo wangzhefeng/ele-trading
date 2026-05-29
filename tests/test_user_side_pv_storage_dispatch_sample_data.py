@@ -15,7 +15,7 @@ from ele_trading.optimization.user_side_pv_storage_dispatch import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_PATH = PROJECT_ROOT / "configs" / "user_side_pv_storage_dispatch.yaml"
+CONFIG_PATH = PROJECT_ROOT / 'configs' / 'user_side_pv_storage_dispatch.yaml'
 
 
 def test_user_side_pv_storage_dispatch_config_can_be_loaded():

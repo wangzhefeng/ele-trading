@@ -36,7 +36,7 @@ from ele_trading.utils.log_util import logger
 # Config / IO helpers
 # ─────────────────────────────────────────────
 
-DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "wind_pv_es_calc_data_bridge.yaml"
+DEFAULT_CONFIG_PATH = PROJECT_ROOT / 'configs' / 'wind_pv_es_calc_data_bridge.yaml'
 
 
 def load_bridge_config(path: str | Path = DEFAULT_CONFIG_PATH) -> dict[str, Any]:

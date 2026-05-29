@@ -3,8 +3,8 @@
 import pandas as pd
 import pytest
 
-import utils
-from utils.energy_price import flatten_valley_price_diff
+import ele_trading.utils as utils
+from ele_trading.utils.energy_price import flatten_valley_price_diff
 
 
 def test_flatten_valley_price_diff_does_not_mutate_by_default():

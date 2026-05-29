@@ -7,7 +7,7 @@ import pandas as pd
 
 matplotlib.use("Agg")
 
-from utils.pv_es_plot import plot_strategy_power_detail
+from ele_trading.utils.pv_es_plot import plot_strategy_power_detail
 
 
 def test_plot_strategy_power_detail_writes_png(tmp_path):

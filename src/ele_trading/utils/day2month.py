@@ -28,7 +28,7 @@ import pandas as pd
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
 os.environ['LOG_NAME'] = LOGGING_LABEL
-from utils.log_util import logger
+from .log_util import logger
 
 
 def generate_month_ranges(start_time: datetime, end_time: datetime) -> List[Tuple[datetime, datetime]]:

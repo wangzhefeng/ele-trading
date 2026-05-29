@@ -100,7 +100,7 @@ def test_prepare_legacy_temp_data_uses_cached_outputs(tmp_path: Path):
 
 
 def test_bridge_config_file_exists_and_defaults_to_cached():
-    config_path = PROJECT_ROOT / "configs" / "wind_pv_es_calc_data_bridge.yaml"
+    config_path = PROJECT_ROOT / 'configs' / 'wind_pv_es_calc_data_bridge.yaml'
     assert config_path.exists()
 
     with open(config_path, "r", encoding="utf-8") as file:

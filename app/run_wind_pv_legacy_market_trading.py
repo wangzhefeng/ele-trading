@@ -29,7 +29,7 @@ from run_legacy_data_preparation import (
 )
 
 
-CONFIG_PATH = PROJECT_ROOT / "configs" / "wind_pv_legacy_market_trading.yaml"
+CONFIG_PATH = PROJECT_ROOT / 'configs' / 'wind_pv_legacy_market_trading.yaml'
 
 
 def load_config(path: str | Path = CONFIG_PATH) -> dict:

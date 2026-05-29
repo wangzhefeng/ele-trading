@@ -19,7 +19,7 @@ from ele_trading.capacity_planning import (
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 
-CONFIG_PATH = PROJECT_ROOT / "configs" / "wind_pv_bess_irr_planning.yaml"
+CONFIG_PATH = PROJECT_ROOT / 'configs' / 'wind_pv_bess_irr_planning.yaml'
 
 
 def _make_load(n_hours: int, timezone: str, load_mean_kw: float) -> pd.DataFrame:

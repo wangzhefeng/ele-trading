@@ -19,7 +19,7 @@ from ele_trading.optimization.user_side_pv_dispatch import run_user_side_pv_disp
 from ele_trading.utils.log_util import logger
 
 
-CONFIG_PATH = PROJECT_ROOT / "configs" / "user_side_pv_dispatch.yaml"
+CONFIG_PATH = PROJECT_ROOT / 'configs' / 'user_side_pv_dispatch.yaml'
 
 
 if __name__ == "__main__":

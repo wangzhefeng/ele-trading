@@ -21,7 +21,7 @@ from ele_trading.optimization.user_side_pv_storage_dispatch import (
 from ele_trading.utils.log_util import logger
 
 
-CONFIG_PATH = PROJECT_ROOT / "configs" / "user_side_pv_storage_dispatch.yaml"
+CONFIG_PATH = PROJECT_ROOT / 'configs' / 'user_side_pv_storage_dispatch.yaml'
 
 
 if __name__ == "__main__":

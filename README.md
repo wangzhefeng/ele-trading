@@ -37,13 +37,12 @@ ele-trading/
 │   ├── evaluation/               # 结算、偏差考核、指标、回测、仿真
 │   ├── capacity_planning/        # PV/风电/BESS/风光储容量规划
 │   ├── demand/                   # 最大需量计算
-│   └── utils/                    # 包内 IO、日志、时间和数据对齐工具
+│   └── utils/                    # IO、日志、时间、数据对齐、绘图工具
 ├── app/                          # 可直接运行的 demo/流程入口
-├── configs/                      # 项目级 YAML 配置样例
+├── configs/                      # YAML 配置样例
 ├── data/                         # 最小样例数据、legacy 兼容数据、研究数据
 ├── docs/                         # 架构说明、算法笔记、调研文档
 ├── tests/                        # 单元测试和入口脚本冒烟测试
-├── utils/                        # 根目录 legacy/项目级辅助工具
 ├── LOG.md                        # append-only 状态、限制和待办记录
 ├── pyproject.toml                # 项目依赖与测试配置
 └── uv.lock                       # uv 锁文件
@@ -156,5 +155,5 @@ uv run python -m pytest -q
 ## 协作边界
 
 - 新算法实现放入 `src/ele_trading/`，入口脚本只负责组装配置、数据和日志输出。
-- 根目录 `utils/` 是 legacy/项目级辅助工具；包内通用能力优先放入 `src/ele_trading/utils/`。
+- 通用工具函数放入 `src/ele_trading/utils/`，包括 IO、日志、时间处理、绘图等。
 - `LOG.md` 为 append-only 状态记录；过期历史不回写，追加新状态说明。

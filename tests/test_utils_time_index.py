@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 import pytest
 
-import utils
-from utils.time_index import (
+import ele_trading.utils as utils
+from ele_trading.utils.time_index import (
     end_of_this_es_cycle,
     es_cycle_window,
     generate_5mins,
