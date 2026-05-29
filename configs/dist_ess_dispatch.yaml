@@ -1,0 +1,18 @@
+# 分布式储能容量搜索配置
+data:
+  base_dir: "data/profit_calc/dist_es"    # 数据目录 (相对于项目根目录)
+
+time_range:
+  start_time: "2025-01-01"
+  end_time: "2026-01-01"
+
+dispatch:
+  preset: "v4"                            # v1/v2/v3/v4/v5
+  system_name: "park"                     # 338/342/park/all
+  search_mode: "coordinate"               # coordinate/full_grid/max_capacity
+  max_demand_price: 33.8                  # 需量电费单价 (元/kW/月)
+  freq_minutes: 15                        # 时间分辨率
+
+search:
+  workers: 1                              # full_grid 并行进程数
+  min_cabinets_per_transformer: 1         # 每台变压器最小柜数
