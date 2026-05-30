@@ -17,7 +17,8 @@ SRC_ROOT = PROJECT_ROOT / 'src'
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from ele_trading.optimization import DistESSDispatchInput, run_dist_ess_dispatch
+from ele_trading.optimization.interfaces import DistESSDispatchInput
+from ele_trading.capacity_planning import run_dist_ess_dispatch
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 

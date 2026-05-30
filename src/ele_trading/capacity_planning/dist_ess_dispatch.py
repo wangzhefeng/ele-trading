@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 from cvxpy.error import SolverError
 
-from .interfaces import (
+from ..optimization.interfaces import (
     DIST_ESS_CABINET_CAPACITY_KWH,
     DIST_ESS_CABINET_POWER_KW,
     DIST_ESS_CONSTRAINT_TOLERANCE_KW,
