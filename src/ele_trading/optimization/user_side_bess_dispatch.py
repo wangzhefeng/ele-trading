@@ -4,13 +4,13 @@ from pulp import (
     LpBinary,
     LpMinimize,
     LpProblem,
-    LpStatus,
     LpVariable,
     PULP_CBC_CMD,
     lpSum,
     value,
 )
 
+from ele_trading.utils import check_pulp_status, clean_value
 from .interfaces import (
     UserSideBESSDispatchInput,
     UserSideBESSDispatchResult,
@@ -92,15 +92,13 @@ def run_user_side_bess_dispatch(
     model += energy_cost_expr + demand_cost_expr + cycle_cost_expr
 
     model.solve(PULP_CBC_CMD(msg=False))
-    status = LpStatus[model.status]
-    if status != "Optimal":
-        raise RuntimeError(f"user-side bess dispatch failed: {status}")
+    check_pulp_status(model, "user-side bess dispatch")
 
-    charge_values = [_clean(value(charge[t])) for t in T]
-    discharge_values = [_clean(value(discharge[t])) for t in T]
-    soc_values = [_clean(value(soc[t])) for t in T]
-    grid_import_values = [_clean(value(grid_import[t])) for t in T]
-    max_grid_value = _clean(value(max_grid_import))
+    charge_values = [clean_value(value(charge[t])) for t in T]
+    discharge_values = [clean_value(value(discharge[t])) for t in T]
+    soc_values = [clean_value(value(soc[t])) for t in T]
+    grid_import_values = [clean_value(value(grid_import[t])) for t in T]
+    max_grid_value = clean_value(value(max_grid_import))
     energy_cost = sum(
         dispatch_input.buy_price[t] * grid_import_values[t] * dispatch_input.step_hours
         for t in T
@@ -117,7 +115,7 @@ def run_user_side_bess_dispatch(
         charge_power=charge_values,
         discharge_power=discharge_values,
         net_bess_power=[
-            _clean(charge_values[t] - discharge_values[t]) for t in T
+            clean_value(charge_values[t] - discharge_values[t]) for t in T
         ],
         soc=soc_values,
         grid_import=grid_import_values,
@@ -210,11 +208,3 @@ def _constraint_violations(
     return {
         name: amount for name, amount in violations.items() if amount > tolerance
     }
-
-
-def _clean(raw_value: float | None) -> float:
-    if raw_value is None:
-        raise RuntimeError("solver returned an empty variable value")
-    if abs(raw_value) < 1e-9:
-        return 0.0
-    return float(raw_value)

@@ -3,6 +3,8 @@ from __future__ import annotations
 import pandas as pd
 from pulp import LpBinary, LpMaximize, LpProblem, LpVariable, PULP_CBC_CMD, lpSum, value
 
+from ele_trading.utils import check_pulp_status
+
 
 def solve_one_mpc_window(
     prices_window,
@@ -54,6 +56,7 @@ def solve_one_mpc_window(
     )
 
     m.solve(PULP_CBC_CMD(msg=False))
+    check_pulp_status(m, "bess mpc window")
 
     return {
         'p_ch': value(p_ch[0]),

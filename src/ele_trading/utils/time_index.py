@@ -115,3 +115,8 @@ def _to_datetime(value) -> datetime:
 def _validate_division_hour(division_hour: int) -> None:
     if not 0 <= division_hour <= 23:
         raise ValueError("division_hour must be between 0 and 23")
+
+
+def extract_timestamp_hours(timestamps) -> list[int]:
+    """从时间戳序列提取小时数列表。"""
+    return [ts.hour for ts in pd.to_datetime(timestamps)]

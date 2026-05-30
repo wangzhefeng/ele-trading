@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import pandas as pd
 from pulp import (
     LpBinary,
     LpMinimize,
     LpProblem,
-    LpStatus,
     LpVariable,
     PULP_CBC_CMD,
     lpSum,
     value,
 )
 
+from ele_trading.utils import check_pulp_status, clean_value, extract_timestamp_hours
 from .interfaces import (
     UserSideDispatchPolicy,
     UserSidePVExportParams,
@@ -54,7 +53,7 @@ def run_user_side_pv_bess_dispatch(
     is_discharging = {t: LpVariable(f"is_discharging_{t}", cat=LpBinary) for t in T}
     max_grid_import = LpVariable("max_grid_import", lowBound=0)
 
-    timestamp_hours = _timestamp_hours(dispatch_input.timestamps)
+    timestamp_hours = extract_timestamp_hours(dispatch_input.timestamps)
     for t in T:
         model += (
             pv_to_load[t]
@@ -132,21 +131,19 @@ def run_user_side_pv_bess_dispatch(
     )
 
     model.solve(PULP_CBC_CMD(msg=False))
-    status = LpStatus[model.status]
-    if status != "Optimal":
-        raise RuntimeError(f"user-side PV bess dispatch failed: {status}")
+    check_pulp_status(model, "user-side PV bess dispatch")
 
-    pv_to_load_values = [_clean(value(pv_to_load[t])) for t in T]
-    pv_to_bess_values = [_clean(value(pv_to_bess[t])) for t in T]
-    pv_to_grid_values = [_clean(value(pv_to_grid[t])) for t in T]
-    pv_curtailment_values = [_clean(value(pv_curtailment[t])) for t in T]
-    grid_to_load_values = [_clean(value(grid_to_load[t])) for t in T]
-    grid_to_bess_values = [_clean(value(grid_to_bess[t])) for t in T]
-    charge_values = [_clean(value(charge[t])) for t in T]
-    discharge_values = [_clean(value(discharge[t])) for t in T]
-    soc_values = [_clean(value(soc[t])) for t in T]
-    grid_import_values = [_clean(value(grid_import[t])) for t in T]
-    max_grid_value = _clean(value(max_grid_import))
+    pv_to_load_values = [clean_value(value(pv_to_load[t])) for t in T]
+    pv_to_bess_values = [clean_value(value(pv_to_bess[t])) for t in T]
+    pv_to_grid_values = [clean_value(value(pv_to_grid[t])) for t in T]
+    pv_curtailment_values = [clean_value(value(pv_curtailment[t])) for t in T]
+    grid_to_load_values = [clean_value(value(grid_to_load[t])) for t in T]
+    grid_to_bess_values = [clean_value(value(grid_to_bess[t])) for t in T]
+    charge_values = [clean_value(value(charge[t])) for t in T]
+    discharge_values = [clean_value(value(discharge[t])) for t in T]
+    soc_values = [clean_value(value(soc[t])) for t in T]
+    grid_import_values = [clean_value(value(grid_import[t])) for t in T]
+    max_grid_value = clean_value(value(max_grid_import))
 
     energy_cost = sum(
         dispatch_input.buy_price[t] * grid_import_values[t] * dispatch_input.step_hours
@@ -182,7 +179,7 @@ def run_user_side_pv_bess_dispatch(
         charge_power=charge_values,
         discharge_power=discharge_values,
         net_bess_power=[
-            _clean(charge_values[t] - discharge_values[t]) for t in T
+            clean_value(charge_values[t] - discharge_values[t]) for t in T
         ],
         soc=soc_values,
         grid_import=grid_import_values,
@@ -305,10 +302,6 @@ def _policy_objective(
     )
 
 
-def _timestamp_hours(timestamps) -> list[int]:
-    return [timestamp.hour for timestamp in pd.to_datetime(timestamps)]
-
-
 def _constraint_violations(
     dispatch_input: UserSidePVBESSDispatchInput,
     pv_to_load: list[float],
@@ -363,11 +356,3 @@ def _constraint_violations(
     return {
         name: amount for name, amount in violations.items() if amount > tolerance
     }
-
-
-def _clean(raw_value: float | None) -> float:
-    if raw_value is None:
-        raise RuntimeError("solver returned an empty variable value")
-    if abs(raw_value) < 1e-9:
-        return 0.0
-    return float(raw_value)

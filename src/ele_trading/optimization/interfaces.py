@@ -1,3 +1,9 @@
+"""
+调度优化模块的公共数据类型。
+
+定义所有调度优化算法共用的输入/输出 dataclass 和枚举。
+"""
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -10,10 +16,6 @@ class BESSArbitrageResult:
     p_ch: List[float]
     p_dis: List[float]
     soc: List[float]
-
-
-# CapacitySizingResult 已迁移至 capacity_planning.bess_capacity_sizer
-# 向后兼容由 optimization/__init__.__getattr__ 提供
 
 
 @dataclass(slots=True)

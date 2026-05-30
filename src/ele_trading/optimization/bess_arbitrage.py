@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 from pulp import LpBinary, LpMaximize, LpProblem, LpVariable, PULP_CBC_CMD, lpSum, value
 
+from ele_trading.utils import check_pulp_status
 from .interfaces import BESSArbitrageResult
 
 
@@ -56,6 +57,7 @@ def solve_bess_arbitrage(
     )
 
     m.solve(PULP_CBC_CMD(msg=False))
+    check_pulp_status(m, "bess arbitrage")
 
     return {
         'objective': value(m.objective),

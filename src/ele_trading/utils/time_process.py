@@ -95,13 +95,3 @@ def get_month_range(month, year=None):
         next_month_first_day = datetime(year, month + 1, 1, 0, 0, 0)
 
     return first_day, next_month_first_day
-
-
-def generate_day_pairs(start_time, end_time):
-    time_point_list = []
-    
-    current_time = start_time
-    while current_time < end_time:
-        time_point_list.append((current_time, current_time + timedelta(days=1)))
-        current_time += timedelta(days=1)
-    return time_point_list

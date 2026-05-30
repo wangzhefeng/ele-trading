@@ -1,6 +1,6 @@
 # optimization — 优化调度模块
 
-本模块承接价格、负荷、PV、风电、储能参数和场景输入，输出申报、调度、容量搜索或成本收益结果。当前覆盖市场储能、用户侧、CVXPY、分布式储能和 Two-stage 风险优化多条链路。
+本模块承接价格、负荷、光伏、风电、储能参数和场景输入，输出申报、调度、容量搜索或成本收益结果。当前覆盖市场储能、用户侧、CVXPY、分布式储能和 Two-stage 风险优化多条链路。
 
 ## 当前文件
 
@@ -12,7 +12,7 @@
 | `two_stage_cvar.py` | Two-stage + CVaR 场景优化模型 |
 | `user_side_bess_dispatch.py` | 用户侧储能调度，最小化购电、需量和循环成本 |
 | `user_side_pv_dispatch.py` | 用户侧 PV-only 自用、上网、弃光和购电成本测算 |
-| `user_side_pv_bess_dispatch.py` | 用户侧 PV+storage 联合调度 |
+| `user_side_pv_bess_dispatch.py` | 用户侧 PV+BESS 联合调度 |
 | `cvxp_bess_dispatch.py` | CVXPY 储能调度 profile |
 | `dist_ess_dispatch.py` | 分布式储能多柜容量搜索、调度模拟和结果输出 |
 

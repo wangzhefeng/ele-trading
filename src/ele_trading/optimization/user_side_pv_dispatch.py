@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ele_trading.utils import clean_value
 from .interfaces import (
     UserSidePVDispatchInput,
     UserSidePVDispatchResult,
@@ -24,12 +25,12 @@ def run_user_side_pv_dispatch(
         export_power = _export_power(surplus, dispatch_input.export)
         curtailment = surplus - export_power
 
-        pv_to_load.append(_clean(local_pv))
-        pv_to_grid.append(_clean(export_power))
-        pv_curtailment.append(_clean(curtailment))
-        grid_import.append(_clean(max(load - local_pv, 0.0)))
+        pv_to_load.append(clean_value(local_pv))
+        pv_to_grid.append(clean_value(export_power))
+        pv_curtailment.append(clean_value(curtailment))
+        grid_import.append(clean_value(max(load - local_pv, 0.0)))
 
-    max_grid_import = _clean(max(grid_import))
+    max_grid_import = clean_value(max(grid_import))
     energy_cost = sum(
         dispatch_input.buy_price[t] * grid_import[t] * dispatch_input.step_hours
         for t in range(len(dispatch_input.timestamps))
@@ -134,9 +135,3 @@ def _constraint_violations(
     return {
         name: amount for name, amount in violations.items() if amount > tolerance
     }
-
-
-def _clean(raw_value: float) -> float:
-    if abs(raw_value) < 1e-9:
-        return 0.0
-    return float(raw_value)
