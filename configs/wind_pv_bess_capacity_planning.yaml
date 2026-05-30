@@ -6,7 +6,7 @@ scenario:
   longitude: 117.88
   timezone: "Asia/Shanghai"
   n_hours: 8760
-  solar_equiv_hours: 1100.0
+  pv_equiv_hours: 1100.0
   wind_equiv_hours: 1920.0
   load_mean_kw: 78000.0
 

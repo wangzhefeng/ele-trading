@@ -9,7 +9,7 @@
 | `base.py` | 定义统一 `ForecastOutput`，包含点预测和可选上下界 |
 | `price_forecast.py` | `SimplePriceForecaster`，基于历史均值和波动生成价格预测 |
 | `renewable_forecast.py` | renewable 预测抽象类和 stub，保留兼容接口 |
-| `solar_forecast.py` | `SolarPowerForecaster`，支持 `harmonic` 和 `physics` 两种模式 |
+| `pv_forecast.py` | `PVPowerForecaster`，支持 `harmonic` 和 `physics` 两种模式 |
 | `wind_forecast.py` | `WindPowerForecaster`，支持 `statistical` 和 `physics` 两种模式 |
 | `weather_feature.py` | 天气特征工程：相关性、滞后相关性、聚类、插值、空间权重 |
 

@@ -1,7 +1,7 @@
 from .base import ForecastOutput
 from .price_forecast import SimplePriceForecaster
 from .renewable_forecast import RenewableForecaster, RenewableForecastStub
-from .solar_forecast import SolarPowerForecaster
+from .pv_forecast import PVPowerForecaster
 from .wind_forecast import WindPowerForecaster
 from .weather_feature import (
     DEFAULT_SCORE_WEIGHTS,
@@ -30,7 +30,7 @@ __all__ = [
     'SimplePriceForecaster',
     'RenewableForecaster',
     'RenewableForecastStub',
-    'SolarPowerForecaster',
+    'PVPowerForecaster',
     'WindPowerForecaster',
     # weather feature engineering
     'DEFAULT_SCORE_WEIGHTS',

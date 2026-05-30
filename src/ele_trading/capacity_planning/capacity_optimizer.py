@@ -39,7 +39,7 @@ class CapacityOptimizer:
         self.cost = cost_params
         self.search = {**_DEFAULT_SEARCH, **(search_params or {})}
 
-    def optimize(self, load_series, wind_unit_output, solar_unit_output,
+    def optimize(self, load_series, wind_unit_output, pv_unit_output,
                  green_ratio_min, self_use_ratio_min,
                  fixed_wind_mw=None, fixed_pv_mw=None):
         s = self.search
@@ -52,7 +52,7 @@ class CapacityOptimizer:
         ess_candidates = _arange(0, max_ess, s['coarse_step_mwh'])
 
         best = self._grid_search(
-            load_series, wind_unit_output, solar_unit_output,
+            load_series, wind_unit_output, pv_unit_output,
             wind_candidates, pv_candidates, ess_candidates,
             green_ratio_min, self_use_ratio_min,
         )
@@ -80,30 +80,30 @@ class CapacityOptimizer:
         )
 
         refined = self._grid_search(
-            load_series, wind_unit_output, solar_unit_output,
+            load_series, wind_unit_output, pv_unit_output,
             fine_wind, fine_pv, fine_ess,
             green_ratio_min, self_use_ratio_min,
         )
         return refined if refined is not None else best
 
-    def _grid_search(self, load_series, wind_unit_output, solar_unit_output,
+    def _grid_search(self, load_series, wind_unit_output, pv_unit_output,
                      wind_candidates, pv_candidates, ess_candidates,
                      green_ratio_min, self_use_ratio_min):
         best = None
         # 预计算单位年度出力和负荷总量（dt_h 在比值中约掉，直接用功率和）
         load_sum = float(load_series.sum())
         wind_unit_sum = float(wind_unit_output.sum())
-        solar_unit_sum = float(solar_unit_output.sum())
+        pv_unit_sum = float(pv_unit_output.sum())
         green_threshold = green_ratio_min * load_sum
 
         for w in wind_candidates:
             for p in pv_candidates:
                 # 快速剪枝：即使完美储能也无法满足绿电比例约束
-                if wind_unit_sum * w + solar_unit_sum * p < green_threshold:
+                if wind_unit_sum * w + pv_unit_sum * p < green_threshold:
                     continue
                 for e in ess_candidates:
                     metrics = simulate_operation(
-                        load_series, wind_unit_output, solar_unit_output,
+                        load_series, wind_unit_output, pv_unit_output,
                         w, p, e, self.sp,
                     )
                     if (metrics['green_ratio'] >= green_ratio_min
@@ -116,22 +116,22 @@ class CapacityOptimizer:
                             green_ratio=metrics['green_ratio'],
                             self_use_ratio=metrics['self_use_ratio'],
                             curtailment_ratio=metrics['curtailment_ratio'],
-                            pv_monthly_kwh=_compute_pv_monthly(load_series, solar_unit_output, p),
+                            pv_monthly_kwh=_compute_pv_monthly(load_series, pv_unit_output, p),
                         )
                         if best is None or cost < best.total_cost_wan:
                             best = candidate
         return best
 
 
-def simulate_operation(load_series, wind_unit_output, solar_unit_output,
+def simulate_operation(load_series, wind_unit_output, pv_unit_output,
                        wind_mw, pv_mw, ess_mwh, bess_params):
     load = load_series.values
     wind_u = wind_unit_output.values
-    solar_u = solar_unit_output.values
-    return _simulate_op(load, wind_u, solar_u, wind_mw, pv_mw, ess_mwh, bess_params)
+    pv_u = pv_unit_output.values
+    return _simulate_op(load, wind_u, pv_u, wind_mw, pv_mw, ess_mwh, bess_params)
 
 
-def _simulate_op(load, wind_u, solar_u, wind_mw, pv_mw, ess_mwh, sp):
+def _simulate_op(load, wind_u, pv_u, wind_mw, pv_mw, ess_mwh, sp):
     eta_roundtrip = sp.get('eta_roundtrip')
     if eta_roundtrip is not None:
         eta_sqrt = float(eta_roundtrip) ** 0.5
@@ -156,7 +156,7 @@ def _simulate_op(load, wind_u, solar_u, wind_mw, pv_mw, ess_mwh, sp):
     total_green_gen = 0.0
 
     for i in range(n):
-        gen = wind_u[i] * wind_mw + solar_u[i] * pv_mw
+        gen = wind_u[i] * wind_mw + pv_u[i] * pv_mw
         total_green_gen += gen
         surplus = gen - load[i]
 
@@ -201,14 +201,14 @@ def _compute_cost(wind_mw, pv_mw, ess_mwh, cost):
     return wind_cost + pv_cost + ess_cost
 
 
-def _compute_pv_monthly(load_series, solar_unit_output, pv_mw):
+def _compute_pv_monthly(load_series, pv_unit_output, pv_mw):
     if pv_mw <= 0:
         return None
     try:
         dt_h = infer_dt_hours(load_series.index if isinstance(load_series.index, pd.DatetimeIndex) else load_series)
-        solar_vals = solar_unit_output.values * pv_mw
+        pv_vals = pv_unit_output.values * pv_mw
         time_idx = load_series.index if isinstance(load_series.index, pd.DatetimeIndex) else pd.to_datetime(load_series)
-        return monthly_kwh(time_idx, solar_vals, dt_h)
+        return monthly_kwh(time_idx, pv_vals, dt_h)
     except Exception:
         return None
 
@@ -229,11 +229,11 @@ def simple_energy_sanity_check(load_series, green_ratio_min=0.30, self_use_min=0
     }
 
 
-def curve_based_energy_check(load_series, solar_unit_output, green_ratio_min=0.30, self_use_min=0.60):
+def curve_based_energy_check(load_series, pv_unit_output, green_ratio_min=0.30, self_use_min=0.60):
     """用实际单位 PV 曲线年发电量估算所需 PV MWp。"""
     dt_h = infer_dt_hours(load_series.index)
     load_kwh_year = float(load_series.sum()) * dt_h
-    yield_per_kwp = float(solar_unit_output.sum()) * dt_h
+    yield_per_kwp = float(pv_unit_output.sum()) * dt_h
     gen_required = green_ratio_min * load_kwh_year / self_use_min
     return {
         'load_gwh_year': load_kwh_year / 1e6,

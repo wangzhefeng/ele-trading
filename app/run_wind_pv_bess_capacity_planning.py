@@ -23,7 +23,7 @@ from ele_trading.capacity_planning import (
     plan_wind_pv_bess,
 )
 from ele_trading.resource_simulation import (
-    SolarSimulator, SolarSimResult,
+    PVSimulator, PVSimResult,
     WindSimulator, WindSimResult,
 )
 from ele_trading.utils.io import read_yaml
@@ -59,7 +59,7 @@ def _fmt_wan(v: float) -> str:
 # 合成数据生成
 # ─────────────────────────────────────────────
 
-def _make_solar_weather(n_hours: int, timezone: str,
+def _make_pv_weather(n_hours: int, timezone: str,
                         rng: np.random.Generator) -> pd.DataFrame:
     """合成光伏气象数据。"""
     idx = pd.date_range('2023-01-01', periods=n_hours, freq='h', tz=timezone)
@@ -135,19 +135,19 @@ def main():
     logger.info('=' * 60)
     logger.info('Step 1  生成合成数据')
 
-    solar_weather = _make_solar_weather(n_hours, timezone, rng)
+    pv_weather = _make_pv_weather(n_hours, timezone, rng)
     wind_weather = _make_wind_weather(n_hours, timezone, rng)
     df_load = _make_load(n_hours, timezone, sc['load_mean_kw'])
     logger.info(f'  负荷均值: {df_load["P_kw"].mean():.0f} kW')
 
     # ── Step 2: 光伏出力模拟 ──────────────────
     logger.info('Step 2  光伏出力模拟（pvlib）')
-    pv_sim = SolarSimulator(
+    pv_sim = PVSimulator(
         latitude=latitude, longitude=longitude,
         timezone=timezone, altitude=50.0,
     )
-    pv_result: SolarSimResult = pv_sim.simulate(
-        solar_weather, equiv_hours=sc['solar_equiv_hours'], target_capacity_mw=1.0,
+    pv_result: PVSimResult = pv_sim.simulate(
+        pv_weather, equiv_hours=sc['pv_equiv_hours'], target_capacity_mw=1.0,
     )
     logger.info(f'  等效小时数: {pv_result.total_generation_mwh:.0f} h')
 

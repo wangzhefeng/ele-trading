@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pvlib
 
-from .pv_simulation import SolarSimulator
+from .pv_simulation import PVSimulator
 
 
 @dataclass(slots=True)
@@ -62,7 +62,7 @@ def simulate_pv_clear_sky(time_index: pd.DatetimeIndex, config: PVProfileConfig)
 
 
 def simulate_pv_from_weather(weather_df: pd.DataFrame, config: PVProfileConfig) -> pd.Series:
-    simulator = SolarSimulator(
+    simulator = PVSimulator(
         latitude=config.latitude,
         longitude=config.longitude,
         timezone=config.timezone,

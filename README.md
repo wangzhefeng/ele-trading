@@ -129,7 +129,7 @@ uv run python app/run_backtest.py
 uv run python app/run_user_side_bess_dispatch.py
 uv run python app/run_user_side_pv_dispatch.py
 uv run python app/run_user_side_pv_bess_dispatch.py
-uv run python app/run_wind_solar_storage.py
+uv run python app/run_wind_pv_bess.py
 ```
 
 更完整的入口清单见 `app/README.md`。

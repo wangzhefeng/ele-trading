@@ -22,13 +22,13 @@ import numpy as np
 import pandas as pd
 
 from ele_trading.resource_simulation import (
-    SolarSimulator, SolarSimResult,
+    PVSimulator, PVSimResult,
     WindSimulator, WindSimResult,
 )
 from ele_trading.capacity_planning.capacity_optimizer import (
     CapacityOptimizer, CapacityPlanResult, simulate_operation,
 )
-from ele_trading.forecasting.solar_forecast import SolarPowerForecaster
+from ele_trading.forecasting.pv_forecast import PVPowerForecaster
 from ele_trading.forecasting.wind_forecast import WindPowerForecaster
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
@@ -57,7 +57,7 @@ def _fmt_wan(v: float) -> str:
 # 合成数据生成
 # ─────────────────────────────────────────────
 
-def _make_solar_weather(n_hours: int, timezone: str,
+def _make_pv_weather(n_hours: int, timezone: str,
                         rng: np.random.Generator) -> pd.DataFrame:
     """合成光伏气象数据（GHI 用简化日循环模型）。"""
     idx = pd.date_range('2023-01-01', periods=n_hours, freq='h', tz=timezone)
@@ -119,7 +119,7 @@ def run_scenario(name: str, config: dict, rng: np.random.Generator,
     timezone = sc['timezone']
     latitude = sc['latitude']
     longitude = sc['longitude']
-    solar_eq = sc['solar_equiv_hours']
+    pv_eq = sc['pv_equiv_hours']
     wind_eq = sc['wind_equiv_hours']
     load_mean = sc['load_mean_mw']
     green_min = cst['green_ratio_min']
@@ -134,28 +134,28 @@ def run_scenario(name: str, config: dict, rng: np.random.Generator,
 
     # ── Step 1: 生成气象数据 ──────────────────
     logger.info('Step 1  生成合成气象数据')
-    solar_weather = _make_solar_weather(n_hours, timezone, rng)
+    pv_weather = _make_pv_weather(n_hours, timezone, rng)
     wind_weather = _make_wind_weather(n_hours, timezone, rng)
     load_series = _make_load(n_hours, timezone, load_mean)
     logger.info(f'  气象时序长度: {n_hours} h，负荷均值: {load_series.mean():.2f} MW')
 
     # ── Step 2: 光伏出力模拟（1 MW 基准）────────
     logger.info('Step 2  光伏出力模拟（pvlib）')
-    pv_sim = SolarSimulator(
+    pv_sim = PVSimulator(
         latitude=latitude, longitude=longitude,
         timezone=timezone, altitude=50.0,
     )
-    pv_result: SolarSimResult = pv_sim.simulate(
-        solar_weather, equiv_hours=solar_eq, target_capacity_mw=1.0,
+    pv_result: PVSimResult = pv_sim.simulate(
+        pv_weather, equiv_hours=pv_eq, target_capacity_mw=1.0,
     )
     logger.info(f'  等效小时数校准: {pv_result.total_generation_mwh:.1f} MWh/MW'
-                f'（目标 {solar_eq} h，K={pv_result.scale_factor:.4f}）')
+                f'（目标 {pv_eq} h，K={pv_result.scale_factor:.4f}）')
 
     # ── Step 3: 风电出力模拟（1 MW 基准）────────
-    solar_unit = pv_result.output_mw
+    pv_unit = pv_result.output_mw
     if fixed_wind == 0.0:
         logger.info('Step 3  风电出力模拟（跳过，fixed_wind_mw=0）')
-        wind_unit = pd.Series(0.0, index=solar_unit.index)
+        wind_unit = pd.Series(0.0, index=pv_unit.index)
     else:
         logger.info('Step 3  风电出力模拟（windpowerlib）')
         wind_sim = WindSimulator(hub_height=100.0)
@@ -176,7 +176,7 @@ def run_scenario(name: str, config: dict, rng: np.random.Generator,
 
     optimizer = CapacityOptimizer(bess_params, cost_params, search_params)
     plan: CapacityPlanResult = optimizer.optimize(
-        load_series, wind_unit, solar_unit,
+        load_series, wind_unit, pv_unit,
         green_ratio_min=green_min,
         self_use_ratio_min=self_use_min,
         fixed_wind_mw=fixed_wind,
@@ -196,7 +196,7 @@ def run_scenario(name: str, config: dict, rng: np.random.Generator,
     # ── Step 5: 全年时序运行仿真 ──────────────
     logger.info('Step 5  全年时序运行仿真（储能调度）')
     metrics = simulate_operation(
-        load_series, wind_unit, solar_unit,
+        load_series, wind_unit, pv_unit,
         wind_mw=plan.wind_mw, pv_mw=plan.pv_mw,
         ess_mwh=plan.ess_mwh,
         bess_params=bess_params,
@@ -220,19 +220,19 @@ def run_scenario(name: str, config: dict, rng: np.random.Generator,
     if forecast and plan.wind_mw > 0 and plan.pv_mw > 0:
         logger.info('Step 6  短期出力预测演示（未来 48 h）')
         history_end = 6000
-        solar_history = solar_unit.iloc[:history_end] * plan.pv_mw
+        pv_history = pv_unit.iloc[:history_end] * plan.pv_mw
         wind_history = wind_unit.iloc[:history_end] * plan.wind_mw
 
-        solar_fc = SolarPowerForecaster(mode='harmonic')
-        solar_fc.fit(solar_history)
-        solar_pred = solar_fc.predict(horizon=48)
+        pv_fc = PVPowerForecaster(mode='harmonic')
+        pv_fc.fit(pv_history)
+        pv_pred = pv_fc.predict(horizon=48)
 
         wind_fc = WindPowerForecaster(mode='statistical')
         wind_fc.fit(wind_history)
         wind_pred = wind_fc.predict(horizon=48)
 
         logger.info(f'  光伏预测（前 6 h）: '
-                    + '  '.join(f'{v:.3f}' for v in solar_pred.point_forecast[:6])
+                    + '  '.join(f'{v:.3f}' for v in pv_pred.point_forecast[:6])
                     + ' MW')
         logger.info(f'  风电预测（前 6 h）: '
                     + '  '.join(f'{v:.3f}' for v in wind_pred.point_forecast[:6])
@@ -262,7 +262,7 @@ if __name__ == '__main__':
     cfg_b = copy.deepcopy(base_config)
     cfg_b['scenario']['latitude'] = 22.5
     cfg_b['scenario']['longitude'] = 114.0
-    cfg_b['scenario']['solar_equiv_hours'] = 1400.0
+    cfg_b['scenario']['pv_equiv_hours'] = 1400.0
     cfg_b['scenario']['wind_equiv_hours'] = 0.0
     cfg_b['scenario']['load_mean_mw'] = 10.0
     cfg_b['constraints']['green_ratio_min'] = 0.20

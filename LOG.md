@@ -37,7 +37,7 @@
 
 - [x] **TODO-001 legacy import 兼容修复（P0）**：修复 `tests/test_utils_energy_price.py` 和 `tests/test_utils_time_index.py` collection 阶段导入失败。已完成：移除对 `src.es_rolling_schedule.Utils.*` 的导入，测试只验证根目录 `utils` 当前稳定入口。
 - [ ] **TODO-002 测试说明文档（P1）**：新增或更新 `tests/README.md`，说明当前测试覆盖范围、入口脚本冒烟边界、legacy 兼容测试依赖和完整测试命令。完成标准：测试目录有 README，并能解释当前 `test_entry_scripts.py` 未覆盖所有重型 app 入口的原因。
-- [ ] **TODO-003 重型入口验收策略（P1）**：为 `run_wind_solar_storage.py`、`run_bess_capacity_planning.py`、`run_wind_bess_capacity_planning.py`、`run_wind_pv_bess_capacity_planning.py`、`run_dist_bess_dispatch.py` 设计轻量 smoke 或显式人工验收策略。当前 `tests/test_entry_scripts.py` 只覆盖部分入口，未覆盖这些重型链路。完成标准：要么补轻量测试参数/测试用例，要么在 `tests/README.md` 中明确这些入口的人工验收命令和不纳入默认测试的理由。
+- [ ] **TODO-003 重型入口验收策略（P1）**：为 `run_wind_pv_bess.py`、`run_bess_capacity_planning.py`、`run_wind_bess_capacity_planning.py`、`run_wind_pv_bess_capacity_planning.py`、`run_dist_bess_dispatch.py` 设计轻量 smoke 或显式人工验收策略。当前 `tests/test_entry_scripts.py` 只覆盖部分入口，未覆盖这些重型链路。完成标准：要么补轻量测试参数/测试用例，要么在 `tests/README.md` 中明确这些入口的人工验收命令和不纳入默认测试的理由。
 - [ ] **TODO-004 15 分钟样例数据与市场配置说明（P2）**：补齐 96 点 15 分钟价格样例或明确不再需要该样例；若保留广东市场配置，补充 `dt=0.25` 与 `granularity_minutes: 15` 的传参关系说明。完成标准：`data/raw/sample_day_ahead_prices_96.csv` 或替代说明存在，且文档清楚说明 15 分钟市场配置如何传入优化模型。
 - [ ] **TODO-005 离线雨流退化核算（P2）**：实现 `compute_rainflow_degradation()`，补充单元测试，并在 `run_backtest.py` 中与线性吞吐量退化成本并列输出。完成标准：`metrics.py` 暴露雨流退化函数，`tests/test_metrics.py` 覆盖典型 SOC 序列，回测输出能对比两种退化口径。
 - [ ] **TODO-006 价格预测升级（P2）**：在保留 `SimplePriceForecaster` 的基础上评估是否引入 `ARIMAForecaster`。如继续实现，需要添加 `statsmodels` 依赖、统一 `ForecastOutput` 输出、补充预测长度和上下界测试。完成标准：`price_forecast.py` 有 ARIMA 类，`pyproject.toml` 有依赖，`tests/test_forecasting.py` 覆盖 ARIMA 输出。
@@ -152,7 +152,7 @@
 
 ### TODO 014 — 风光储新增链路的入口级验收
 
-- [ ] `app/run_wind_solar_storage.py`：补充入口级冒烟验证，至少覆盖脚本可启动、核心阶段日志可输出、退出码为 0；如全年 8760 小时演示耗时较高，应增加 `--hours` 或 demo 级降采样参数，避免测试过重。状态：仍需继续，并扩展为重型入口验收策略，已迁移到顶部 `TODO-003`。
+- [ ] `app/run_wind_pv_bess.py`：补充入口级冒烟验证，至少覆盖脚本可启动、核心阶段日志可输出、退出码为 0；如全年 8760 小时演示耗时较高，应增加 `--hours` 或 demo 级降采样参数，避免测试过重。状态：仍需继续，并扩展为重型入口验收策略，已迁移到顶部 `TODO-003`。
 - [ ] `.venv` 新依赖的 fresh 环境验收仍未记录：`pvlib`、`windpowerlib`、`scipy`、`rainflow` 需要在全新环境中补一次安装与运行验证，确保 README 中新增的风光储链路说明不是“只在当前机器偶然可跑”。状态：仍需继续，已迁移到顶部 `TODO-008`。
 
 ### TODO 015 — 新增模块的文档补齐
@@ -179,7 +179,7 @@
 - [x] **TODO 005** — `mpc_storage.py` 已包含 `terminal_soc_fraction` 参数（默认 0.0 向后兼容），返回值含 `soc_terminal` 字段。
 - [x] **TODO 006** — `metrics.py` 已包含 `compute_extended_metrics()`，输出 sharpe、max_drawdown、efc_count、revenue_per_efc、rte、utilization。
 - [x] **TODO 007** — `settlement.py` 已包含 `compute_deviation_penalty()`（广东分层罚款）。`configs/market_guangdong.yaml` 已配置 96 时段/日、价格限幅。
-- [x] **TODO 014 部分** — 风光储链路已落地：`capacity_planning/` 含 SolarSimulator（pvlib）、WindSimulator（windpowerlib）、CapacityOptimizer、simulate_operation；`forecasting/` 含 SolarPowerForecaster（harmonic + physics）、WindPowerForecaster（statistical + physics）；`app/run_wind_solar_storage.py` 为一体化入口。
+- [x] **TODO 014 部分** — 风光储链路已落地：`capacity_planning/` 含 PVSimulator（pvlib）、WindSimulator（windpowerlib）、CapacityOptimizer、simulate_operation；`forecasting/` 含 PVPowerForecaster（harmonic + physics）、WindPowerForecaster（statistical + physics）；`app/run_wind_pv_bess.py` 为一体化入口。
 
 #### tests 目录缺失
 

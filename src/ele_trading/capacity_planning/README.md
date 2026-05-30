@@ -42,7 +42,7 @@
 ## 对应入口
 
 ```bash
-uv run python app/run_wind_solar_storage.py
+uv run python app/run_wind_pv_bess.py
 uv run python app/run_bess_capacity_planning.py
 uv run python app/run_wind_bess_capacity_planning.py
 uv run python app/run_wind_pv_bess_capacity_planning.py

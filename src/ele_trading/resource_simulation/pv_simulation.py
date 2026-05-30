@@ -17,13 +17,13 @@ _SYSTEM_EFF = 0.96
 
 
 @dataclass(slots=True)
-class SolarSimResult:
+class PVSimResult:
     output_mw: pd.Series         # 出力时序（MW），与输入气象数据同频
     total_generation_mwh: float  # 模拟年发电量（MWh）
     scale_factor: float          # 等效小时数校准系数 K
 
 
-class SolarSimulator:
+class PVSimulator:
     """基于 pvlib 的光伏出力模拟器。
 
     使用物理仿真 + 等效小时数校准，生成指定容量的出力时间序列。
@@ -55,7 +55,7 @@ class SolarSimulator:
         weather_df: pd.DataFrame,
         equiv_hours: float,
         target_capacity_mw: float = 1.0,
-    ) -> SolarSimResult:
+    ) -> PVSimResult:
         """模拟光伏出力时序。
 
         Args:
@@ -65,7 +65,7 @@ class SolarSimulator:
             target_capacity_mw: 目标装机容量（MW），默认 1 MW。
 
         Returns:
-            SolarSimResult with output_mw, total_generation_mwh, scale_factor.
+            PVSimResult with output_mw, total_generation_mwh, scale_factor.
         """
         # 1. 计算太阳位置
         solar_pos = self._location.get_solarposition(weather_df.index)
@@ -124,9 +124,9 @@ class SolarSimulator:
 
         # 8. 应用校准系数并缩放到目标容量
         output_mw = pac_mw * K * target_capacity_mw
-        output_mw.name = "solar_output_mw"
+        output_mw.name = "pv_output_mw"
 
-        return SolarSimResult(
+        return PVSimResult(
             output_mw=output_mw,
             total_generation_mwh=float(output_mw.sum() * dt_hours),
             scale_factor=K,

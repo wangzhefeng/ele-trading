@@ -10,7 +10,7 @@
 | `market.yaml` | 数据/市场样例 | 基础日前市场元信息 |
 | `market_guangdong.yaml` | `evaluation.settlement`、Two-stage 规则参考 | 广东现货市场 15 分钟颗粒度、价格限幅、偏差考核分层参数 |
 | `scenario.yaml` | `scenario` 模块 | 价格场景数量、噪声、随机种子和权重样例 |
-| `capacity_planning.yaml` | `run_wind_solar_storage.py` | 风光储联合容量规划场景、约束、搜索步长和成本参数 |
+| `capacity_planning.yaml` | `run_wind_pv_bess.py` | 风光储联合容量规划场景、约束、搜索步长和成本参数 |
 | `bess_capacity_planning.yaml` | `run_bess_capacity_planning.py` | 固定风光容量下 BESS 最小容量规划 |
 | `wind_bess_capacity_planning.yaml` | `run_wind_bess_capacity_planning.py` | Wind+BESS 容量规划、平移充电策略、二分搜索参数 |
 | `wind_pv_bess_capacity_planning.yaml` | `run_wind_pv_bess_capacity_planning.py` | Wind+PV+BESS 容量规划、PV 搜索、BESS 搜索和能量门槛检查 |

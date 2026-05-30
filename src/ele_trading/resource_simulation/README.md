@@ -27,7 +27,7 @@
 
 ## `pv_simulation.py` 原理
 
-`pv_simulation.py` 提供 `SolarSimulator`，基于 `pvlib` 做光伏物理仿真。输入气象数据需要包含：
+`pv_simulation.py` 提供 `PVSimulator`，基于 `pvlib` 做光伏物理仿真。输入气象数据需要包含：
 
 | 字段 | 含义 |
 |------|------|
@@ -78,7 +78,7 @@
    output_mw_t = P_ac_raw_t * K * target_capacity_mw
    ```
 
-输出 `SolarSimResult`：
+输出 `PVSimResult`：
 
 | 字段 | 含义 |
 |------|------|
@@ -170,7 +170,7 @@ load_or_build_pv_profile(config, time_index=None, weather_df=None, cache_path=No
 | mode | 逻辑 |
 |------|------|
 | `clear_sky` | 基于经纬度、时间和 Ineichen 晴空模型生成辐照，再计算光伏出力 |
-| `weather_driven` | 调用 `SolarSimulator`，用外部气象驱动光伏仿真 |
+| `weather_driven` | 调用 `PVSimulator`，用外部气象驱动光伏仿真 |
 | `replay` | 直接使用 `weather_df["pv_kw"]` 作为已有光伏出力 |
 
 `clear_sky` 模式中，出力计算口径是：
@@ -185,7 +185,7 @@ pv_kw_t = AC_t / 1000 * capacity_kwp
 capacity_mw = capacity_kwp / 1000
 ```
 
-再调用 `SolarSimulator.simulate(..., target_capacity_mw=capacity_mw)`，最后把 MW 输出转成 kW：
+再调用 `PVSimulator.simulate(..., target_capacity_mw=capacity_mw)`，最后把 MW 输出转成 kW：
 
 ```text
 pv_kw_t = output_mw_t * 1000
@@ -278,7 +278,7 @@ load_or_build_wind_profile(config, weather_df=None, cache_path=None)
 
 ## 输出口径
 
-- `SolarSimulator.simulate()` 输出指定 MW 光伏容量下的 MW 出力曲线。
+- `PVSimulator.simulate()` 输出指定 MW 光伏容量下的 MW 出力曲线。
 - `WindSimulator.simulate()` 输出指定 MW 风电容量下的 MW 出力曲线。
 - `load_or_build_pv_profile()` 输出指定 kWp 光伏容量下的 kW 出力曲线。
 - `load_or_build_wind_profile()` 输出指定 MW 风电容量下的 MW 出力曲线。

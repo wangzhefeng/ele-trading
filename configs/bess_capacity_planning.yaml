@@ -4,7 +4,7 @@ scenario:
   longitude: 117.88              # 经度
   timezone: "Asia/Shanghai"      # 时区
   n_hours: 8760                  # 全年小时数
-  solar_equiv_hours: 1100.0      # 光伏年等效小时数
+  pv_equiv_hours: 1100.0      # 光伏年等效小时数
   wind_equiv_hours: 1920.0       # 风电年等效小时数
   load_mean_kw: 78000.0          # 用户平均负荷（kW）
 

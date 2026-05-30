@@ -8,10 +8,10 @@ import pandas as pd
 from .base import ForecastOutput
 
 
-class SolarPowerForecaster:
-    """Solar power forecaster with two backends.
+class PVPowerForecaster:
+    """PV power forecaster with two backends.
 
-    'physics'  – Wraps SolarSimulator; takes NWP weather DataFrame as input.
+    'physics'  – Wraps PVSimulator; takes NWP weather DataFrame as input.
     'harmonic' – Fits Fourier harmonic regression on historical hourly output.
     """
 
@@ -58,7 +58,7 @@ class SolarPowerForecaster:
         capacity_mw: float,
         equiv_hours: float,
     ) -> ForecastOutput:
-        """Physics-based solar forecast from NWP weather data.
+        """Physics-based PV forecast from NWP weather data.
 
         Args:
             weather_df: DatetimeIndex DataFrame with ghi (W/m²), temp_air (°C),
@@ -66,9 +66,9 @@ class SolarPowerForecaster:
             capacity_mw: Installed capacity (MW).
             equiv_hours: Annual equivalent full-load hours for calibration.
         """
-        from ele_trading.resource_simulation.pv_simulation import SolarSimulator
+        from ele_trading.resource_simulation.pv_simulation import PVSimulator
         tilt = self.tilt if self.tilt is not None else self.latitude * 0.9
-        sim = SolarSimulator(
+        sim = PVSimulator(
             latitude=self.latitude,
             longitude=self.longitude,
             timezone=self.timezone,
@@ -89,8 +89,8 @@ class SolarPowerForecaster:
             upper_quantile=upper,
         )
 
-    def fit(self, historical_output: pd.Series) -> 'SolarPowerForecaster':
-        """Fit Fourier harmonic model on historical hourly solar power output.
+    def fit(self, historical_output: pd.Series) -> 'PVPowerForecaster':
+        """Fit Fourier harmonic model on historical hourly PV power output.
 
         Args:
             historical_output: Hourly pd.Series with DatetimeIndex.
@@ -116,7 +116,7 @@ class SolarPowerForecaster:
         horizon: int,
         start_time: pd.Timestamp | None = None,
     ) -> ForecastOutput:
-        """Generate solar power forecast.
+        """Generate PV power forecast.
 
         Args:
             horizon: Number of hours to forecast.

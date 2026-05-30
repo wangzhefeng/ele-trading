@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from ele_trading.forecasting.price_forecast import SimplePriceForecaster
-from ele_trading.forecasting.solar_forecast import SolarPowerForecaster
+from ele_trading.forecasting.pv_forecast import PVPowerForecaster
 from ele_trading.forecasting.wind_forecast import WindPowerForecaster
 
 
@@ -38,10 +38,10 @@ class TestSimplePriceForecaster:
             assert lo >= 0.0
 
 
-class TestSolarPowerForecaster:
+class TestPVPowerForecaster:
     def test_harmonic_fit_predict(self):
         """傅里叶谐波模式 fit + predict 基本流程。"""
-        fc = SolarPowerForecaster(mode='harmonic')
+        fc = PVPowerForecaster(mode='harmonic')
         idx = pd.date_range('2024-06-01', periods=72, freq='h')
         # 模拟日照曲线：白天有出力，夜间为 0
         hour = idx.hour
@@ -57,18 +57,18 @@ class TestSolarPowerForecaster:
         # (start 默认在最后训练点+1h)
 
     def test_fit_requires_datetime_index(self):
-        fc = SolarPowerForecaster(mode='harmonic')
+        fc = PVPowerForecaster(mode='harmonic')
         with pytest.raises(TypeError):
             fc.fit(pd.Series([1.0, 2.0, 3.0]))
 
     def test_predict_before_fit_raises(self):
-        fc = SolarPowerForecaster(mode='harmonic')
+        fc = PVPowerForecaster(mode='harmonic')
         with pytest.raises(RuntimeError, match='Call fit'):
             fc.predict(horizon=5)
 
     def test_invalid_mode_raises(self):
         with pytest.raises(ValueError, match="mode must be"):
-            SolarPowerForecaster(mode='invalid')
+            PVPowerForecaster(mode='invalid')
 
 
 class TestWindPowerForecaster:
