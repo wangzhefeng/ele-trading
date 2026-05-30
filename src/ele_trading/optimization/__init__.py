@@ -1,48 +1,48 @@
 from .interfaces import (
-    CvxpStorageDispatchInput,
-    CvxpStorageDispatchResult,
-    CvxpStorageProfile,
+    CvxpBESSDispatchInput,
+    CvxpBESSDispatchResult,
+    CvxpBESSProfile,
     MPCStepResult,
-    StorageArbitrageResult,
+    BESSArbitrageResult,
     UserSideDispatchPolicy,
     UserSidePVDispatchInput,
     UserSidePVDispatchResult,
     UserSidePVExportParams,
-    UserSidePVStorageDispatchInput,
-    UserSidePVStorageDispatchResult,
-    UserSideStorageDispatchInput,
-    UserSideStorageDispatchResult,
-    UserSideStorageParams,
+    UserSidePVBESSDispatchInput,
+    UserSidePVBESSDispatchResult,
+    UserSideBESSDispatchInput,
+    UserSideBESSDispatchResult,
+    UserSideBESSParams,
 )
-from .mpc_storage import run_storage_mpc, solve_one_mpc_window
-from .storage_arbitrage import solve_storage_arbitrage
+from .mpc_bess import run_bess_mpc, solve_one_mpc_window
+from .bess_arbitrage import solve_bess_arbitrage
 from .two_stage_cvar import build_two_stage_cvar_model
 from .user_side_pv_dispatch import run_user_side_pv_dispatch
-from .user_side_pv_storage_dispatch import run_user_side_pv_storage_dispatch
-from .user_side_storage_dispatch import run_user_side_storage_dispatch
-from .cvxp_storage_dispatch import CVXP_PROFILES, get_cvxp_profile, run_cvxp_storage_dispatch
+from .user_side_pv_bess_dispatch import run_user_side_pv_bess_dispatch
+from .user_side_bess_dispatch import run_user_side_bess_dispatch
+from .cvxp_bess_dispatch import CVXP_PROFILES, get_cvxp_profile, run_cvxp_bess_dispatch
 from .interfaces import (
     CabinetEqualityMode,
-    DistESSConfig,
-    DistESSDispatchInput,
-    DistESSDispatchResult,
-    DistESSPipelineParams,
-    DistESSSchedulerConfig,
+    DistBESSConfig,
+    DistBESSDispatchInput,
+    DistBESSDispatchResult,
+    DistBESSPipelineParams,
+    DistBESSSchedulerConfig,
     GridImportFormula,
     SolverType,
     TransformerConfig,
-    DIST_ESS_CABINET_CAPACITY_KWH,
-    DIST_ESS_CABINET_POWER_KW,
-    DIST_ESS_CONSTRAINT_TOLERANCE_KW,
+    DIST_BESS_CABINET_CAPACITY_KWH,
+    DIST_BESS_CABINET_POWER_KW,
+    DIST_BESS_CONSTRAINT_TOLERANCE_KW,
 )
 
 # ── 向后兼容 re-export（已迁移至 capacity_planning）──────────────────────────
 _MOVED_TO_CAPACITY_PLANNING = frozenset({
     "CapacitySizingResult", "solve_capacity_sizing",
-    "EsDistributionScheduler", "SimulationResult",
+    "BESSDistributionScheduler", "SimulationResult",
     "SYSTEMS", "PRESETS", "TRANSFORMERS", "TRANSFORMER_BY_NAME",
     "V1_PRESET", "V2_PRESET", "V3_PRESET", "V4_PRESET", "V5_PRESET",
-    "get_preset", "run_dist_ess_dispatch", "run_systems",
+    "get_preset", "run_dist_bess_dispatch", "run_systems",
     "run_capacity_search", "optimize_combo",
     "simulate_schedule", "simulate_all",
     "build_devices_info", "cabinet_groups",

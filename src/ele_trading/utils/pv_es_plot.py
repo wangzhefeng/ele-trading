@@ -124,13 +124,13 @@ def build_monthly_demand_power_lines(
 
     load_only_grid = demand_df["value"]
     pv_only_grid = (demand_df["value"] - pv_df["value"]).clip(lower=0)
-    pv_storage_grid = strategy_df["grid_import"]
+    pv_bess_grid = strategy_df["grid_import"]
 
     return pd.DataFrame(
         {
             "load_only_monthly_max": load_only_grid.resample("ME").max(),
             "pv_only_monthly_max": pv_only_grid.resample("ME").max(),
-            "pv_storage_monthly_max": pv_storage_grid.resample("ME").max(),
+            "pv_bess_monthly_max": pv_bess_grid.resample("ME").max(),
         }
     )
 
@@ -333,8 +333,8 @@ def _plot_monthly_reference_lines(
             "label": "pv_only_monthly_max(kW)",
             "color": "#9A3412",
         },
-        "pv_storage_monthly_max": {
-            "label": "pv_storage_monthly_max(kW)",
+        "pv_bess_monthly_max": {
+            "label": "pv_bess_monthly_max(kW)",
             "color": "#003B8E",
         },
     }

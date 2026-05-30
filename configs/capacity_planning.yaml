@@ -25,7 +25,7 @@ search:
   max_ess_mwh: 120              # 储能搜索上界（MWh）
 
 # 储能默认参数
-storage:
+bess:
   c_rate: 0.5                   # 充放电倍率（0.5C = 2h 充满）
   dod: 0.90                     # 放电深度
   soc_min: 0.10                 # 最小荷电状态

@@ -21,9 +21,9 @@ def _run_script(script_name: str) -> subprocess.CompletedProcess:
     )
 
 
-def test_run_storage_arbitrage():
-    """run_storage_arbitrage.py 应退出码为 0 且有输出。"""
-    result = _run_script('run_storage_arbitrage.py')
+def test_run_bess_arbitrage():
+    """run_bess_arbitrage.py 应退出码为 0 且有输出。"""
+    result = _run_script('run_bess_arbitrage.py')
     combined = result.stdout + result.stderr
     assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
     assert len(combined) > 0
@@ -53,9 +53,9 @@ def test_run_backtest():
     assert len(combined) > 0
 
 
-def test_run_user_side_storage_dispatch():
-    """run_user_side_storage_dispatch.py 应退出码为 0 且有用户侧调度输出。"""
-    result = _run_script('run_user_side_storage_dispatch.py')
+def test_run_user_side_bess_dispatch():
+    """run_user_side_bess_dispatch.py 应退出码为 0 且有用户侧调度输出。"""
+    result = _run_script('run_user_side_bess_dispatch.py')
     combined = result.stdout + result.stderr
     assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
     assert '用户侧储能调度' in combined or 'total_cost' in combined
@@ -69,9 +69,9 @@ def test_run_user_side_pv_dispatch():
     assert '用户侧光伏调度' in combined or 'total_cost' in combined
 
 
-def test_run_user_side_pv_storage_dispatch():
-    """run_user_side_pv_storage_dispatch.py 应退出码为 0 且有用户侧光伏储能调度输出。"""
-    result = _run_script('run_user_side_pv_storage_dispatch.py')
+def test_run_user_side_pv_bess_dispatch():
+    """run_user_side_pv_bess_dispatch.py 应退出码为 0 且有用户侧光伏储能调度输出。"""
+    result = _run_script('run_user_side_pv_bess_dispatch.py')
     combined = result.stdout + result.stderr
     assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
     assert '用户侧光伏储能调度' in combined or 'total_cost' in combined

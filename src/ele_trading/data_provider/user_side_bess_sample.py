@@ -6,22 +6,22 @@ from typing import Any
 import pandas as pd
 import yaml
 
-from ele_trading.optimization.user_side_storage_dispatch import (
-    UserSideStorageDispatchInput,
-    UserSideStorageParams,
+from ele_trading.optimization.user_side_bess_dispatch import (
+    UserSideBESSDispatchInput,
+    UserSideBESSParams,
 )
 
 
-def load_user_side_storage_dispatch_config(path: str | Path) -> dict[str, Any]:
-    """Load user-side storage dispatch demo config."""
+def load_user_side_bess_dispatch_config(path: str | Path) -> dict[str, Any]:
+    """Load user-side bess dispatch demo config."""
     with open(path, "r", encoding="utf-8") as file:
         config = yaml.safe_load(file)
     if not isinstance(config, dict):
-        raise ValueError("user-side storage dispatch config must be a mapping")
+        raise ValueError("user-side bess dispatch config must be a mapping")
     return config
 
 
-def build_synthetic_user_side_dispatch_frame(config: dict[str, Any]) -> pd.DataFrame:
+def build_synthetic_user_side_bess_dispatch_frame(config: dict[str, Any]) -> pd.DataFrame:
     """Build deterministic load and price data for the user-side dispatch demo."""
     synthetic = config["synthetic_data"]
     start_time = pd.to_datetime(synthetic["start_time"])
@@ -43,29 +43,29 @@ def build_synthetic_user_side_dispatch_frame(config: dict[str, Any]) -> pd.DataF
     return pd.DataFrame.from_records(records)
 
 
-def build_user_side_storage_dispatch_input(
+def build_user_side_bess_dispatch_input(
     config: dict[str, Any],
-) -> UserSideStorageDispatchInput:
+) -> UserSideBESSDispatchInput:
     """Build optimization input from user-side storage demo config."""
-    frame = build_synthetic_user_side_dispatch_frame(config)
-    storage_config = config["storage"]
+    frame = build_synthetic_user_side_bess_dispatch_frame(config)
+    bess_config = config["bess"]
     dispatch_config = config["dispatch"]
-    storage = UserSideStorageParams(
-        capacity=float(storage_config["capacity"]),
-        soc_min=float(storage_config["soc_min"]),
-        soc_max=float(storage_config["soc_max"]),
-        p_ch_max=float(storage_config["p_ch_max"]),
-        p_dis_max=float(storage_config["p_dis_max"]),
-        eta_ch=float(storage_config["eta_ch"]),
-        eta_dis=float(storage_config["eta_dis"]),
+    bess = UserSideBESSParams(
+        capacity=float(bess_config["capacity"]),
+        soc_min=float(bess_config["soc_min"]),
+        soc_max=float(bess_config["soc_max"]),
+        p_ch_max=float(bess_config["p_ch_max"]),
+        p_dis_max=float(bess_config["p_dis_max"]),
+        eta_ch=float(bess_config["eta_ch"]),
+        eta_dis=float(bess_config["eta_dis"]),
     )
-    return UserSideStorageDispatchInput(
+    return UserSideBESSDispatchInput(
         timestamps=frame["timestamp"].tolist(),
         load_forecast=frame["load_forecast"].astype(float).tolist(),
         buy_price=frame["buy_price"].astype(float).tolist(),
         price_type=frame["price_type"].astype(str).tolist(),
-        storage=storage,
-        initial_soc=float(storage_config["initial_soc"]),
+        bess=bess,
+        initial_soc=float(bess_config["initial_soc"]),
         demand_charge_rate=float(dispatch_config["demand_charge_rate"]),
         step_hours=float(dispatch_config["step_hours"]),
         terminal_soc_target=_optional_float(dispatch_config.get("terminal_soc_target")),

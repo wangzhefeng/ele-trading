@@ -6,7 +6,7 @@
 
 | 文件 | 对应入口 / 模块 | 用途 |
 |------|------------------|------|
-| `storage.yaml` | `run_storage_arbitrage.py`、`run_mpc_demo.py` | 基础储能 SOC、功率、效率、退化成本、时间步长 |
+| `storage.yaml` | `run_bess_arbitrage.py`、`run_mpc_demo.py` | 基础储能 SOC、功率、效率、退化成本、时间步长 |
 | `market.yaml` | 数据/市场样例 | 基础日前市场元信息 |
 | `market_guangdong.yaml` | `evaluation.settlement`、Two-stage 规则参考 | 广东现货市场 15 分钟颗粒度、价格限幅、偏差考核分层参数 |
 | `scenario.yaml` | `scenario` 模块 | 价格场景数量、噪声、随机种子和权重样例 |
@@ -15,11 +15,11 @@
 | `wind_bess_capacity_planning.yaml` | `run_wind_bess_capacity_planning.py` | Wind+BESS 容量规划、平移充电策略、二分搜索参数 |
 | `wind_pv_bess_capacity_planning.yaml` | `run_wind_pv_bess_capacity_planning.py` | Wind+PV+BESS 容量规划、PV 搜索、BESS 搜索和能量门槛检查 |
 | `wind_pv_bess_irr_planning.yaml` | `run_wind_pv_bess_irr_planning.py` | IRR 目标型 Wind+PV+BESS 容量规划、PPA 反推和综合电价约束 |
-| `user_side_storage_dispatch.yaml` | `run_user_side_storage_dispatch.py` | 用户侧储能调度、需量电费、终端 SOC、合成负荷/电价 |
+| `user_side_bess_dispatch.yaml` | `run_user_side_bess_dispatch.py` | 用户侧储能调度、需量电费、终端 SOC、合成负荷/电价 |
 | `user_side_pv_dispatch.yaml` | `run_user_side_pv_dispatch.py` | 用户侧 PV-only 调度、上网/弃光规则、合成负荷/PV/电价 |
-| `user_side_pv_storage_dispatch.yaml` | `run_user_side_pv_storage_dispatch.py` | 用户侧 PV+storage 联合调度、储能、上网、策略偏好 |
-| `cvxp_storage_dispatch.yaml` | `run_cvxp_storage_dispatch.py` | CVXPY 储能调度 profile、需量价格、合成负荷/电价 |
-| `dist_ess_dispatch.yaml` | `run_dist_ess_dispatch.py` | 分布式储能数据目录、时间范围、preset、系统、搜索模式 |
+| `user_side_pv_bess_dispatch.yaml` | `run_user_side_pv_bess_dispatch.py` | 用户侧 PV+storage 联合调度、储能、上网、策略偏好 |
+| `cvxp_bess_dispatch.yaml` | `run_cvxp_bess_dispatch.py` | CVXPY 储能调度 profile、需量价格、合成负荷/电价 |
+| `dist_ess_dispatch.yaml` | `run_dist_bess_dispatch.py` | 分布式储能数据目录、时间范围、preset、系统、搜索模式 |
 | `wind_pv_es_calc_data_bridge.yaml` | `run_legacy_data_preparation.py` | legacy 风光储数据桥接，生成 `df_2025`、PV、风电和总表 |
 | `wind_pv_legacy_profit_eval.yaml` | `run_wind_pv_legacy_profit_eval.py` | legacy 风光数据年度收益测算、成本年化和结果输出 |
 | `wind_pv_legacy_market_trading.yaml` | `run_wind_pv_legacy_market_trading.py` | legacy 风光数据交易调度窗口、储能、上网、价格和输出 |
@@ -34,9 +34,9 @@
 ## 运行示例
 
 ```bash
-uv run python app/run_storage_arbitrage.py
-uv run python app/run_user_side_pv_storage_dispatch.py
-uv run python app/run_dist_ess_dispatch.py
+uv run python app/run_bess_arbitrage.py
+uv run python app/run_user_side_pv_bess_dispatch.py
+uv run python app/run_dist_bess_dispatch.py
 uv run python app/run_wind_pv_bess_capacity_planning.py
 uv run python app/run_wind_pv_bess_irr_planning.py
 ```

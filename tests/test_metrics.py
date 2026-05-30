@@ -2,7 +2,7 @@
 
 import numpy as np
 import pandas as pd
-from ele_trading.evaluation.metrics import summarize_storage_metrics, compute_extended_metrics
+from ele_trading.evaluation.metrics import summarize_bess_metrics, compute_extended_metrics
 
 
 def _make_dispatch_df(n=24):
@@ -19,10 +19,10 @@ def _make_dispatch_df(n=24):
     })
 
 
-def test_summarize_storage_metrics_fields():
-    """summarize_storage_metrics 应包含四个必需字段。"""
+def test_summarize_bess_metrics_fields():
+    """summarize_bess_metrics 应包含四个必需字段。"""
     df = _make_dispatch_df()
-    metrics = summarize_storage_metrics(df)
+    metrics = summarize_bess_metrics(df)
     for field in ('Total Revenue', 'Energy Arbitrage Revenue', 'Degradation Cost', 'Average SOC'):
         assert field in metrics
     assert isinstance(metrics['Total Revenue'], float)
@@ -31,7 +31,7 @@ def test_summarize_storage_metrics_fields():
 def test_summarize_values_reasonable():
     """指标值应在合理范围。"""
     df = _make_dispatch_df()
-    metrics = summarize_storage_metrics(df)
+    metrics = summarize_bess_metrics(df)
     assert metrics['Average SOC'] >= df['soc_next'].min()
     assert metrics['Average SOC'] <= df['soc_next'].max()
 

@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 
 
-class EssSimulationModel:
+class BESSSimulationModel:
     """储能仿真回放模型。
 
     回放优化策略，考虑物理约束（变压器容量、SOC、逆变器死区），

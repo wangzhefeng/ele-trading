@@ -14,7 +14,7 @@ class PriceSeries:
 
 
 @dataclass(slots=True)
-class StorageConfig:
+class BESSConfig:
     """储能物理约束与效率参数。"""
 
     asset_name: str

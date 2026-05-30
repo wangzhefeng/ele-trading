@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from ele_trading.capacity_planning.wind_pv_bess_planner import (
-    WindPVBEssPlanConfig,
+    WindPVBESSPlanConfig,
     _dispatch_annual,
     evaluate_fixed_wind_pv_bess_capacity,
 )
@@ -27,7 +27,7 @@ def _flat_case(hours: int = 24, load_kw: float = 1000.0):
 def test_fixed_capacity_helper_matches_dispatch_engine():
     """固定容量 helper 应复用现有年度调度口径。"""
     df_load, wind_unit, pv_unit = _flat_case(hours=4, load_kw=900.0)
-    cfg = WindPVBEssPlanConfig(enable_gate_check=False, use_numba=False)
+    cfg = WindPVBESSPlanConfig(enable_gate_check=False, use_numba=False)
 
     result = evaluate_fixed_wind_pv_bess_capacity(
         df_load,

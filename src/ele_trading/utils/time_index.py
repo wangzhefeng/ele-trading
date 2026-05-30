@@ -56,7 +56,7 @@ def end_of_that_day(current_day_time) -> datetime:
     return datetime.combine((current + timedelta(days=1)).date(), time.min)
 
 
-def start_of_this_es_cycle(current_time, division_hour: int) -> datetime:
+def start_of_this_bess_cycle(current_time, division_hour: int) -> datetime:
     _validate_division_hour(division_hour)
     current = _to_datetime(current_time)
     division_time = datetime.combine(
@@ -67,7 +67,7 @@ def start_of_this_es_cycle(current_time, division_hour: int) -> datetime:
     return division_time
 
 
-def end_of_this_es_cycle(current_time, division_hour: int) -> datetime:
+def end_of_this_bess_cycle(current_time, division_hour: int) -> datetime:
     _validate_division_hour(division_hour)
     current = _to_datetime(current_time)
     division_time = datetime.combine(
@@ -78,10 +78,10 @@ def end_of_this_es_cycle(current_time, division_hour: int) -> datetime:
     return division_time
 
 
-def es_cycle_window(current_time, division_hour: int) -> tuple[datetime, datetime]:
+def bess_cycle_window(current_time, division_hour: int) -> tuple[datetime, datetime]:
     return (
-        start_of_this_es_cycle(current_time, division_hour),
-        end_of_this_es_cycle(current_time, division_hour),
+        start_of_this_bess_cycle(current_time, division_hour),
+        end_of_this_bess_cycle(current_time, division_hour),
     )
 
 

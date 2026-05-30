@@ -55,7 +55,7 @@ def solve_capacity_sizing(
 ) -> CapacitySizingResult:
     """MILP 联合优化储能容量与调度策略。
 
-    在 solve_storage_arbitrage 基础上，将额定容量 Cap_rated 也作为决策变量，
+    在 solve_bess_arbitrage 基础上，将额定容量 Cap_rated 也作为决策变量，
     同时优化容量、功率和充放电计划，最大化净套利收益（扣除年化 CAPEX 和循环 OPEX）。
 
     Parameters

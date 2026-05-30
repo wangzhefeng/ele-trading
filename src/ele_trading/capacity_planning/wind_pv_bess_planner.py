@@ -31,7 +31,7 @@ except Exception:
 # 配置数据类
 # ============================================================
 @dataclass(slots=True)
-class WindPVBEssPlanConfig:
+class WindPVBESSPlanConfig:
     """Wind+PV+BESS 容量规划配置。"""
     # 成本
     pv_capex_yuan_per_kwp: float = 2000.0
@@ -67,7 +67,7 @@ class WindPVBEssPlanConfig:
 
 
 @dataclass(slots=True)
-class WindPVBEssResult:
+class WindPVBESSResult:
     """Wind+PV+BESS 容量规划结果。"""
     status: str  # "ok", "gate_failed", "no_solution"
     pv_kwp: float = 0.0
@@ -197,7 +197,7 @@ def _dispatch_annual(
     other_kw: np.ndarray,
     dt_hours: float,
     batt_kwh: float,
-    cfg: WindPVBEssPlanConfig,
+    cfg: WindPVBESSPlanConfig,
     switch_gap_steps: int = 0,
 ) -> dict[str, float]:
     if cfg.use_numba and _NUMBA_OK:
@@ -240,7 +240,7 @@ def _find_min_bess_kwh(
     pv_kw: np.ndarray,
     other_kw: np.ndarray,
     dt_hours: float,
-    cfg: WindPVBEssPlanConfig,
+    cfg: WindPVBESSPlanConfig,
     switch_gap_steps: int = 0,
 ) -> tuple[float, dict[str, float]] | None:
     """返回 (bess_kwh, stats)；若找不到可行解返回 None。"""
@@ -330,7 +330,7 @@ def evaluate_fixed_wind_pv_bess_capacity(
     bess_mwh: float,
     load_col: str = "P_kw",
     time_col: str = "Time",
-    cfg: WindPVBEssPlanConfig = WindPVBEssPlanConfig(),
+    cfg: WindPVBESSPlanConfig = WindPVBESSPlanConfig(),
     wind_unit: str = "kW",
     pv_unit: str = "kW",
     other_input: pd.Series | pd.DataFrame | None = None,
@@ -410,12 +410,12 @@ def plan_wind_pv_bess(
     *,
     load_col: str = "P_kw",
     time_col: str = "Time",
-    cfg: WindPVBEssPlanConfig = WindPVBEssPlanConfig(),
+    cfg: WindPVBESSPlanConfig = WindPVBESSPlanConfig(),
     wind_unit: str = "MW",
     pv_unit: str = "kW",
     other_input: pd.Series | pd.DataFrame | None = None,
     other_unit: str = "kW",
-) -> WindPVBEssResult:
+) -> WindPVBESSResult:
     """
     Wind+PV+BESS 容量规划主入口。
 
@@ -432,7 +432,7 @@ def plan_wind_pv_bess(
         other_unit: 其他新能源单位
 
     Returns:
-        WindPVBEssResult: 规划结果
+        WindPVBESSResult: 规划结果
     """
     # ---- 负荷 ----
     df = df_load[[time_col, load_col]].copy()
@@ -502,7 +502,7 @@ def plan_wind_pv_bess(
         }
 
         if not gate_result["pass_gate"]:
-            return WindPVBEssResult(
+            return WindPVBESSResult(
                 status="gate_failed",
                 gate=gate_result,
                 switch_gap_hours=cfg.switch_gap_hours,
@@ -575,7 +575,7 @@ def plan_wind_pv_bess(
             best_pv_kwp_coarse = float(pv_kwp)
 
     if best is None:
-        return WindPVBEssResult(
+        return WindPVBESSResult(
             status="no_solution",
             message="未找到满足新能源自用率/覆盖率约束的方案：请扩大 pv_max_kwp 或放宽比例阈值。",
         )
@@ -643,7 +643,7 @@ def plan_wind_pv_bess(
     pv_gen_kwh_total = float(pv_gen_kw_arr.sum() * dt_hours)
     pv_monthly_kwh = monthly_kwh(df[time_col], pv_gen_kw_arr, dt_hours)
 
-    return WindPVBEssResult(
+    return WindPVBESSResult(
         status="ok",
         pv_kwp=best["pv_kwp"],
         bess_kwh=best["bess_kwh"],
@@ -683,7 +683,7 @@ def evaluate_wind_pv_bess(
     pv_col: str = "pv_kw",
     wind_col: str = "WindPower_MW",
     time_col: str = "Time",
-    cfg: WindPVBEssPlanConfig = WindPVBEssPlanConfig(),
+    cfg: WindPVBESSPlanConfig = WindPVBESSPlanConfig(),
 ) -> dict[str, Any]:
     """
     评估固定 PV + Wind + BESS 的方案（PV 不参与搜索）。

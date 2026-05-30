@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from .feasibility_analyzer import (
     FeasibilityAnalyzerConfig, FeasibilityResult,
-    StorageFeasibilityAnalyzer,
+    BESSFeasibilityAnalyzer,
 )
 from .multi_node_scanner import (
-    StorageSizingConfig, CapacitySweepRow, NodeScanResult,
+    BESSSizingConfig, CapacitySweepRow, NodeScanResult,
     MultiNodeScanResult, scan_single_node, scan_multiple_nodes,
 )
-from .pv_storage_irr_scanner import (
-    PVStorageIRRConfig, PVStorageIRRRow, PVStorageIRRResult,
-    scan_pv_storage_irr, simulate_annual_gain,
+from .pv_bess_irr_scanner import (
+    PVBESSIRRConfig, PVBESSIRRRow, PVBESSIRRResult,
+    scan_pv_bess_irr, simulate_annual_gain,
 )
 from .capacity_optimizer import (
     CapacityOptimizer, CapacityPlanResult, simulate_operation,
@@ -26,7 +26,7 @@ from .wind_bess_planner import (
     plot_capacity_curve,
 )
 from .wind_pv_bess_planner import (
-    WindPVBEssPlanConfig, WindPVBEssResult,
+    WindPVBESSPlanConfig, WindPVBESSResult,
     plan_wind_pv_bess, evaluate_wind_pv_bess, energy_gate_check,
     evaluate_fixed_wind_pv_bess_capacity,
 )
@@ -34,9 +34,9 @@ from .wind_pv_bess_irr_planner import (
     WindPVBESSIRRPlanConfig, WindPVBESSIRRResult,
     plan_wind_pv_bess_for_target_irr,
 )
-from .storage_capacity_sizer import CapacitySizingResult, solve_capacity_sizing
-from .dist_ess_dispatch import (
-    EsDistributionScheduler,
+from .bess_capacity_sizer import CapacitySizingResult, solve_capacity_sizing
+from .dist_bess_dispatch import (
+    BESSDistributionScheduler,
     SimulationResult,
     SYSTEMS,
     PRESETS,
@@ -48,7 +48,7 @@ from .dist_ess_dispatch import (
     V4_PRESET,
     V5_PRESET,
     get_preset,
-    run_dist_ess_dispatch,
+    run_dist_bess_dispatch,
     run_systems,
     run_capacity_search,
     optimize_combo,
@@ -70,11 +70,11 @@ from .dist_ess_dispatch import (
 
 __all__ = [
     'FeasibilityAnalyzerConfig', 'FeasibilityResult',
-    'StorageFeasibilityAnalyzer',
-    'StorageSizingConfig', 'CapacitySweepRow', 'NodeScanResult',
+    'BESSFeasibilityAnalyzer',
+    'BESSSizingConfig', 'CapacitySweepRow', 'NodeScanResult',
     'MultiNodeScanResult', 'scan_single_node', 'scan_multiple_nodes',
-    'PVStorageIRRConfig', 'PVStorageIRRRow', 'PVStorageIRRResult',
-    'scan_pv_storage_irr', 'simulate_annual_gain',
+    'PVBESSIRRConfig', 'PVBESSIRRRow', 'PVBESSIRRResult',
+    'scan_pv_bess_irr', 'simulate_annual_gain',
     'CapacityOptimizer', 'CapacityPlanResult', 'simulate_operation',
     'simple_energy_sanity_check', 'curve_based_energy_check',
     'BESSPlanConfig', 'BESSCapacityResult', 'UnitsConfig',
@@ -82,16 +82,16 @@ __all__ = [
     'WindBESSPlanConfig', 'WindBESSResult', 'ShiftPolicy',
     'plan_wind_bess_system', 'simulate_dispatch', 'calc_monthly_wind_metrics',
     'plot_capacity_curve',
-    'WindPVBEssPlanConfig', 'WindPVBEssResult',
+    'WindPVBESSPlanConfig', 'WindPVBESSResult',
     'plan_wind_pv_bess', 'evaluate_wind_pv_bess', 'energy_gate_check',
     'evaluate_fixed_wind_pv_bess_capacity',
     'WindPVBESSIRRPlanConfig', 'WindPVBESSIRRResult',
     'plan_wind_pv_bess_for_target_irr',
     'CapacitySizingResult', 'solve_capacity_sizing',
-    'EsDistributionScheduler', 'SimulationResult',
+    'BESSDistributionScheduler', 'SimulationResult',
     'SYSTEMS', 'PRESETS', 'TRANSFORMERS', 'TRANSFORMER_BY_NAME',
     'V1_PRESET', 'V2_PRESET', 'V3_PRESET', 'V4_PRESET', 'V5_PRESET',
-    'get_preset', 'run_dist_ess_dispatch', 'run_systems',
+    'get_preset', 'run_dist_bess_dispatch', 'run_systems',
     'run_capacity_search', 'optimize_combo',
     'simulate_schedule', 'simulate_all',
     'build_devices_info', 'cabinet_groups',

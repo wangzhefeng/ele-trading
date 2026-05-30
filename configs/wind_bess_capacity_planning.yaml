@@ -15,7 +15,7 @@ constraints:
   min_load_coverage: 0.30           # 负荷覆盖率 ≥ 30%
 
 # 储能参数
-storage:
+bess:
   eta_charge: 0.92               # 充电效率
   eta_discharge: 0.92            # 放电效率
   c_rate: 1.0                    # 充放电倍率（1C = 1h 充满）

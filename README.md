@@ -80,13 +80,13 @@ ele-trading/
 
 当前优化主线包括：
 
-- `storage_arbitrage.py`：单市场储能套利和容量 sizing。
+- `bess_arbitrage.py`：单市场储能套利和容量 sizing。
 - `mpc_storage.py`：单窗口 MPC 与滚动 MPC。
 - `two_stage_cvar.py`：Two-stage + CVaR 可求解模型。
-- `user_side_storage_dispatch.py`：用户侧储能成本优化。
+- `user_side_bess_dispatch.py`：用户侧储能成本优化。
 - `user_side_pv_dispatch.py`：用户侧 PV 自用/上网/弃光调度。
-- `user_side_pv_storage_dispatch.py`：用户侧 PV+storage 联合调度。
-- `cvxp_storage_dispatch.py`：CVXPY 版本储能调度 profile。
+- `user_side_pv_bess_dispatch.py`：用户侧 PV+storage 联合调度。
+- `cvxp_bess_dispatch.py`：CVXPY 版本储能调度 profile。
 - `dist_ess_dispatch.py`：分布式储能多柜容量搜索和调度模拟。
 
 ### `capacity_planning`
@@ -95,7 +95,7 @@ ele-trading/
 
 - 联合容量优化：`capacity_optimizer.py`。
 - BESS / Wind+BESS / Wind+PV+BESS：`bess_capacity_planner.py`、`wind_bess_planner.py`、`wind_pv_bess_planner.py`。
-- 可行性、IRR 和多节点扫描：`feasibility_analyzer.py`、`pv_storage_irr_scanner.py`、`multi_node_scanner.py`。
+- 可行性、IRR 和多节点扫描：`feasibility_analyzer.py`、`pv_bess_irr_scanner.py`、`multi_node_scanner.py`。
 
 ### `resource_simulation`
 
@@ -122,13 +122,13 @@ uv sync
 常用入口：
 
 ```bash
-uv run python app/run_storage_arbitrage.py
+uv run python app/run_bess_arbitrage.py
 uv run python app/run_mpc_demo.py
 uv run python app/run_two_stage_skeleton.py
 uv run python app/run_backtest.py
-uv run python app/run_user_side_storage_dispatch.py
+uv run python app/run_user_side_bess_dispatch.py
 uv run python app/run_user_side_pv_dispatch.py
-uv run python app/run_user_side_pv_storage_dispatch.py
+uv run python app/run_user_side_pv_bess_dispatch.py
 uv run python app/run_wind_solar_storage.py
 ```
 

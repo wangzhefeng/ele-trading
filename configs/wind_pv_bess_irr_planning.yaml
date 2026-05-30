@@ -26,7 +26,7 @@ search:
   pv_step_mw: 35.0
   bess_step_mwh: 100.0
 
-storage:
+bess:
   eta_roundtrip: 0.92
   c_rate: 0.5
   soc_init_frac: 0.50

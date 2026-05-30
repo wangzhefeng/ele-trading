@@ -173,7 +173,7 @@ def plot_daily_pv_shape(pv_kw, date):
 # 储能调度可视化
 # ============================================================
 
-def plot_storage_dispatch(
+def plot_bess_dispatch(
     charge_schedule,
     discharge_schedule,
     soc_schedule,
@@ -320,7 +320,7 @@ def plot_irr_vs_capacity(
     plt.show()
 
 
-def plot_pv_storage_irr_curves(
+def plot_pv_bess_irr_curves(
     result,
     title="光储 IRR 曲线（不同购电价）",
 ):
@@ -335,8 +335,8 @@ def plot_pv_storage_irr_curves(
 
     plt.figure(figsize=(10, 6))
     for bp, sub in result.scan_df.groupby("buy_price_per_kwh"):
-        sub = sub.sort_values("storage_mwh")
-        plt.plot(sub["storage_mwh"], sub["irr_percent"], marker="o", label=f"购电价 {bp:.2f}")
+        sub = sub.sort_values("bess_mwh")
+        plt.plot(sub["bess_mwh"], sub["irr_percent"], marker="o", label=f"购电价 {bp:.2f}")
 
     plt.axhline(0, color="gray", linestyle="--")
     plt.xlabel("储能规模 (MWh)")
@@ -364,7 +364,7 @@ def plot_delta_irr_curves(
 
     plt.figure(figsize=(10, 6))
     for bp, sub in result.delta_df.groupby("buy_price_per_kwh"):
-        plt.plot(sub["storage_from_mwh"], sub["delta_irr_percent"], marker="o", label=f"购电价 {bp:.2f}")
+        plt.plot(sub["bess_from_mwh"], sub["delta_irr_percent"], marker="o", label=f"购电价 {bp:.2f}")
 
     plt.axhline(0, color="gray", linestyle="--")
     plt.xlabel("储能规模 (MWh)")

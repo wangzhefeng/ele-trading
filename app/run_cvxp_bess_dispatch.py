@@ -10,25 +10,25 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from ele_trading.data_provider.cvxp_storage_sample import (
+from ele_trading.data_provider.cvxp_bess_sample import (
     build_synthetic_cvxp_dispatch_frame,
-    build_cvxp_storage_dispatch_input,
-    load_cvxp_storage_dispatch_config,
+    build_cvxp_bess_dispatch_input,
+    load_cvxp_bess_dispatch_config,
 )
-from ele_trading.optimization.cvxp_storage_dispatch import (
-    run_cvxp_storage_dispatch,
+from ele_trading.optimization.cvxp_bess_dispatch import (
+    run_cvxp_bess_dispatch,
 )
 from ele_trading.utils.log_util import logger
 
 
-CONFIG_PATH = PROJECT_ROOT / 'configs' / 'cvxp_storage_dispatch.yaml'
+CONFIG_PATH = PROJECT_ROOT / 'configs' / 'cvxp_bess_dispatch.yaml'
 
 
 if __name__ == "__main__":
-    config = load_cvxp_storage_dispatch_config(CONFIG_PATH)
+    config = load_cvxp_bess_dispatch_config(CONFIG_PATH)
     input_frame = build_synthetic_cvxp_dispatch_frame(config)
-    dispatch_input = build_cvxp_storage_dispatch_input(config)
-    result = run_cvxp_storage_dispatch(dispatch_input)
+    dispatch_input = build_cvxp_bess_dispatch_input(config)
+    result = run_cvxp_bess_dispatch(dispatch_input)
 
     result_df = pd.DataFrame(
         {

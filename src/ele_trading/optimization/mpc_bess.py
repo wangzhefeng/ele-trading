@@ -24,7 +24,7 @@ def solve_one_mpc_window(
     0.0 表示不加终端约束（默认，向后兼容）。
     """
     T = range(horizon)
-    m = LpProblem('storage_mpc_window', LpMaximize)
+    m = LpProblem('bess_mpc_window', LpMaximize)
 
     p_ch = {t: LpVariable(f'p_ch_{t}', lowBound=0, upBound=p_ch_max) for t in T}
     p_dis = {t: LpVariable(f'p_dis_{t}', lowBound=0, upBound=p_dis_max) for t in T}
@@ -64,7 +64,7 @@ def solve_one_mpc_window(
     }
 
 
-def run_storage_mpc(
+def run_bess_mpc(
     prices: list[float],
     horizon: int,
     initial_soc: float,

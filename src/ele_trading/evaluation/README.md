@@ -9,14 +9,14 @@
 | `settlement.py` | 调度收益计算、广东式偏差考核分层罚款 |
 | `metrics.py` | IRR、基础储能指标、Sharpe、MDD、EFC、RTE、利用率等扩展指标 |
 | `backtest.py` | 最小回测闭环 `run_simple_backtest()` |
-| `simulation.py` | `EssSimulationModel`，储能仿真模型 |
+| `simulation.py` | `BESSSimulationModel`，储能仿真模型 |
 
 ## 当前能力
 
 - `compute_dispatch_revenue()`：按充放电、价格、退化成本计算逐时收益。
 - `compute_deviation_penalty()`：按死区、tier1、tier2 规则计算偏差罚款。
 - `compute_irr()`：计算投资收益率。
-- `summarize_storage_metrics()`：汇总基础储能调度指标。
+- `summarize_bess_metrics()`：汇总基础储能调度指标。
 - `compute_extended_metrics()`：输出年化 Sharpe、最大回撤、等效循环次数、单 EFC 收益、往返效率和利用率。
 - `run_simple_backtest()`：串起样例价格、滚动调度、结算和指标。
 

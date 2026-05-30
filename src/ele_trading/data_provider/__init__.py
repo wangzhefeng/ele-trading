@@ -25,7 +25,7 @@ from .loader import (
     load_price_series,
     load_pv_profile_config,
     load_renewable_profile,
-    load_storage_config,
+    load_bess_config,
     load_wind_profile_config,
 )
 from .resource_weather import fetch_weather_open_meteo, load_weather_csv, save_weather_csv
@@ -50,7 +50,7 @@ from .schemas import (
     PVProfileConfig,
     RenewableProfileResult,
     ScenarioRecord,
-    StorageConfig,
+    BESSConfig,
     WindProfileConfig,
 )
 from .time_series_ops import (
@@ -61,23 +61,23 @@ from .time_series_ops import (
     repair_anomalies,
     resample_series_frame,
 )
-from .user_side_storage_sample import (
-    build_synthetic_user_side_dispatch_frame,
-    build_user_side_storage_dispatch_input,
-    load_user_side_storage_dispatch_config,
+from .user_side_bess_sample import (
+    build_synthetic_user_side_bess_dispatch_frame,
+    build_user_side_bess_dispatch_input,
+    load_user_side_bess_dispatch_config,
 )
 from .user_side_pv_dispatch_sample import (
     build_synthetic_user_side_pv_dispatch_frame,
     build_user_side_pv_dispatch_input,
     load_user_side_pv_dispatch_config,
 )
-from .user_side_pv_storage_dispatch_sample import (
-    build_synthetic_user_side_pv_storage_dispatch_frame,
-    build_user_side_pv_storage_dispatch_input,
-    load_user_side_pv_storage_dispatch_config,
+from .user_side_pv_bess_dispatch_sample import (
+    build_synthetic_user_side_pv_bess_dispatch_frame,
+    build_user_side_pv_bess_dispatch_input,
+    load_user_side_pv_bess_dispatch_config,
 )
-from .cvxp_storage_sample import (
+from .cvxp_bess_sample import (
     build_synthetic_cvxp_dispatch_frame,
-    build_cvxp_storage_dispatch_input,
-    load_cvxp_storage_dispatch_config,
+    build_cvxp_bess_dispatch_input,
+    load_cvxp_bess_dispatch_config,
 )

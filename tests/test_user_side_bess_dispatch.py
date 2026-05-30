@@ -3,15 +3,15 @@
 import pytest
 
 import ele_trading.optimization as optimization
-from ele_trading.optimization.user_side_storage_dispatch import (
-    UserSideStorageDispatchInput,
-    UserSideStorageParams,
-    run_user_side_storage_dispatch,
+from ele_trading.optimization.user_side_bess_dispatch import (
+    UserSideBESSDispatchInput,
+    UserSideBESSParams,
+    run_user_side_bess_dispatch,
 )
 
 
-def _storage() -> UserSideStorageParams:
-    return UserSideStorageParams(
+def _storage() -> UserSideBESSParams:
+    return UserSideBESSParams(
         capacity=10.0,
         soc_min=1.0,
         soc_max=10.0,
@@ -31,12 +31,12 @@ def _dispatch_input(
     terminal_soc_target=None,
     cycle_cost_rate=0.0,
 ):
-    return UserSideStorageDispatchInput(
+    return UserSideBESSDispatchInput(
         timestamps=list(range(len(load_forecast))),
         load_forecast=list(load_forecast),
         buy_price=list(buy_price),
         price_type=["flat"] * len(load_forecast),
-        storage=_storage(),
+        bess=_storage(),
         initial_soc=initial_soc,
         demand_charge_rate=demand_charge_rate,
         step_hours=1.0,
@@ -47,7 +47,7 @@ def _dispatch_input(
 
 def test_user_side_dispatch_returns_expected_fields():
     """调度结果应返回用户侧电表功率、SOC、成本和约束校验。"""
-    result = run_user_side_storage_dispatch(
+    result = run_user_side_bess_dispatch(
         _dispatch_input(
             load_forecast=[5.0, 5.0, 5.0, 5.0],
             buy_price=[1.0, 0.2, 0.2, 1.0],
@@ -57,7 +57,7 @@ def test_user_side_dispatch_returns_expected_fields():
 
     assert len(result.charge_power) == 4
     assert len(result.discharge_power) == 4
-    assert len(result.net_storage_power) == 4
+    assert len(result.net_bess_power) == 4
     assert len(result.soc) == 4
     assert len(result.grid_import) == 4
     assert result.max_grid_import == pytest.approx(max(result.grid_import))
@@ -69,7 +69,7 @@ def test_user_side_dispatch_returns_expected_fields():
 
 def test_demand_charge_reduces_peak_grid_import():
     """需量电费较高时，模型应削减最大电表购电功率。"""
-    no_demand = run_user_side_storage_dispatch(
+    no_demand = run_user_side_bess_dispatch(
         _dispatch_input(
             load_forecast=[4.0, 4.0, 10.0, 4.0],
             buy_price=[0.5, 0.5, 0.5, 0.5],
@@ -77,7 +77,7 @@ def test_demand_charge_reduces_peak_grid_import():
             initial_soc=5.0,
         )
     )
-    with_demand = run_user_side_storage_dispatch(
+    with_demand = run_user_side_bess_dispatch(
         _dispatch_input(
             load_forecast=[4.0, 4.0, 10.0, 4.0],
             buy_price=[0.5, 0.5, 0.5, 0.5],
@@ -94,7 +94,7 @@ def test_demand_charge_reduces_peak_grid_import():
 
 def test_price_spread_charges_low_and_discharges_high_without_export():
     """峰谷价差场景下应低价充电、高价放电，且不反送电。"""
-    result = run_user_side_storage_dispatch(
+    result = run_user_side_bess_dispatch(
         _dispatch_input(
             load_forecast=[3.0, 3.0, 3.0, 3.0],
             buy_price=[1.0, 0.1, 0.1, 1.0],
@@ -113,7 +113,7 @@ def test_price_spread_charges_low_and_discharges_high_without_export():
 def test_same_prices_different_loads_produce_different_dispatch():
     """同一价格曲线下，用户侧模型应随负荷预测变化而改变调度。"""
     prices = [0.2, 0.2, 1.0, 1.0]
-    low_load = run_user_side_storage_dispatch(
+    low_load = run_user_side_bess_dispatch(
         _dispatch_input(
             load_forecast=[1.0, 1.0, 1.0, 1.0],
             buy_price=prices,
@@ -121,7 +121,7 @@ def test_same_prices_different_loads_produce_different_dispatch():
             terminal_soc_target=3.0,
         )
     )
-    high_load = run_user_side_storage_dispatch(
+    high_load = run_user_side_bess_dispatch(
         _dispatch_input(
             load_forecast=[5.0, 5.0, 5.0, 5.0],
             buy_price=prices,
@@ -137,13 +137,13 @@ def test_same_prices_different_loads_produce_different_dispatch():
 def test_input_lengths_must_match():
     """时间、电价、电价类型和负荷预测长度必须一致。"""
     with pytest.raises(ValueError, match="same length"):
-        run_user_side_storage_dispatch(
-            UserSideStorageDispatchInput(
+        run_user_side_bess_dispatch(
+            UserSideBESSDispatchInput(
                 timestamps=[0, 1],
                 load_forecast=[5.0, 5.0],
                 buy_price=[0.2],
                 price_type=["flat", "peak"],
-                storage=_storage(),
+                bess=_storage(),
                 initial_soc=5.0,
                 demand_charge_rate=0.0,
                 step_hours=1.0,
@@ -153,6 +153,6 @@ def test_input_lengths_must_match():
 
 def test_package_exports_user_side_dispatch_api():
     """optimization 包级入口应导出用户侧调度 API。"""
-    assert optimization.UserSideStorageDispatchInput is UserSideStorageDispatchInput
-    assert optimization.UserSideStorageParams is UserSideStorageParams
-    assert optimization.run_user_side_storage_dispatch is run_user_side_storage_dispatch
+    assert optimization.UserSideBESSDispatchInput is UserSideBESSDispatchInput
+    assert optimization.UserSideBESSParams is UserSideBESSParams
+    assert optimization.run_user_side_bess_dispatch is run_user_side_bess_dispatch

@@ -3,15 +3,15 @@
 from ele_trading.data_provider import (
     build_synthetic_user_side_pv_dispatch_frame,
     build_user_side_pv_dispatch_input,
-    build_user_side_pv_storage_dispatch_input,
+    build_user_side_pv_bess_dispatch_input,
 )
 from ele_trading.optimization.user_side_pv_dispatch import (
     UserSidePVDispatchInput,
     run_user_side_pv_dispatch,
 )
-from ele_trading.optimization.user_side_pv_storage_dispatch import (
-    UserSidePVStorageDispatchInput,
-    run_user_side_pv_storage_dispatch,
+from ele_trading.optimization.user_side_pv_bess_dispatch import (
+    UserSidePVBESSDispatchInput,
+    run_user_side_pv_bess_dispatch,
 )
 
 
@@ -23,7 +23,7 @@ def _config():
             "cycle_cost_rate": 0.01,
             "terminal_soc_target": 4.0,
         },
-        "storage": {
+        "bess": {
             "capacity": 10.0,
             "soc_min": 1.0,
             "soc_max": 10.0,
@@ -80,12 +80,12 @@ def test_synthetic_pv_frame_shape_and_columns():
 def test_synthetic_pv_inputs_solve_without_violations():
     config = _config()
     pv_input = build_user_side_pv_dispatch_input(config)
-    pv_storage_input = build_user_side_pv_storage_dispatch_input(config)
+    pv_bess_input = build_user_side_pv_bess_dispatch_input(config)
 
     pv_result = run_user_side_pv_dispatch(pv_input)
-    pv_storage_result = run_user_side_pv_storage_dispatch(pv_storage_input)
+    pv_bess_result = run_user_side_pv_bess_dispatch(pv_bess_input)
 
     assert isinstance(pv_input, UserSidePVDispatchInput)
-    assert isinstance(pv_storage_input, UserSidePVStorageDispatchInput)
+    assert isinstance(pv_bess_input, UserSidePVBESSDispatchInput)
     assert pv_result.constraint_violations == {}
-    assert pv_storage_result.constraint_violations == {}
+    assert pv_bess_result.constraint_violations == {}

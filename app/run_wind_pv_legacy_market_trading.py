@@ -17,10 +17,10 @@ import yaml
 from ele_trading.optimization.interfaces import (
     UserSideDispatchPolicy,
     UserSidePVExportParams,
-    UserSidePVStorageDispatchInput,
-    UserSideStorageParams,
+    UserSidePVBESSDispatchInput,
+    UserSideBESSParams,
 )
-from ele_trading.optimization.user_side_pv_storage_dispatch import run_user_side_pv_storage_dispatch
+from ele_trading.optimization.user_side_pv_bess_dispatch import run_user_side_pv_bess_dispatch
 from ele_trading.utils.log_util import logger
 from run_legacy_data_preparation import (
     build_legacy_total_frame,
@@ -88,7 +88,7 @@ def _build_policy(config: dict | None) -> UserSideDispatchPolicy | None:
     return UserSideDispatchPolicy(
         charge_allowed_hours=config.get("charge_allowed_hours"),
         discharge_allowed_hours=config.get("discharge_allowed_hours"),
-        pv_to_storage_reward_rate=float(config.get("pv_to_storage_reward_rate", 0.0)),
+        pv_to_bess_reward_rate=float(config.get("pv_to_bess_reward_rate", 0.0)),
         pv_to_load_reward_rate=float(config.get("pv_to_load_reward_rate", 0.0)),
         pv_export_penalty_rate=float(config.get("pv_export_penalty_rate", 0.0)),
     )
@@ -114,7 +114,7 @@ def run_market_trading(config: dict) -> tuple[pd.DataFrame, object]:
 
     price_frame = _build_price_frame(window["Time"], config["price"])
     renewable_forecast_kw = window["pv_kw"] + window["Wind_kw"]
-    dispatch_input = UserSidePVStorageDispatchInput(
+    dispatch_input = UserSidePVBESSDispatchInput(
         timestamps=window["Time"].tolist(),
         load_forecast=window["P_kw"].astype(float).tolist(),
         pv_forecast=renewable_forecast_kw.astype(float).tolist(),
@@ -128,21 +128,21 @@ def run_market_trading(config: dict) -> tuple[pd.DataFrame, object]:
         ),
         demand_charge_rate=float(config["dispatch"]["demand_charge_rate"]),
         step_hours=float(config["dispatch"]["step_hours"]),
-        storage=UserSideStorageParams(
-            capacity=float(config["storage"]["capacity"]),
-            soc_min=float(config["storage"]["soc_min"]),
-            soc_max=float(config["storage"]["soc_max"]),
-            p_ch_max=float(config["storage"]["p_ch_max"]),
-            p_dis_max=float(config["storage"]["p_dis_max"]),
-            eta_ch=float(config["storage"]["eta_ch"]),
-            eta_dis=float(config["storage"]["eta_dis"]),
+        bess=UserSideBESSParams(
+            capacity=float(config["bess"]["capacity"]),
+            soc_min=float(config["bess"]["soc_min"]),
+            soc_max=float(config["bess"]["soc_max"]),
+            p_ch_max=float(config["bess"]["p_ch_max"]),
+            p_dis_max=float(config["bess"]["p_dis_max"]),
+            eta_ch=float(config["bess"]["eta_ch"]),
+            eta_dis=float(config["bess"]["eta_dis"]),
         ),
-        initial_soc=float(config["storage"]["initial_soc"]),
+        initial_soc=float(config["bess"]["initial_soc"]),
         terminal_soc_target=float(config["dispatch"]["terminal_soc_target"]) if config["dispatch"]["terminal_soc_target"] is not None else None,
         cycle_cost_rate=float(config["dispatch"].get("cycle_cost_rate", 0.0)),
         policy=_build_policy(config.get("policy")),
     )
-    result = run_user_side_pv_storage_dispatch(dispatch_input)
+    result = run_user_side_pv_bess_dispatch(dispatch_input)
 
     result_df = pd.DataFrame(
         {
@@ -154,7 +154,7 @@ def run_market_trading(config: dict) -> tuple[pd.DataFrame, object]:
             "buy_price": price_frame["buy_price"],
             "price_type": price_frame["price_type"],
             "pv_to_load": result.pv_to_load,
-            "pv_to_storage": result.pv_to_storage,
+            "pv_to_bess": result.pv_to_bess,
             "pv_to_grid": result.pv_to_grid,
             "charge_power": result.charge_power,
             "discharge_power": result.discharge_power,

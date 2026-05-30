@@ -52,7 +52,7 @@ def _to_config(config: dict) -> WindPVBESSIRRPlanConfig:
     constraints = config["constraints"]
     capacity = config["capacity"]
     search = config["search"]
-    storage = config["storage"]
+    bess = config["bess"]
     cost = config["cost"]
     return WindPVBESSIRRPlanConfig(
         target_owner_price_yuan_per_kwh=price["target_owner_price_yuan_per_kwh"],
@@ -68,12 +68,12 @@ def _to_config(config: dict) -> WindPVBESSIRRPlanConfig:
         wind_step_mw=search["wind_step_mw"],
         pv_step_mw=search["pv_step_mw"],
         bess_step_mwh=search["bess_step_mwh"],
-        eta_roundtrip=storage["eta_roundtrip"],
-        c_rate=storage["c_rate"],
-        soc_init_frac=storage["soc_init_frac"],
-        soc_min_frac=storage["soc_min_frac"],
-        soc_max_frac=storage["soc_max_frac"],
-        switch_gap_hours=storage.get("switch_gap_hours", 0.0),
+        eta_roundtrip=bess["eta_roundtrip"],
+        c_rate=bess["c_rate"],
+        soc_init_frac=bess["soc_init_frac"],
+        soc_min_frac=bess["soc_min_frac"],
+        soc_max_frac=bess["soc_max_frac"],
+        switch_gap_hours=bess.get("switch_gap_hours", 0.0),
         wind_capex_yuan_per_kw=cost["wind_capex_yuan_per_kw"],
         pv_capex_yuan_per_kwp=cost["pv_capex_yuan_per_kwp"],
         bess_capex_yuan_per_kwh=cost["bess_capex_yuan_per_kwh"],

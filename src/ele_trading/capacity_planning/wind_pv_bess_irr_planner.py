@@ -11,7 +11,7 @@ from ele_trading.evaluation.metrics import compute_irr
 from ele_trading.utils.data_alignment import as_time_series, align_to_time
 from ele_trading.utils.time_index import infer_dt_hours
 
-from .wind_pv_bess_planner import WindPVBEssPlanConfig, _dispatch_annual
+from .wind_pv_bess_planner import WindPVBESSPlanConfig, _dispatch_annual
 
 
 @dataclass(slots=True)
@@ -87,7 +87,7 @@ def plan_wind_pv_bess_for_target_irr(
     aligned = _prepare_arrays(df_load, wind_unit_kw, pv_unit_kw, load_col, time_col)
     load_kw_arr, wind_unit_arr, pv_unit_arr, dt_hours = aligned
 
-    dispatch_cfg = WindPVBEssPlanConfig(
+    dispatch_cfg = WindPVBESSPlanConfig(
         eta_roundtrip=cfg.eta_roundtrip,
         c_rate=cfg.c_rate,
         soc_init_frac=cfg.soc_init_frac,

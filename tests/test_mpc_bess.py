@@ -1,7 +1,7 @@
 """储能 MPC 滚动优化测试。"""
 
 import pytest
-from ele_trading.optimization.mpc_storage import solve_one_mpc_window, run_storage_mpc
+from ele_trading.optimization.mpc_bess import solve_one_mpc_window, run_bess_mpc
 
 SAMPLE_PRICES = [
     330.0, 315.0, 300.0, 295.0, 320.0, 355.0, 410.0, 470.0,
@@ -34,7 +34,7 @@ def test_terminal_soc_fraction():
 
 def test_rolling_mpc_output():
     """滚动优化应返回 DataFrame，长度与价格序列一致。"""
-    df = run_storage_mpc(SAMPLE_PRICES, horizon=6, initial_soc=5.0)
+    df = run_bess_mpc(SAMPLE_PRICES, horizon=6, initial_soc=5.0)
     assert len(df) == len(SAMPLE_PRICES)
     for col in ('step', 'price', 'p_ch', 'p_dis', 'soc_next', 'step_objective'):
         assert col in df.columns

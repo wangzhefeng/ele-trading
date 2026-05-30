@@ -7,15 +7,15 @@ import pytest
 
 import ele_trading.utils as utils
 from ele_trading.utils.time_index import (
-    end_of_this_es_cycle,
-    es_cycle_window,
+    end_of_this_bess_cycle,
+    bess_cycle_window,
     generate_5mins,
     generate_days,
     generate_hours,
     generate_quarters,
     generate_time_points,
     process_time_index,
-    start_of_this_es_cycle,
+    start_of_this_bess_cycle,
 )
 
 
@@ -63,13 +63,13 @@ def test_es_cycle_boundaries_match_legacy_semantics():
     at_boundary = datetime(2026, 3, 5, 22, 0)
     after = datetime(2026, 3, 5, 22, 1)
 
-    assert start_of_this_es_cycle(before, 22) == datetime(2026, 3, 4, 22, 0)
-    assert end_of_this_es_cycle(before, 22) == datetime(2026, 3, 5, 22, 0)
-    assert start_of_this_es_cycle(at_boundary, 22) == datetime(2026, 3, 5, 22, 0)
-    assert end_of_this_es_cycle(at_boundary, 22) == datetime(2026, 3, 6, 22, 0)
-    assert start_of_this_es_cycle(after, 22) == datetime(2026, 3, 5, 22, 0)
-    assert end_of_this_es_cycle(after, 22) == datetime(2026, 3, 6, 22, 0)
-    assert es_cycle_window(after, 22) == (
+    assert start_of_this_bess_cycle(before, 22) == datetime(2026, 3, 4, 22, 0)
+    assert end_of_this_bess_cycle(before, 22) == datetime(2026, 3, 5, 22, 0)
+    assert start_of_this_bess_cycle(at_boundary, 22) == datetime(2026, 3, 5, 22, 0)
+    assert end_of_this_bess_cycle(at_boundary, 22) == datetime(2026, 3, 6, 22, 0)
+    assert start_of_this_bess_cycle(after, 22) == datetime(2026, 3, 5, 22, 0)
+    assert end_of_this_bess_cycle(after, 22) == datetime(2026, 3, 6, 22, 0)
+    assert bess_cycle_window(after, 22) == (
         datetime(2026, 3, 5, 22, 0),
         datetime(2026, 3, 6, 22, 0),
     )
@@ -105,7 +105,7 @@ def test_time_index_helpers_validate_inputs():
     with pytest.raises(ValueError, match="step"):
         generate_time_points(start, start + timedelta(hours=1), timedelta(0))
     with pytest.raises(ValueError, match="division_hour"):
-        start_of_this_es_cycle(start, 24)
+        start_of_this_bess_cycle(start, 24)
     with pytest.raises(ValueError, match="missing"):
         process_time_index(pd.DataFrame({"value": [1]}), "ts")
 

@@ -5,14 +5,14 @@ from typing import Any, List
 
 
 @dataclass(slots=True)
-class StorageArbitrageResult:
+class BESSArbitrageResult:
     objective: float
     p_ch: List[float]
     p_dis: List[float]
     soc: List[float]
 
 
-# CapacitySizingResult 已迁移至 capacity_planning.storage_capacity_sizer
+# CapacitySizingResult 已迁移至 capacity_planning.bess_capacity_sizer
 # 向后兼容由 optimization/__init__.__getattr__ 提供
 
 
@@ -27,7 +27,7 @@ class MPCStepResult:
 
 
 @dataclass(slots=True)
-class UserSideStorageParams:
+class UserSideBESSParams:
     capacity: float
     soc_min: float
     soc_max: float
@@ -38,12 +38,12 @@ class UserSideStorageParams:
 
 
 @dataclass(slots=True)
-class UserSideStorageDispatchInput:
+class UserSideBESSDispatchInput:
     timestamps: list[Any]
     load_forecast: list[float]
     buy_price: list[float]
     price_type: list[str]
-    storage: UserSideStorageParams
+    bess: UserSideBESSParams
     initial_soc: float
     demand_charge_rate: float
     step_hours: float
@@ -52,10 +52,10 @@ class UserSideStorageDispatchInput:
 
 
 @dataclass(slots=True)
-class UserSideStorageDispatchResult:
+class UserSideBESSDispatchResult:
     charge_power: list[float]
     discharge_power: list[float]
-    net_storage_power: list[float]
+    net_bess_power: list[float]
     soc: list[float]
     grid_import: list[float]
     max_grid_import: float
@@ -77,7 +77,7 @@ class UserSidePVExportParams:
 class UserSideDispatchPolicy:
     charge_allowed_hours: list[int] | None = None
     discharge_allowed_hours: list[int] | None = None
-    pv_to_storage_reward_rate: float = 0.0
+    pv_to_bess_reward_rate: float = 0.0
     pv_to_load_reward_rate: float = 0.0
     pv_export_penalty_rate: float = 0.0
 
@@ -110,7 +110,7 @@ class UserSidePVDispatchResult:
 
 
 @dataclass(slots=True)
-class UserSidePVStorageDispatchInput:
+class UserSidePVBESSDispatchInput:
     timestamps: list[Any]
     load_forecast: list[float]
     pv_forecast: list[float]
@@ -119,7 +119,7 @@ class UserSidePVStorageDispatchInput:
     export: UserSidePVExportParams
     demand_charge_rate: float
     step_hours: float
-    storage: UserSideStorageParams
+    bess: UserSideBESSParams
     initial_soc: float
     terminal_soc_target: float | None = None
     cycle_cost_rate: float = 0.0
@@ -127,16 +127,16 @@ class UserSidePVStorageDispatchInput:
 
 
 @dataclass(slots=True)
-class UserSidePVStorageDispatchResult:
+class UserSidePVBESSDispatchResult:
     pv_to_load: list[float]
-    pv_to_storage: list[float]
+    pv_to_bess: list[float]
     pv_to_grid: list[float]
     pv_curtailment: list[float]
     grid_to_load: list[float]
-    grid_to_storage: list[float]
+    grid_to_bess: list[float]
     charge_power: list[float]
     discharge_power: list[float]
-    net_storage_power: list[float]
+    net_bess_power: list[float]
     soc: list[float]
     grid_import: list[float]
     max_grid_import: float
@@ -150,7 +150,7 @@ class UserSidePVStorageDispatchResult:
 
 
 @dataclass(slots=True)
-class CvxpStorageProfile:
+class CvxpBESSProfile:
     """CVXPY 调度算法的行为配置。"""
     objective_energy_multiplier: float = 1.0
     demand_charge_type: str = "exact_max_net"
@@ -160,22 +160,22 @@ class CvxpStorageProfile:
 
 
 @dataclass(slots=True)
-class CvxpStorageDispatchInput:
+class CvxpBESSDispatchInput:
     """CVXPY 凸优化单节点储能调度输入。"""
     timestamps: list[datetime]
     demand_load: list[float]
     ele_prices: list[float]
     ele_types: list[str]
-    storage: UserSideStorageParams
+    bess: UserSideBESSParams
     initial_soc: float = 0.0
     max_demand_price: float = 0.0
     freq_minutes: int = 60
-    profile: CvxpStorageProfile = field(default_factory=CvxpStorageProfile)
+    profile: CvxpBESSProfile = field(default_factory=CvxpBESSProfile)
     transform_capacity: float = 0.0
 
 
 @dataclass(slots=True)
-class CvxpStorageDispatchResult:
+class CvxpBESSDispatchResult:
     """CVXPY 凸优化单节点储能调度输出。"""
     charge_power: list[float]
     discharge_power: list[float]
@@ -184,11 +184,11 @@ class CvxpStorageDispatchResult:
     objective_value: float
 
 
-# ── 分布式储能测算 (Dist ESS) ────────────────────────────────────────────────
+# ── 分布式储能测算 (Dist BESS) ────────────────────────────────────────────────
 
-DIST_ESS_CABINET_POWER_KW = 150.0
-DIST_ESS_CABINET_CAPACITY_KWH = 300.0
-DIST_ESS_CONSTRAINT_TOLERANCE_KW = 1e-2
+DIST_BESS_CABINET_POWER_KW = 150.0
+DIST_BESS_CABINET_CAPACITY_KWH = 300.0
+DIST_BESS_CONSTRAINT_TOLERANCE_KW = 1e-2
 
 
 class SolverType(Enum):
@@ -216,7 +216,7 @@ class TransformerConfig:
 
 
 @dataclass(frozen=True)
-class DistESSConfig:
+class DistBESSConfig:
     name: str
     transformers: tuple[TransformerConfig, ...]
     cabinet_groups: tuple[tuple[str, ...], ...] = ()
@@ -224,7 +224,7 @@ class DistESSConfig:
 
 
 @dataclass
-class DistESSSchedulerConfig:
+class DistBESSSchedulerConfig:
     solver: SolverType = SolverType.LP
     grid_import_formula: GridImportFormula = GridImportFormula.PARK_BASELINE
     grid_import_nonneg: bool = False
@@ -236,7 +236,7 @@ class DistESSSchedulerConfig:
 
 
 @dataclass
-class DistESSPipelineParams:
+class DistBESSPipelineParams:
     """分布式储能测算流水线参数。"""
     start_time: datetime
     end_time: datetime
@@ -245,7 +245,7 @@ class DistESSPipelineParams:
 
 
 @dataclass(slots=True)
-class DistESSDispatchInput:
+class DistBESSDispatchInput:
     """分布式储能容量搜索输入。"""
     base_dir: str
     start_time: datetime
@@ -260,7 +260,7 @@ class DistESSDispatchInput:
 
 
 @dataclass(slots=True)
-class DistESSDispatchResult:
+class DistBESSDispatchResult:
     """分布式储能容量搜索输出。"""
     summary: Any
     output_dir: str

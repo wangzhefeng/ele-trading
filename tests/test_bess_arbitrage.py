@@ -1,7 +1,7 @@
 """储能单市场套利优化测试。"""
 
 import pytest
-from ele_trading.optimization.storage_arbitrage import solve_storage_arbitrage, solve_storage_arbitrage_typed
+from ele_trading.optimization.bess_arbitrage import solve_bess_arbitrage, solve_bess_arbitrage_typed
 
 SAMPLE_PRICES = [
     320.0, 300.0, 285.0, 270.0, 260.0, 255.0, 280.0, 340.0,
@@ -12,7 +12,7 @@ SAMPLE_PRICES = [
 
 def test_basic_solve():
     """基本求解：应返回四个字段且目标值 > 0。"""
-    result = solve_storage_arbitrage(SAMPLE_PRICES)
+    result = solve_bess_arbitrage(SAMPLE_PRICES)
     assert 'objective' in result
     assert 'p_ch' in result
     assert 'p_dis' in result
@@ -25,26 +25,26 @@ def test_basic_solve():
 
 def test_enforce_terminal_soc():
     """enforce_terminal_soc=True 时日终 SOC 应回到初值。"""
-    result = solve_storage_arbitrage(SAMPLE_PRICES, soc0=5.0, enforce_terminal_soc=True)
+    result = solve_bess_arbitrage(SAMPLE_PRICES, soc0=5.0, enforce_terminal_soc=True)
     assert result['objective'] > 0
     assert abs(result['soc'][-1] - 5.0) < 1e-6
 
 
 def test_no_terminal_soc():
     """不强制终端 SOC 时，SOC 应自然演化。"""
-    result = solve_storage_arbitrage(SAMPLE_PRICES, soc0=5.0, enforce_terminal_soc=False)
+    result = solve_bess_arbitrage(SAMPLE_PRICES, soc0=5.0, enforce_terminal_soc=False)
     assert result['objective'] > 0
 
 
 def test_15min_granularity():
     """dt=0.25 时应可正确求解。"""
-    result = solve_storage_arbitrage(SAMPLE_PRICES[:8], dt=0.25)
+    result = solve_bess_arbitrage(SAMPLE_PRICES[:8], dt=0.25)
     assert result['objective'] > 0
 
 
 def test_typed_interface():
-    """typed 包装器应返回 StorageArbitrageResult。"""
-    result = solve_storage_arbitrage_typed(prices=SAMPLE_PRICES)
+    """typed 包装器应返回 BESSArbitrageResult。"""
+    result = solve_bess_arbitrage_typed(prices=SAMPLE_PRICES)
     assert hasattr(result, 'objective')
     assert hasattr(result, 'p_ch')
     assert hasattr(result, 'p_dis')

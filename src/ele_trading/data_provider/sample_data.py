@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .loader import load_price_scenarios, load_price_series, load_storage_config
+from .loader import load_price_scenarios, load_price_series, load_bess_config
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[3]
@@ -14,7 +14,7 @@ def get_sample_paths() -> dict[str, Path]:
     return {
         'day_ahead_prices': DATA_ROOT / 'raw' / 'sample_day_ahead_prices.csv',
         'intraday_prices': DATA_ROOT / 'raw' / 'sample_intraday_prices.csv',
-        'storage_config': DATA_ROOT / 'raw' / 'sample_storage_config.yaml',
+        'bess_config': DATA_ROOT / 'raw' / 'sample_bess_config.yaml',
         'price_scenarios': DATA_ROOT / 'scenarios' / 'sample_price_scenarios.csv',
     }
 
@@ -29,9 +29,9 @@ def load_default_intraday_prices():
     return load_price_series(paths['intraday_prices'], time_col='step', price_col='price', label='intraday')
 
 
-def load_default_storage_config():
+def load_default_bess_config():
     paths = get_sample_paths()
-    return load_storage_config(paths['storage_config'])
+    return load_bess_config(paths['bess_config'])
 
 
 def load_default_price_scenarios():

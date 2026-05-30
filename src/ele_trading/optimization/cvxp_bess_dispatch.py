@@ -4,30 +4,30 @@ import numpy as np
 import cvxpy as cp
 
 from .interfaces import (
-    CvxpStorageDispatchInput,
-    CvxpStorageDispatchResult,
-    CvxpStorageProfile,
+    CvxpBESSDispatchInput,
+    CvxpBESSDispatchResult,
+    CvxpBESSProfile,
 )
 
 
-def run_cvxp_storage_dispatch(
-    dispatch_input: CvxpStorageDispatchInput,
-) -> CvxpStorageDispatchResult:
+def run_cvxp_bess_dispatch(
+    dispatch_input: CvxpBESSDispatchInput,
+) -> CvxpBESSDispatchResult:
     """CVXPY 凸优化单节点储能调度。
 
     支持三种需量电费建模模式、L2 平滑惩罚、可选变压器容量约束和需量峰值保护。
-    与 run_user_side_storage_dispatch 解决相同场景，但使用 CVXPY 凸优化求解器。
+    与 run_user_side_bess_dispatch 解决相同场景，但使用 CVXPY 凸优化求解器。
     """
-    storage = dispatch_input.storage
+    bess = dispatch_input.bess
     T = len(dispatch_input.timestamps)
 
-    # 参数映射: UserSideStorageParams -> 内部数组
-    eta_ch = storage.eta_ch
-    eta_dis = storage.eta_dis
-    p_ch_max = storage.p_ch_max
-    p_dis_max = storage.p_dis_max
-    soc_max = storage.soc_max
-    soc_min = storage.soc_min
+    # 参数映射: UserSideBESSParams -> 内部数组
+    eta_ch = bess.eta_ch
+    eta_dis = bess.eta_dis
+    p_ch_max = bess.p_ch_max
+    p_dis_max = bess.p_dis_max
+    soc_max = bess.soc_max
+    soc_min = bess.soc_min
 
     time_ratio = dispatch_input.freq_minutes / 60
     d = np.array(dispatch_input.demand_load)
@@ -98,7 +98,7 @@ def run_cvxp_storage_dispatch(
     discharge_vals = _to_list(e_c_out.value)
     soc_vals = _to_list(soc.value)
 
-    return CvxpStorageDispatchResult(
+    return CvxpBESSDispatchResult(
         charge_power=charge_vals,
         discharge_power=discharge_vals,
         net_power=[round(c + d_val, 6) for c, d_val in zip(charge_vals, discharge_vals)],
@@ -113,22 +113,22 @@ def _to_list(arr) -> list[float]:
     return [round(float(x), 6) for x in np.asarray(arr).flatten()]
 
 
-CVXP_PROFILES: dict[str, CvxpStorageProfile] = {
-    "without_demand": CvxpStorageProfile(
+CVXP_PROFILES: dict[str, CvxpBESSProfile] = {
+    "without_demand": CvxpBESSProfile(
         objective_energy_multiplier=1.0,
         demand_charge_type="none",
         smoothing_enabled=False,
         transformer_capacity_constraint=False,
         demand_peak_guard_constraint=True,
     ),
-    "basic": CvxpStorageProfile(
+    "basic": CvxpBESSProfile(
         objective_energy_multiplier=31.0,
         demand_charge_type="approx_min_charge",
         smoothing_enabled=True,
         transformer_capacity_constraint=False,
         demand_peak_guard_constraint=False,
     ),
-    "optim": CvxpStorageProfile(
+    "optim": CvxpBESSProfile(
         objective_energy_multiplier=1.0,
         demand_charge_type="exact_max_net",
         smoothing_enabled=False,
@@ -138,7 +138,7 @@ CVXP_PROFILES: dict[str, CvxpStorageProfile] = {
 }
 
 
-def get_cvxp_profile(version: str) -> CvxpStorageProfile:
+def get_cvxp_profile(version: str) -> CvxpBESSProfile:
     """根据版本名称获取预定义的 CVXPY 调度算法配置。"""
     if version not in CVXP_PROFILES:
         raise ValueError(f"Unknown version: {version}. Choose from {list(CVXP_PROFILES.keys())}")

@@ -13,7 +13,7 @@ dispatch:
   terminal_soc_target: 500.0
   cycle_cost_rate: 0.02
 
-storage:
+bess:
   capacity: 1200.0
   soc_min: 100.0
   soc_max: 1200.0
@@ -32,7 +32,7 @@ export:
 policy:
   charge_allowed_hours: null
   discharge_allowed_hours: null
-  pv_to_storage_reward_rate: 0.0
+  pv_to_bess_reward_rate: 0.0
   pv_to_load_reward_rate: 0.0
   pv_export_penalty_rate: 0.0
 

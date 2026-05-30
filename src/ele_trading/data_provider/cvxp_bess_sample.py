@@ -7,19 +7,19 @@ import pandas as pd
 import yaml
 
 from ele_trading.optimization.interfaces import (
-    CvxpStorageDispatchInput,
-    CvxpStorageProfile,
-    UserSideStorageParams,
+    CvxpBESSDispatchInput,
+    CvxpBESSProfile,
+    UserSideBESSParams,
 )
-from ele_trading.optimization.cvxp_storage_dispatch import get_cvxp_profile
+from ele_trading.optimization.cvxp_bess_dispatch import get_cvxp_profile
 
 
-def load_cvxp_storage_dispatch_config(path: str | Path) -> dict[str, Any]:
+def load_cvxp_bess_dispatch_config(path: str | Path) -> dict[str, Any]:
     """加载 CVXPY 储能调度 demo 配置。"""
     with open(path, "r", encoding="utf-8") as file:
         config = yaml.safe_load(file)
     if not isinstance(config, dict):
-        raise ValueError("cvxp storage dispatch config must be a mapping")
+        raise ValueError("cvxp bess dispatch config must be a mapping")
     return config
 
 
@@ -46,34 +46,34 @@ def build_synthetic_cvxp_dispatch_frame(config: dict[str, Any]) -> pd.DataFrame:
     return pd.DataFrame.from_records(records)
 
 
-def build_cvxp_storage_dispatch_input(
+def build_cvxp_bess_dispatch_input(
     config: dict[str, Any],
-) -> CvxpStorageDispatchInput:
+) -> CvxpBESSDispatchInput:
     """构建 CVXPY 调度算法输入。"""
     frame = build_synthetic_cvxp_dispatch_frame(config)
-    storage_config = config["storage"]
+    bess_config = config["bess"]
     dispatch_config = config["dispatch"]
 
-    storage = UserSideStorageParams(
-        capacity=float(storage_config["capacity"]),
-        soc_min=float(storage_config["soc_min"]),
-        soc_max=float(storage_config["soc_max"]),
-        p_ch_max=float(storage_config["p_ch_max"]),
-        p_dis_max=float(storage_config["p_dis_max"]),
-        eta_ch=float(storage_config["eta_ch"]),
-        eta_dis=float(storage_config["eta_dis"]),
+    bess = UserSideBESSParams(
+        capacity=float(bess_config["capacity"]),
+        soc_min=float(bess_config["soc_min"]),
+        soc_max=float(bess_config["soc_max"]),
+        p_ch_max=float(bess_config["p_ch_max"]),
+        p_dis_max=float(bess_config["p_dis_max"]),
+        eta_ch=float(bess_config["eta_ch"]),
+        eta_dis=float(bess_config["eta_dis"]),
     )
 
     version = dispatch_config.get("version", "optim")
     profile = get_cvxp_profile(version)
 
-    return CvxpStorageDispatchInput(
+    return CvxpBESSDispatchInput(
         timestamps=frame["timestamp"].tolist(),
         demand_load=frame["demand_load"].astype(float).tolist(),
         ele_prices=frame["ele_prices"].astype(float).tolist(),
         ele_types=frame["ele_types"].astype(str).tolist(),
-        storage=storage,
-        initial_soc=float(storage_config.get("initial_soc", 0.0)),
+        bess=bess,
+        initial_soc=float(bess_config.get("initial_soc", 0.0)),
         max_demand_price=float(dispatch_config.get("max_demand_price", 0.0)),
         freq_minutes=int(dispatch_config.get("freq_minutes", 60)),
         profile=profile,

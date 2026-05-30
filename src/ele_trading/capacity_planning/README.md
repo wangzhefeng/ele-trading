@@ -13,7 +13,7 @@
 | `wind_pv_bess_irr_planner.py` | IRR 目标型 Wind+PV+BESS 容量规划和 PPA 反推 |
 | `feasibility_analyzer.py` | 储能项目可行性分析，覆盖价格、负荷、变压器和匹配度 |
 | `multi_node_scanner.py` | 多节点储能容量扫描和退化收益评估 |
-| `pv_storage_irr_scanner.py` | PV+storage 年收益和 IRR 扫描 |
+| `pv_bess_irr_scanner.py` | PV+storage 年收益和 IRR 扫描 |
 
 ## 分层关系
 
@@ -21,7 +21,7 @@
 气象 / 历史出力 / 负荷
 → resource_simulation / data_provider
 → capacity_optimizer / bess_capacity_planner / wind_bess_planner / wind_pv_bess_planner
-→ feasibility_analyzer / multi_node_scanner / pv_storage_irr_scanner
+→ feasibility_analyzer / multi_node_scanner / pv_bess_irr_scanner
 → app 容量规划入口和结果解释
 ```
 
@@ -35,9 +35,9 @@
 
 ## 扫描与诊断
 
-- `StorageFeasibilityAnalyzer`：从价格价差、负荷形态、变压器约束和充放匹配度评估储能策略可行性。
+- `BESSFeasibilityAnalyzer`：从价格价差、负荷形态、变压器约束和充放匹配度评估储能策略可行性。
 - `scan_single_node()` / `scan_multiple_nodes()`：对单节点或多节点做储能容量扫描。
-- `scan_pv_storage_irr()`：扫描 PV+storage 年收益、IRR 和增量 IRR。
+- `scan_pv_bess_irr()`：扫描 PV+storage 年收益、IRR 和增量 IRR。
 
 ## 对应入口
 

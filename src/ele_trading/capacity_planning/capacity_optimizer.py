@@ -34,8 +34,8 @@ _DEFAULT_SEARCH = {
 
 
 class CapacityOptimizer:
-    def __init__(self, storage_params, cost_params, search_params=None):
-        self.sp = storage_params
+    def __init__(self, bess_params, cost_params, search_params=None):
+        self.sp = bess_params
         self.cost = cost_params
         self.search = {**_DEFAULT_SEARCH, **(search_params or {})}
 
@@ -124,11 +124,11 @@ class CapacityOptimizer:
 
 
 def simulate_operation(load_series, wind_unit_output, solar_unit_output,
-                       wind_mw, pv_mw, ess_mwh, storage_params):
+                       wind_mw, pv_mw, ess_mwh, bess_params):
     load = load_series.values
     wind_u = wind_unit_output.values
     solar_u = solar_unit_output.values
-    return _simulate_op(load, wind_u, solar_u, wind_mw, pv_mw, ess_mwh, storage_params)
+    return _simulate_op(load, wind_u, solar_u, wind_mw, pv_mw, ess_mwh, bess_params)
 
 
 def _simulate_op(load, wind_u, solar_u, wind_mw, pv_mw, ess_mwh, sp):

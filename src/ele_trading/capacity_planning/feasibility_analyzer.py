@@ -69,7 +69,7 @@ class MatchingAnalysis:
 
 
 @dataclass(slots=True)
-class StorageStrategyRecommendation:
+class BESSStrategyRecommendation:
     """储能策略建议。"""
     category: str = ""
     power_range_kw: tuple[float, float] = (0.0, 0.0)
@@ -88,7 +88,7 @@ class FeasibilityResult:
     monthly_stats: pd.DataFrame | None = None
 
 
-class StorageFeasibilityAnalyzer:
+class BESSFeasibilityAnalyzer:
     """储能项目可行性评估。
 
     在 MILP 优化之前，分析电价、负荷和变压器数据，

@@ -1,6 +1,6 @@
 """分布式储能测算 — 完整实现。
 
-通过 DistESSSchedulerConfig 参数控制 v1-v5 行为差异。
+通过 DistBESSSchedulerConfig 参数控制 v1-v5 行为差异。
 """
 from __future__ import annotations
 
@@ -26,23 +26,23 @@ import pandas as pd
 from cvxpy.error import SolverError
 
 from ..optimization.interfaces import (
-    DIST_ESS_CABINET_CAPACITY_KWH,
-    DIST_ESS_CABINET_POWER_KW,
-    DIST_ESS_CONSTRAINT_TOLERANCE_KW,
+    DIST_BESS_CABINET_CAPACITY_KWH,
+    DIST_BESS_CABINET_POWER_KW,
+    DIST_BESS_CONSTRAINT_TOLERANCE_KW,
     CabinetEqualityMode,
-    DistESSConfig,
-    DistESSDispatchInput,
-    DistESSDispatchResult,
-    DistESSSchedulerConfig,
+    DistBESSConfig,
+    DistBESSDispatchInput,
+    DistBESSDispatchResult,
+    DistBESSSchedulerConfig,
     GridImportFormula,
     SolverType,
     TransformerConfig,
 )
 
 # 兼容旧名（模块内使用短名）
-_CABINET_POWER_KW = DIST_ESS_CABINET_POWER_KW
-_CABINET_CAPACITY_KWH = DIST_ESS_CABINET_CAPACITY_KWH
-_CONSTRAINT_TOLERANCE_KW = DIST_ESS_CONSTRAINT_TOLERANCE_KW
+_CABINET_POWER_KW = DIST_BESS_CABINET_POWER_KW
+_CABINET_CAPACITY_KWH = DIST_BESS_CABINET_CAPACITY_KWH
+_CONSTRAINT_TOLERANCE_KW = DIST_BESS_CONSTRAINT_TOLERANCE_KW
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -58,55 +58,55 @@ TRANSFORMERS = [
 ]
 TRANSFORMER_BY_NAME: dict[str, TransformerConfig] = {cfg.name: cfg for cfg in TRANSFORMERS}
 
-SYSTEMS: dict[str, DistESSConfig] = {
-    "338": DistESSConfig("338", (
+SYSTEMS: dict[str, DistBESSConfig] = {
+    "338": DistBESSConfig("338", (
         TRANSFORMER_BY_NAME["338_1"], TRANSFORMER_BY_NAME["338_2"], TRANSFORMER_BY_NAME["338_3"],
     )),
-    "342": DistESSConfig("342", (
+    "342": DistBESSConfig("342", (
         TRANSFORMER_BY_NAME["342_1"], TRANSFORMER_BY_NAME["342_2"],
     )),
-    "park": DistESSConfig("park", (
+    "park": DistBESSConfig("park", (
         TRANSFORMER_BY_NAME["338_1"], TRANSFORMER_BY_NAME["338_2"], TRANSFORMER_BY_NAME["338_3"],
         TRANSFORMER_BY_NAME["342_1"], TRANSFORMER_BY_NAME["342_2"],
     ), cabinet_groups=(("338_1", "338_2", "338_3"), ("342_1", "342_2"))),
 }
 
-V1_PRESET = DistESSSchedulerConfig(
+V1_PRESET = DistBESSSchedulerConfig(
     solver=SolverType.LP, grid_import_formula=GridImportFormula.SUM_LOAD,
     grid_import_nonneg=False, discharge_mask_mode="price_type",
 )
-V2_PRESET = DistESSSchedulerConfig(
+V2_PRESET = DistBESSSchedulerConfig(
     solver=SolverType.LP, grid_import_formula=GridImportFormula.SUM_LOAD,
     grid_import_nonneg=False, discharge_mask_mode="price_type",
     smooth_penalty_weight=1e-4, ramp_rate_fraction_per_step=0.5,
 )
 V3_PRESET = V2_PRESET
-V4_PRESET = DistESSSchedulerConfig(
+V4_PRESET = DistBESSSchedulerConfig(
     solver=SolverType.LP, grid_import_formula=GridImportFormula.PARK_BASELINE,
     grid_import_nonneg=True, discharge_mask_mode="price_type",
     smooth_penalty_weight=1e-4, ramp_rate_fraction_per_step=0.5,
 )
-V5_PRESET = DistESSSchedulerConfig(
+V5_PRESET = DistBESSSchedulerConfig(
     solver=SolverType.RULE_BASED, grid_import_formula=GridImportFormula.PARK_BASELINE,
     grid_import_nonneg=True, discharge_mask_mode="fixed_window",
 )
 
-PRESETS: dict[str, DistESSSchedulerConfig] = {
+PRESETS: dict[str, DistBESSSchedulerConfig] = {
     "v1": V1_PRESET, "v2": V2_PRESET, "v3": V3_PRESET, "v4": V4_PRESET, "v5": V5_PRESET,
 }
 
 
-def get_preset(name: str) -> DistESSSchedulerConfig:
+def get_preset(name: str) -> DistBESSSchedulerConfig:
     if name not in PRESETS:
         raise ValueError(f"Unknown preset: {name}. Choose from {list(PRESETS)}")
     return PRESETS[name]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# EsDistributionScheduler（来自 scheduler.py）
+# BESSDistributionScheduler（来自 scheduler.py）
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class EsDistributionScheduler:
+class BESSDistributionScheduler:
     """多变压器公共母线下的分布式储能调度模型（统一版本）。"""
 
     def __init__(
@@ -278,13 +278,13 @@ class EsDistributionScheduler:
         for source_i in range(row):
             constraints += [cp.sum(allocation_by_source[source_i], axis=0) == e_c_out_matrix[source_i, :]]
         for target_j in range(row):
-            supplied_by_storage = self._sum_or_zero(
+            supplied_by_bess = self._sum_or_zero(
                 [allocation_by_source[s][target_j, :] for s in range(row)], column,
             )
             cross_in = self._sum_or_zero(
                 [allocation_by_source[s][target_j, :] for s in range(row) if s != target_j], column,
             )
-            constraints += [grid_to_load_matrix[target_j, :] + supplied_by_storage == local_d[target_j, :]]
+            constraints += [grid_to_load_matrix[target_j, :] + supplied_by_bess == local_d[target_j, :]]
             constraints += [
                 grid_to_load_matrix[target_j, :] + cross_in + charge_power_matrix[target_j, :]
                 <= transform_capacity_vec[target_j, 0]
@@ -1267,7 +1267,7 @@ def simulate_all(base_dir: Path, strategy_dir: str, system_config: DistESSConfig
 # 对外 API
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def run_dist_ess_dispatch(input: DistESSDispatchInput) -> DistESSDispatchResult:
+def run_dist_bess_dispatch(input: DistBESSDispatchInput) -> DistBESSDispatchResult:
     """分布式储能容量搜索。ele_trading 标准函数式 API。"""
     base_dir = Path(input.base_dir)
     opt_result_dir = base_dir / "opt_result"
@@ -1281,8 +1281,8 @@ def run_dist_ess_dispatch(input: DistESSDispatchInput) -> DistESSDispatchResult:
     )
     summary_df = next(iter(result_map.values()))
     best_row = summary_df.iloc[0] if not summary_df.empty else {}
-    output_name = f"es_scale_experiment_optim_dist_{input.system_name}-{input.preset}"
-    return DistESSDispatchResult(
+    output_name = f"bess_scale_experiment_optim_dist_{input.system_name}-{input.preset}"
+    return DistBESSDispatchResult(
         summary=summary_df,
         output_dir=str(opt_result_dir / output_name),
         preset=input.preset,

@@ -4,7 +4,7 @@ dispatch:
   version: "optim"
   transform_capacity: 63000
 
-storage:
+bess:
   capacity: 12.0
   soc_min: 0.0
   soc_max: 10.8

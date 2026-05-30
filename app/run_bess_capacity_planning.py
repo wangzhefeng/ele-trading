@@ -111,7 +111,7 @@ def main():
     config = read_yaml(CONFIG_PATH)
     sc = config['scenario']
     cst = config['constraints']
-    storage = config['storage']
+    bess = config["bess"]]
     cost = config['cost']
     search = config['search']
     cap = config['capacity']
@@ -178,11 +178,11 @@ def main():
 
     cfg = BESSPlanConfig(
         bess_capex_yuan_per_kwh=cost['bess_capex_yuan_per_kwh'],
-        eta_roundtrip=storage['eta_roundtrip'],
-        c_rate=storage['c_rate'],
-        soc_init_frac=storage['soc_init_frac'],
-        soc_min_frac=storage['soc_min_frac'],
-        soc_max_frac=storage['soc_max_frac'],
+        eta_roundtrip=bess['eta_roundtrip'],
+        c_rate=bess['c_rate'],
+        soc_init_frac=bess['soc_init_frac'],
+        soc_min_frac=bess['soc_min_frac'],
+        soc_max_frac=bess['soc_max_frac'],
         self_use_ratio_min=cst['self_use_ratio_min'],
         load_cover_ratio_min=cst['load_cover_ratio_min'],
         batt_hi_max_kwh=search['batt_hi_max_kwh'],

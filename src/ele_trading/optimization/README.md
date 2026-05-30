@@ -7,18 +7,18 @@
 | 文件 | 职责 |
 |------|------|
 | `interfaces.py` | 统一 dataclass 和枚举，包括储能、用户侧、CVXPY、分布式储能输入输出 |
-| `storage_arbitrage.py` | 单市场储能套利和容量 sizing |
+| `bess_arbitrage.py` | 单市场储能套利和容量 sizing |
 | `mpc_storage.py` | 单窗口 MPC 和滚动 MPC |
 | `two_stage_cvar.py` | Two-stage + CVaR 场景优化模型 |
-| `user_side_storage_dispatch.py` | 用户侧储能调度，最小化购电、需量和循环成本 |
+| `user_side_bess_dispatch.py` | 用户侧储能调度，最小化购电、需量和循环成本 |
 | `user_side_pv_dispatch.py` | 用户侧 PV-only 自用、上网、弃光和购电成本测算 |
-| `user_side_pv_storage_dispatch.py` | 用户侧 PV+storage 联合调度 |
-| `cvxp_storage_dispatch.py` | CVXPY 储能调度 profile |
+| `user_side_pv_bess_dispatch.py` | 用户侧 PV+storage 联合调度 |
+| `cvxp_bess_dispatch.py` | CVXPY 储能调度 profile |
 | `dist_ess_dispatch.py` | 分布式储能多柜容量搜索、调度模拟和结果输出 |
 
 ## 市场储能套利
 
-`solve_storage_arbitrage()` 把储能视为独立市场资产，在已知价格序列下最大化：
+`solve_bess_arbitrage()` 把储能视为独立市场资产，在已知价格序列下最大化：
 
 ```text
 放电卖电收入 - 充电买电成本 - 线性退化成本
@@ -28,7 +28,7 @@
 
 ## MPC 滚动调度
 
-`solve_one_mpc_window()` 求解单个预测窗口，`run_storage_mpc()` 在价格序列上滚动执行。当前支持 `terminal_soc_fraction` 终端 SOC 下界，避免窗口末端过度放电。
+`solve_one_mpc_window()` 求解单个预测窗口，`run_bess_mpc()` 在价格序列上滚动执行。当前支持 `terminal_soc_fraction` 终端 SOC 下界，避免窗口末端过度放电。
 
 ## Two-stage + CVaR
 
@@ -44,15 +44,15 @@
 
 用户侧模型是电表后视角，目标通常是最小化综合用能成本。
 
-- `run_user_side_storage_dispatch()`：负荷 + 购电价格 + 储能，考虑需量电费、循环成本、终端 SOC 和禁止反送电。
+- `run_user_side_bess_dispatch()`：负荷 + 购电价格 + 储能，考虑需量电费、循环成本、终端 SOC 和禁止反送电。
 - `run_user_side_pv_dispatch()`：负荷 + PV + 购售电规则，计算 PV 自用、上网、弃光和购电。
-- `run_user_side_pv_storage_dispatch()`：负荷 + PV + 储能 + 可选策略偏好，联合决定 PV 分流、储能动作、购电和上网。
+- `run_user_side_pv_bess_dispatch()`：负荷 + PV + 储能 + 可选策略偏好，联合决定 PV 分流、储能动作、购电和上网。
 
 这三条链路的样例输入由 `data_provider/*_sample.py` 和 `configs/user_side_*.yaml` 提供。
 
 ## CVXPY 储能调度
 
-`run_cvxp_storage_dispatch()` 提供 CVXPY 版本储能调度实现，用 `CvxpStorageDispatchInput` 和 `CvxpStorageDispatchResult` 明确输入输出。入口为 `app/run_cvxp_storage_dispatch.py`。
+`run_cvxp_bess_dispatch()` 提供 CVXPY 版本储能调度实现，用 `CvxpBESSDispatchInput` 和 `CvxpBESSDispatchResult` 明确输入输出。入口为 `app/run_cvxp_bess_dispatch.py`。
 
 ## 分布式储能调度
 
@@ -63,7 +63,7 @@
 - 组合可行性检查、调度优化、收益评估。
 - `combo_key`、schedule、summary 输出之间的映射。
 
-入口为 `app/run_dist_ess_dispatch.py`，配置为 `configs/dist_ess_dispatch.yaml`。
+入口为 `app/run_dist_bess_dispatch.py`，配置为 `configs/dist_ess_dispatch.yaml`。
 
 ## 与 legacy 的关系
 

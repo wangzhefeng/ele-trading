@@ -16,7 +16,7 @@
 | `time_series_ops.py` | 时间戳清洗、重采样、对齐、质量分和异常修复 |
 | `user_side_storage_sample.py` | 用户侧储能 demo 配置读取和合成输入 |
 | `user_side_pv_dispatch_sample.py` | 用户侧 PV-only demo 配置读取和合成输入 |
-| `user_side_pv_storage_dispatch_sample.py` | 用户侧 PV+storage demo 配置读取和合成输入 |
+| `user_side_pv_bess_dispatch_sample.py` | 用户侧 PV+storage demo 配置读取和合成输入 |
 | `user_side_pv_sample.py` | 早期用户侧 PV/PV+storage 兼容样例构造 |
 | `cvxp_storage_sample.py` | CVXPY 储能调度 demo 配置读取和合成输入 |
 

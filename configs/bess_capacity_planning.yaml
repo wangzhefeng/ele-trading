@@ -14,7 +14,7 @@ constraints:
   load_cover_ratio_min: 0.30     # 负荷覆盖率 ≥ 30%
 
 # 储能参数
-storage:
+bess:
   eta_roundtrip: 0.92            # 往返效率
   c_rate: 0.5                    # 充放电倍率（0.5C = 2h 充满）
   soc_init_frac: 0.50            # 初始荷电状态

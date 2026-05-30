@@ -31,7 +31,7 @@ def test_simulate_operation_returns_fields():
     """simulate_operation 返回应有六个字段。"""
     load, wind_u, solar_u = _make_data()
     sp = {'eta_charge': 0.95, 'eta_discharge': 0.95, 'dod': 0.9, 'soc_min': 0.1, 'c_rate': 0.5}
-    result = simulate_operation(load, wind_u, solar_u, wind_mw=30, pv_mw=20, ess_mwh=40, storage_params=sp)
+    result = simulate_operation(load, wind_u, solar_u, wind_mw=30, pv_mw=20, ess_mwh=40, bess_params=sp)
     for field in ('green_ratio', 'self_use_ratio', 'curtailment_ratio',
                   'total_green_gen_mwh', 'total_grid_buy_mwh', 'total_curtailment_mwh'):
         assert field in result
@@ -41,7 +41,7 @@ def test_green_ratio_in_range():
     """green_ratio 应在 [0, 1]。"""
     load, wind_u, solar_u = _make_data()
     sp = {'eta_charge': 0.95, 'eta_discharge': 0.95, 'dod': 0.9, 'soc_min': 0.1, 'c_rate': 0.5}
-    result = simulate_operation(load, wind_u, solar_u, wind_mw=50, pv_mw=50, ess_mwh=100, storage_params=sp)
+    result = simulate_operation(load, wind_u, solar_u, wind_mw=50, pv_mw=50, ess_mwh=100, bess_params=sp)
     assert 0.0 <= result['green_ratio'] <= 1.0
     assert 0.0 <= result['self_use_ratio'] <= 1.0
 
@@ -51,7 +51,7 @@ def test_capacity_optimizer_find_plan():
     load, wind_u, solar_u = _make_data(72)
     sp = {'eta_charge': 0.95, 'eta_discharge': 0.95, 'dod': 0.9, 'soc_min': 0.1, 'c_rate': 0.5}
     cost = {'wind_yuan_per_kw': 5000, 'pv_yuan_per_kw': 3500, 'ess_yuan_per_kwh': 1500}
-    opt = CapacityOptimizer(storage_params=sp, cost_params=cost)
+    opt = CapacityOptimizer(bess_params=sp, cost_params=cost)
     plan = opt.optimize(load, wind_u, solar_u, green_ratio_min=0.3, self_use_ratio_min=0.3)
     assert isinstance(plan, CapacityPlanResult)
     assert plan.green_ratio >= 0.3 - 1e-9
@@ -70,7 +70,7 @@ def test_capacity_optimizer_infeasible():
         'max_pv_mw': 5,
         'max_ess_mwh': 5,
     }
-    opt = CapacityOptimizer(storage_params=sp, cost_params=cost, search_params=search)
+    opt = CapacityOptimizer(bess_params=sp, cost_params=cost, search_params=search)
     with pytest.raises(ValueError, match='feasible'):
         opt.optimize(load, wind_u, solar_u, green_ratio_min=0.99, self_use_ratio_min=0.99)
 
@@ -81,7 +81,7 @@ def test_pv_only_mode():
     sp = {'eta_charge': 0.95, 'eta_discharge': 0.95, 'dod': 0.9, 'soc_min': 0.1, 'c_rate': 0.5}
     cost = {'wind_yuan_per_kw': 5000, 'pv_yuan_per_kw': 3500, 'ess_yuan_per_kwh': 1500}
     search = {'coarse_step_mw': 10, 'max_pv_mw': 200, 'max_ess_mwh': 0, 'coarse_step_mwh': 1}
-    opt = CapacityOptimizer(storage_params=sp, cost_params=cost, search_params=search)
+    opt = CapacityOptimizer(bess_params=sp, cost_params=cost, search_params=search)
     plan = opt.optimize(load, pd.Series(0.0, index=load.index), solar_u,
                         green_ratio_min=0.1, self_use_ratio_min=0.3,
                         fixed_wind_mw=0.0)
@@ -105,7 +105,7 @@ def test_pv_monthly_kwh_in_result():
     load, wind_u, solar_u = _make_data(72)
     sp = {'eta_charge': 0.95, 'eta_discharge': 0.95, 'dod': 0.9, 'soc_min': 0.1, 'c_rate': 0.5}
     cost = {'wind_yuan_per_kw': 5000, 'pv_yuan_per_kw': 3500, 'ess_yuan_per_kwh': 1500}
-    opt = CapacityOptimizer(storage_params=sp, cost_params=cost)
+    opt = CapacityOptimizer(bess_params=sp, cost_params=cost)
     plan = opt.optimize(load, wind_u, solar_u, green_ratio_min=0.3, self_use_ratio_min=0.3)
     if plan.pv_mw > 0:
         assert plan.pv_monthly_kwh is not None

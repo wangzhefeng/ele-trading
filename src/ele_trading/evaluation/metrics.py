@@ -62,7 +62,7 @@ def compute_irr(
     return (low + high) / 2
 
 
-def summarize_storage_metrics(result_df: pd.DataFrame) -> dict[str, float]:
+def summarize_bess_metrics(result_df: pd.DataFrame) -> dict[str, float]:
     """汇总储能回测关键指标（原有接口，向后兼容）。"""
     return {
         'Total Revenue': float(result_df['net_revenue'].sum()),

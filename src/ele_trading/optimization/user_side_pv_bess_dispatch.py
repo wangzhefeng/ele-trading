@@ -15,38 +15,38 @@ from pulp import (
 from .interfaces import (
     UserSideDispatchPolicy,
     UserSidePVExportParams,
-    UserSidePVStorageDispatchInput,
-    UserSidePVStorageDispatchResult,
-    UserSideStorageParams,
+    UserSidePVBESSDispatchInput,
+    UserSidePVBESSDispatchResult,
+    UserSideBESSParams,
 )
 
 
-def run_user_side_pv_storage_dispatch(
-    dispatch_input: UserSidePVStorageDispatchInput,
-) -> UserSidePVStorageDispatchResult:
-    """Run user-side PV + storage dispatch as a MILP."""
+def run_user_side_pv_bess_dispatch(
+    dispatch_input: UserSidePVBESSDispatchInput,
+) -> UserSidePVBESSDispatchResult:
+    """Run user-side PV + bess dispatch as a MILP."""
     _validate_input(dispatch_input)
 
-    storage = dispatch_input.storage
+    bess = dispatch_input.bess
     T = range(len(dispatch_input.timestamps))
-    model = LpProblem("user_side_pv_storage_dispatch", LpMinimize)
+    model = LpProblem("user_side_pv_bess_dispatch", LpMinimize)
 
     pv_to_load = {t: LpVariable(f"pv_to_load_{t}", lowBound=0) for t in T}
-    pv_to_storage = {t: LpVariable(f"pv_to_storage_{t}", lowBound=0) for t in T}
+    pv_to_bess = {t: LpVariable(f"pv_to_bess_{t}", lowBound=0) for t in T}
     pv_to_grid = {t: LpVariable(f"pv_to_grid_{t}", lowBound=0) for t in T}
     pv_curtailment = {t: LpVariable(f"pv_curtailment_{t}", lowBound=0) for t in T}
     grid_to_load = {t: LpVariable(f"grid_to_load_{t}", lowBound=0) for t in T}
-    grid_to_storage = {t: LpVariable(f"grid_to_storage_{t}", lowBound=0) for t in T}
+    grid_to_bess = {t: LpVariable(f"grid_to_bess_{t}", lowBound=0) for t in T}
     charge = {
-        t: LpVariable(f"charge_{t}", lowBound=0, upBound=storage.p_ch_max)
+        t: LpVariable(f"charge_{t}", lowBound=0, upBound=bess.p_ch_max)
         for t in T
     }
     discharge = {
-        t: LpVariable(f"discharge_{t}", lowBound=0, upBound=storage.p_dis_max)
+        t: LpVariable(f"discharge_{t}", lowBound=0, upBound=bess.p_dis_max)
         for t in T
     }
     soc = {
-        t: LpVariable(f"soc_{t}", lowBound=storage.soc_min, upBound=storage.soc_max)
+        t: LpVariable(f"soc_{t}", lowBound=bess.soc_min, upBound=bess.soc_max)
         for t in T
     }
     grid_import = {t: LpVariable(f"grid_import_{t}", lowBound=0) for t in T}
@@ -58,7 +58,7 @@ def run_user_side_pv_storage_dispatch(
     for t in T:
         model += (
             pv_to_load[t]
-            + pv_to_storage[t]
+            + pv_to_bess[t]
             + pv_to_grid[t]
             + pv_curtailment[t]
             == dispatch_input.pv_forecast[t]
@@ -67,12 +67,12 @@ def run_user_side_pv_storage_dispatch(
             pv_to_load[t] + discharge[t] + grid_to_load[t]
             == dispatch_input.load_forecast[t]
         )
-        model += charge[t] == pv_to_storage[t] + grid_to_storage[t]
-        model += grid_import[t] == grid_to_load[t] + grid_to_storage[t]
+        model += charge[t] == pv_to_bess[t] + grid_to_bess[t]
+        model += grid_import[t] == grid_to_load[t] + grid_to_bess[t]
         model += max_grid_import >= grid_import[t]
         model += is_charging[t] + is_discharging[t] <= 1
-        model += charge[t] <= storage.p_ch_max * is_charging[t]
-        model += discharge[t] <= storage.p_dis_max * is_discharging[t]
+        model += charge[t] <= bess.p_ch_max * is_charging[t]
+        model += discharge[t] <= bess.p_dis_max * is_discharging[t]
         model += discharge[t] <= dispatch_input.load_forecast[t]
 
         if not dispatch_input.export.allow_export:
@@ -84,8 +84,8 @@ def run_user_side_pv_storage_dispatch(
         if policy is not None:
             hour = timestamp_hours[t]
             if policy.charge_allowed_hours is not None and hour not in policy.charge_allowed_hours:
-                model += pv_to_storage[t] == 0
-                model += grid_to_storage[t] == 0
+                model += pv_to_bess[t] == 0
+                model += grid_to_bess[t] == 0
             if policy.discharge_allowed_hours is not None and hour not in policy.discharge_allowed_hours:
                 model += discharge[t] == 0
 
@@ -93,8 +93,8 @@ def run_user_side_pv_storage_dispatch(
         model += (
             soc[t]
             == previous_soc
-            + storage.eta_ch * charge[t] * dispatch_input.step_hours
-            - discharge[t] * dispatch_input.step_hours / storage.eta_dis
+            + bess.eta_ch * charge[t] * dispatch_input.step_hours
+            - discharge[t] * dispatch_input.step_hours / bess.eta_dis
         )
 
     if dispatch_input.terminal_soc_target is not None:
@@ -121,7 +121,7 @@ def run_user_side_pv_storage_dispatch(
         * dispatch_input.step_hours
         for t in T
     )
-    policy_expr = _policy_objective(dispatch_input, pv_to_load, pv_to_storage, pv_to_grid)
+    policy_expr = _policy_objective(dispatch_input, pv_to_load, pv_to_bess, pv_to_grid)
     model += (
         energy_cost_expr
         + demand_cost_expr
@@ -134,14 +134,14 @@ def run_user_side_pv_storage_dispatch(
     model.solve(PULP_CBC_CMD(msg=False))
     status = LpStatus[model.status]
     if status != "Optimal":
-        raise RuntimeError(f"user-side PV storage dispatch failed: {status}")
+        raise RuntimeError(f"user-side PV bess dispatch failed: {status}")
 
     pv_to_load_values = [_clean(value(pv_to_load[t])) for t in T]
-    pv_to_storage_values = [_clean(value(pv_to_storage[t])) for t in T]
+    pv_to_bess_values = [_clean(value(pv_to_bess[t])) for t in T]
     pv_to_grid_values = [_clean(value(pv_to_grid[t])) for t in T]
     pv_curtailment_values = [_clean(value(pv_curtailment[t])) for t in T]
     grid_to_load_values = [_clean(value(grid_to_load[t])) for t in T]
-    grid_to_storage_values = [_clean(value(grid_to_storage[t])) for t in T]
+    grid_to_bess_values = [_clean(value(grid_to_bess[t])) for t in T]
     charge_values = [_clean(value(charge[t])) for t in T]
     discharge_values = [_clean(value(discharge[t])) for t in T]
     soc_values = [_clean(value(soc[t])) for t in T]
@@ -172,16 +172,16 @@ def run_user_side_pv_storage_dispatch(
         for t in T
     )
 
-    return UserSidePVStorageDispatchResult(
+    return UserSidePVBESSDispatchResult(
         pv_to_load=pv_to_load_values,
-        pv_to_storage=pv_to_storage_values,
+        pv_to_bess=pv_to_bess_values,
         pv_to_grid=pv_to_grid_values,
         pv_curtailment=pv_curtailment_values,
         grid_to_load=grid_to_load_values,
-        grid_to_storage=grid_to_storage_values,
+        grid_to_bess=grid_to_bess_values,
         charge_power=charge_values,
         discharge_power=discharge_values,
-        net_storage_power=[
+        net_bess_power=[
             _clean(charge_values[t] - discharge_values[t]) for t in T
         ],
         soc=soc_values,
@@ -196,11 +196,11 @@ def run_user_side_pv_storage_dispatch(
         constraint_violations=_constraint_violations(
             dispatch_input,
             pv_to_load_values,
-            pv_to_storage_values,
+            pv_to_bess_values,
             pv_to_grid_values,
             pv_curtailment_values,
             grid_to_load_values,
-            grid_to_storage_values,
+            grid_to_bess_values,
             charge_values,
             discharge_values,
             soc_values,
@@ -210,7 +210,7 @@ def run_user_side_pv_storage_dispatch(
     )
 
 
-def _validate_input(dispatch_input: UserSidePVStorageDispatchInput) -> None:
+def _validate_input(dispatch_input: UserSidePVBESSDispatchInput) -> None:
     length = len(dispatch_input.timestamps)
     if length == 0:
         raise ValueError("dispatch horizon must not be empty")
@@ -246,23 +246,23 @@ def _validate_input(dispatch_input: UserSidePVStorageDispatchInput) -> None:
     if export.export_limit is not None and export.export_limit < 0:
         raise ValueError("export.export_limit must be non-negative")
 
-    storage = dispatch_input.storage
-    if storage.capacity <= 0:
-        raise ValueError("storage.capacity must be positive")
-    if storage.soc_min < 0 or storage.soc_max > storage.capacity:
-        raise ValueError("storage SOC bounds must be within storage capacity")
-    if storage.soc_min > storage.soc_max:
-        raise ValueError("storage.soc_min must be less than or equal to storage.soc_max")
-    if not storage.soc_min <= dispatch_input.initial_soc <= storage.soc_max:
-        raise ValueError("initial_soc must be within storage SOC bounds")
+    bess = dispatch_input.bess
+    if bess.capacity <= 0:
+        raise ValueError("bess.capacity must be positive")
+    if bess.soc_min < 0 or bess.soc_max > bess.capacity:
+        raise ValueError("bess SOC bounds must be within bess capacity")
+    if bess.soc_min > bess.soc_max:
+        raise ValueError("bess.soc_min must be less than or equal to bess.soc_max")
+    if not bess.soc_min <= dispatch_input.initial_soc <= bess.soc_max:
+        raise ValueError("initial_soc must be within bess SOC bounds")
     if dispatch_input.terminal_soc_target is not None and not (
-        storage.soc_min <= dispatch_input.terminal_soc_target <= storage.soc_max
+        bess.soc_min <= dispatch_input.terminal_soc_target <= bess.soc_max
     ):
-        raise ValueError("terminal_soc_target must be within storage SOC bounds")
-    if storage.p_ch_max < 0 or storage.p_dis_max < 0:
-        raise ValueError("storage power limits must be non-negative")
-    if storage.eta_ch <= 0 or storage.eta_dis <= 0:
-        raise ValueError("storage efficiencies must be positive")
+        raise ValueError("terminal_soc_target must be within bess SOC bounds")
+    if bess.p_ch_max < 0 or bess.p_dis_max < 0:
+        raise ValueError("bess power limits must be non-negative")
+    if bess.eta_ch <= 0 or bess.eta_dis <= 0:
+        raise ValueError("bess efficiencies must be positive")
     _validate_policy(dispatch_input.policy)
 
 
@@ -277,8 +277,8 @@ def _validate_policy(policy: UserSideDispatchPolicy | None) -> None:
             continue
         if any(hour < 0 or hour > 23 for hour in hours):
             raise ValueError(f"policy.{name} must contain hours in [0, 23]")
-    if policy.pv_to_storage_reward_rate < 0:
-        raise ValueError("policy.pv_to_storage_reward_rate must be non-negative")
+    if policy.pv_to_bess_reward_rate < 0:
+        raise ValueError("policy.pv_to_bess_reward_rate must be non-negative")
     if policy.pv_to_load_reward_rate < 0:
         raise ValueError("policy.pv_to_load_reward_rate must be non-negative")
     if policy.pv_export_penalty_rate < 0:
@@ -286,9 +286,9 @@ def _validate_policy(policy: UserSideDispatchPolicy | None) -> None:
 
 
 def _policy_objective(
-    dispatch_input: UserSidePVStorageDispatchInput,
+    dispatch_input: UserSidePVBESSDispatchInput,
     pv_to_load,
-    pv_to_storage,
+    pv_to_bess,
     pv_to_grid,
 ):
     policy = dispatch_input.policy
@@ -296,8 +296,8 @@ def _policy_objective(
         return 0.0
     T = range(len(dispatch_input.timestamps))
     return (
-        -policy.pv_to_storage_reward_rate
-        * lpSum(pv_to_storage[t] * dispatch_input.step_hours for t in T)
+        -policy.pv_to_bess_reward_rate
+        * lpSum(pv_to_bess[t] * dispatch_input.step_hours for t in T)
         - policy.pv_to_load_reward_rate
         * lpSum(pv_to_load[t] * dispatch_input.step_hours for t in T)
         + policy.pv_export_penalty_rate
@@ -310,13 +310,13 @@ def _timestamp_hours(timestamps) -> list[int]:
 
 
 def _constraint_violations(
-    dispatch_input: UserSidePVStorageDispatchInput,
+    dispatch_input: UserSidePVBESSDispatchInput,
     pv_to_load: list[float],
-    pv_to_storage: list[float],
+    pv_to_bess: list[float],
     pv_to_grid: list[float],
     pv_curtailment: list[float],
     grid_to_load: list[float],
-    grid_to_storage: list[float],
+    grid_to_bess: list[float],
     charge_values: list[float],
     discharge_values: list[float],
     soc_values: list[float],
@@ -324,12 +324,12 @@ def _constraint_violations(
     max_grid_import: float,
 ) -> dict[str, float]:
     tolerance = 1e-6
-    storage = dispatch_input.storage
+    bess = dispatch_input.bess
     violations = {
         "pv_balance": max(
             abs(
                 pv_to_load[t]
-                + pv_to_storage[t]
+                + pv_to_bess[t]
                 + pv_to_grid[t]
                 + pv_curtailment[t]
                 - dispatch_input.pv_forecast[t]
@@ -346,17 +346,17 @@ def _constraint_violations(
             for t in range(len(dispatch_input.timestamps))
         ),
         "grid_import": max(
-            abs(grid_import_values[t] - grid_to_load[t] - grid_to_storage[t])
+            abs(grid_import_values[t] - grid_to_load[t] - grid_to_bess[t])
             for t in range(len(dispatch_input.timestamps))
         ),
         "charge_balance": max(
-            abs(charge_values[t] - pv_to_storage[t] - grid_to_storage[t])
+            abs(charge_values[t] - pv_to_bess[t] - grid_to_bess[t])
             for t in range(len(dispatch_input.timestamps))
         ),
-        "soc_min": max(storage.soc_min - min(soc_values), 0.0),
-        "soc_max": max(max(soc_values) - storage.soc_max, 0.0),
-        "charge_max": max(max(charge_values) - storage.p_ch_max, 0.0),
-        "discharge_max": max(max(discharge_values) - storage.p_dis_max, 0.0),
+        "soc_min": max(bess.soc_min - min(soc_values), 0.0),
+        "soc_max": max(max(soc_values) - bess.soc_max, 0.0),
+        "charge_max": max(max(charge_values) - bess.p_ch_max, 0.0),
+        "discharge_max": max(max(discharge_values) - bess.p_dis_max, 0.0),
         "grid_import_min": max(-min(grid_import_values), 0.0),
         "max_grid_import": max(max(grid_import_values) - max_grid_import, 0.0),
     }

@@ -4,17 +4,17 @@ import pandas as pd
 import pytest
 
 import ele_trading.optimization as optimization
-from ele_trading.optimization.user_side_pv_storage_dispatch import (
+from ele_trading.optimization.user_side_pv_bess_dispatch import (
     UserSideDispatchPolicy,
     UserSidePVExportParams,
-    UserSidePVStorageDispatchInput,
-    UserSideStorageParams,
-    run_user_side_pv_storage_dispatch,
+    UserSidePVBESSDispatchInput,
+    UserSideBESSParams,
+    run_user_side_pv_bess_dispatch,
 )
 
 
-def _storage() -> UserSideStorageParams:
-    return UserSideStorageParams(
+def _storage() -> UserSideBESSParams:
+    return UserSideBESSParams(
         capacity=12.0,
         soc_min=1.0,
         soc_max=12.0,
@@ -40,7 +40,7 @@ def _dispatch_input(
     policy=None,
 ):
     timestamps = pd.date_range("2026-01-01", periods=len(load_forecast), freq="h")
-    return UserSidePVStorageDispatchInput(
+    return UserSidePVBESSDispatchInput(
         timestamps=timestamps.tolist(),
         load_forecast=list(load_forecast),
         pv_forecast=list(pv_forecast),
@@ -53,7 +53,7 @@ def _dispatch_input(
         ),
         demand_charge_rate=demand_charge_rate,
         step_hours=1.0,
-        storage=_storage(),
+        bess=_storage(),
         initial_soc=initial_soc,
         terminal_soc_target=terminal_soc_target,
         cycle_cost_rate=cycle_cost_rate,
@@ -61,7 +61,7 @@ def _dispatch_input(
     )
 
 
-def test_pv_storage_dispatch_energy_balance_and_soc():
+def test_pv_bess_dispatch_energy_balance_and_soc():
     dispatch_input = _dispatch_input(
         load_forecast=[5.0, 5.0, 5.0, 5.0],
         pv_forecast=[0.0, 8.0, 8.0, 0.0],
@@ -71,12 +71,12 @@ def test_pv_storage_dispatch_energy_balance_and_soc():
         terminal_soc_target=2.0,
     )
 
-    result = run_user_side_pv_storage_dispatch(dispatch_input)
+    result = run_user_side_pv_bess_dispatch(dispatch_input)
 
     for t in range(len(dispatch_input.timestamps)):
         assert (
             result.pv_to_load[t]
-            + result.pv_to_storage[t]
+            + result.pv_to_bess[t]
             + result.pv_to_grid[t]
             + result.pv_curtailment[t]
         ) == pytest.approx(dispatch_input.pv_forecast[t])
@@ -86,19 +86,19 @@ def test_pv_storage_dispatch_energy_balance_and_soc():
             + result.grid_to_load[t]
         ) == pytest.approx(dispatch_input.load_forecast[t])
         assert result.grid_import[t] == pytest.approx(
-            result.grid_to_load[t] + result.grid_to_storage[t]
+            result.grid_to_load[t] + result.grid_to_bess[t]
         )
         assert result.charge_power[t] == pytest.approx(
-            result.pv_to_storage[t] + result.grid_to_storage[t]
+            result.pv_to_bess[t] + result.grid_to_bess[t]
         )
         assert result.charge_power[t] * result.discharge_power[t] == pytest.approx(0.0)
 
-    assert min(result.soc) >= dispatch_input.storage.soc_min - 1e-7
-    assert max(result.soc) <= dispatch_input.storage.soc_max + 1e-7
+    assert min(result.soc) >= dispatch_input.bess.soc_min - 1e-7
+    assert max(result.soc) <= dispatch_input.bess.soc_max + 1e-7
     assert result.constraint_violations == {}
 
 
-def test_demand_charge_reduces_peak_grid_import_with_storage():
+def test_demand_charge_reduces_peak_grid_import_with_bess():
     base = _dispatch_input(
         load_forecast=[4.0, 4.0, 10.0, 4.0],
         pv_forecast=[0.0, 0.0, 0.0, 0.0],
@@ -112,8 +112,8 @@ def test_demand_charge_reduces_peak_grid_import_with_storage():
         initial_soc=6.0,
     )
 
-    no_demand = run_user_side_pv_storage_dispatch(base)
-    with_demand = run_user_side_pv_storage_dispatch(peak_shaving)
+    no_demand = run_user_side_pv_bess_dispatch(base)
+    with_demand = run_user_side_pv_bess_dispatch(peak_shaving)
 
     assert with_demand.max_grid_import < no_demand.max_grid_import
     assert with_demand.demand_cost == pytest.approx(
@@ -122,7 +122,7 @@ def test_demand_charge_reduces_peak_grid_import_with_storage():
 
 
 def test_export_policy_controls_pv_to_grid():
-    allow_export = run_user_side_pv_storage_dispatch(
+    allow_export = run_user_side_pv_bess_dispatch(
         _dispatch_input(
             load_forecast=[1.0],
             pv_forecast=[8.0],
@@ -131,7 +131,7 @@ def test_export_policy_controls_pv_to_grid():
             initial_soc=12.0,
         )
     )
-    no_export = run_user_side_pv_storage_dispatch(
+    no_export = run_user_side_pv_bess_dispatch(
         _dispatch_input(
             load_forecast=[1.0],
             pv_forecast=[8.0],
@@ -149,9 +149,9 @@ def test_optional_dispatch_policy_limits_windows():
     policy = UserSideDispatchPolicy(
         charge_allowed_hours=[1],
         discharge_allowed_hours=[3],
-        pv_to_storage_reward_rate=0.1,
+        pv_to_bess_reward_rate=0.1,
     )
-    result = run_user_side_pv_storage_dispatch(
+    result = run_user_side_pv_bess_dispatch(
         _dispatch_input(
             load_forecast=[4.0, 4.0, 4.0, 4.0],
             pv_forecast=[8.0, 8.0, 8.0, 0.0],
@@ -169,7 +169,7 @@ def test_optional_dispatch_policy_limits_windows():
 
 
 def test_same_price_different_pv_changes_dispatch():
-    low_pv = run_user_side_pv_storage_dispatch(
+    low_pv = run_user_side_pv_bess_dispatch(
         _dispatch_input(
             load_forecast=[4.0, 4.0, 4.0, 4.0],
             pv_forecast=[0.0, 0.0, 0.0, 0.0],
@@ -178,7 +178,7 @@ def test_same_price_different_pv_changes_dispatch():
             terminal_soc_target=3.0,
         )
     )
-    high_pv = run_user_side_pv_storage_dispatch(
+    high_pv = run_user_side_pv_bess_dispatch(
         _dispatch_input(
             load_forecast=[4.0, 4.0, 4.0, 4.0],
             pv_forecast=[0.0, 8.0, 8.0, 0.0],
@@ -191,7 +191,7 @@ def test_same_price_different_pv_changes_dispatch():
     assert low_pv.grid_import != pytest.approx(high_pv.grid_import)
 
 
-def test_package_exports_user_side_pv_storage_api():
-    assert optimization.UserSidePVStorageDispatchInput is UserSidePVStorageDispatchInput
+def test_package_exports_user_side_pv_bess_api():
+    assert optimization.UserSidePVBESSDispatchInput is UserSidePVBESSDispatchInput
     assert optimization.UserSideDispatchPolicy is UserSideDispatchPolicy
-    assert optimization.run_user_side_pv_storage_dispatch is run_user_side_pv_storage_dispatch
+    assert optimization.run_user_side_pv_bess_dispatch is run_user_side_pv_bess_dispatch

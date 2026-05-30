@@ -12,15 +12,15 @@ from pulp import (
 )
 
 from .interfaces import (
-    UserSideStorageDispatchInput,
-    UserSideStorageDispatchResult,
-    UserSideStorageParams,
+    UserSideBESSDispatchInput,
+    UserSideBESSDispatchResult,
+    UserSideBESSParams,
 )
 
 
-def run_user_side_storage_dispatch(
-    dispatch_input: UserSideStorageDispatchInput,
-) -> UserSideStorageDispatchResult:
+def run_user_side_bess_dispatch(
+    dispatch_input: UserSideBESSDispatchInput,
+) -> UserSideBESSDispatchResult:
     """求解用户侧储能调度问题。
 
     模型只考虑负荷预测、购电价格、需量电费和储能物理约束，不考虑风光出力、
@@ -28,20 +28,20 @@ def run_user_side_storage_dispatch(
     """
     _validate_input(dispatch_input)
 
-    storage = dispatch_input.storage
+    bess = dispatch_input.bess
     T = range(len(dispatch_input.timestamps))
-    model = LpProblem("user_side_storage_dispatch", LpMinimize)
+    model = LpProblem("user_side_bess_dispatch", LpMinimize)
 
     charge = {
-        t: LpVariable(f"charge_{t}", lowBound=0, upBound=storage.p_ch_max)
+        t: LpVariable(f"charge_{t}", lowBound=0, upBound=bess.p_ch_max)
         for t in T
     }
     discharge = {
-        t: LpVariable(f"discharge_{t}", lowBound=0, upBound=storage.p_dis_max)
+        t: LpVariable(f"discharge_{t}", lowBound=0, upBound=bess.p_dis_max)
         for t in T
     }
     soc = {
-        t: LpVariable(f"soc_{t}", lowBound=storage.soc_min, upBound=storage.soc_max)
+        t: LpVariable(f"soc_{t}", lowBound=bess.soc_min, upBound=bess.soc_max)
         for t in T
     }
     grid_import = {t: LpVariable(f"grid_import_{t}", lowBound=0) for t in T}
@@ -51,8 +51,8 @@ def run_user_side_storage_dispatch(
 
     for t in T:
         model += is_charging[t] + is_discharging[t] <= 1
-        model += charge[t] <= storage.p_ch_max * is_charging[t]
-        model += discharge[t] <= storage.p_dis_max * is_discharging[t]
+        model += charge[t] <= bess.p_ch_max * is_charging[t]
+        model += discharge[t] <= bess.p_dis_max * is_discharging[t]
         model += discharge[t] <= dispatch_input.load_forecast[t]
 
         model += (
@@ -68,8 +68,8 @@ def run_user_side_storage_dispatch(
         model += (
             soc[t]
             == previous_soc
-            + storage.eta_ch * charge[t] * dispatch_input.step_hours
-            - discharge[t] * dispatch_input.step_hours / storage.eta_dis
+            + bess.eta_ch * charge[t] * dispatch_input.step_hours
+            - discharge[t] * dispatch_input.step_hours / bess.eta_dis
     )
 
     if dispatch_input.terminal_soc_target is not None:
@@ -94,7 +94,7 @@ def run_user_side_storage_dispatch(
     model.solve(PULP_CBC_CMD(msg=False))
     status = LpStatus[model.status]
     if status != "Optimal":
-        raise RuntimeError(f"user-side storage dispatch failed: {status}")
+        raise RuntimeError(f"user-side bess dispatch failed: {status}")
 
     charge_values = [_clean(value(charge[t])) for t in T]
     discharge_values = [_clean(value(discharge[t])) for t in T]
@@ -113,10 +113,10 @@ def run_user_side_storage_dispatch(
         for t in T
     )
 
-    return UserSideStorageDispatchResult(
+    return UserSideBESSDispatchResult(
         charge_power=charge_values,
         discharge_power=discharge_values,
-        net_storage_power=[
+        net_bess_power=[
             _clean(charge_values[t] - discharge_values[t]) for t in T
         ],
         soc=soc_values,
@@ -136,7 +136,7 @@ def run_user_side_storage_dispatch(
     )
 
 
-def _validate_input(dispatch_input: UserSideStorageDispatchInput) -> None:
+def _validate_input(dispatch_input: UserSideBESSDispatchInput) -> None:
     length = len(dispatch_input.timestamps)
     if length == 0:
         raise ValueError("dispatch horizon must not be empty")
@@ -161,27 +161,27 @@ def _validate_input(dispatch_input: UserSideStorageDispatchInput) -> None:
     if any(price < 0 for price in dispatch_input.buy_price):
         raise ValueError("buy_price must be non-negative")
 
-    storage = dispatch_input.storage
-    if storage.capacity <= 0:
-        raise ValueError("storage.capacity must be positive")
-    if storage.soc_min < 0 or storage.soc_max > storage.capacity:
-        raise ValueError("storage SOC bounds must be within storage capacity")
-    if storage.soc_min > storage.soc_max:
-        raise ValueError("storage.soc_min must be less than or equal to storage.soc_max")
-    if not storage.soc_min <= dispatch_input.initial_soc <= storage.soc_max:
-        raise ValueError("initial_soc must be within storage SOC bounds")
+    bess = dispatch_input.bess
+    if bess.capacity <= 0:
+        raise ValueError("bess.capacity must be positive")
+    if bess.soc_min < 0 or bess.soc_max > bess.capacity:
+        raise ValueError("bess SOC bounds must be within bess capacity")
+    if bess.soc_min > bess.soc_max:
+        raise ValueError("bess.soc_min must be less than or equal to bess.soc_max")
+    if not bess.soc_min <= dispatch_input.initial_soc <= bess.soc_max:
+        raise ValueError("initial_soc must be within bess SOC bounds")
     if dispatch_input.terminal_soc_target is not None and not (
-        storage.soc_min <= dispatch_input.terminal_soc_target <= storage.soc_max
+        bess.soc_min <= dispatch_input.terminal_soc_target <= bess.soc_max
     ):
-        raise ValueError("terminal_soc_target must be within storage SOC bounds")
-    if storage.p_ch_max < 0 or storage.p_dis_max < 0:
-        raise ValueError("storage power limits must be non-negative")
-    if storage.eta_ch <= 0 or storage.eta_dis <= 0:
-        raise ValueError("storage efficiencies must be positive")
+        raise ValueError("terminal_soc_target must be within bess SOC bounds")
+    if bess.p_ch_max < 0 or bess.p_dis_max < 0:
+        raise ValueError("bess power limits must be non-negative")
+    if bess.eta_ch <= 0 or bess.eta_dis <= 0:
+        raise ValueError("bess efficiencies must be positive")
 
 
 def _constraint_violations(
-    dispatch_input: UserSideStorageDispatchInput,
+    dispatch_input: UserSideBESSDispatchInput,
     charge_values: list[float],
     discharge_values: list[float],
     soc_values: list[float],
@@ -189,12 +189,12 @@ def _constraint_violations(
     max_grid_import: float,
 ) -> dict[str, float]:
     tolerance = 1e-6
-    storage = dispatch_input.storage
+    bess = dispatch_input.bess
     violations = {
-        "soc_min": max(storage.soc_min - min(soc_values), 0.0),
-        "soc_max": max(max(soc_values) - storage.soc_max, 0.0),
-        "charge_max": max(max(charge_values) - storage.p_ch_max, 0.0),
-        "discharge_max": max(max(discharge_values) - storage.p_dis_max, 0.0),
+        "soc_min": max(bess.soc_min - min(soc_values), 0.0),
+        "soc_max": max(max(soc_values) - bess.soc_max, 0.0),
+        "charge_max": max(max(charge_values) - bess.p_ch_max, 0.0),
+        "discharge_max": max(max(discharge_values) - bess.p_dis_max, 0.0),
         "grid_import_min": max(-min(grid_import_values), 0.0),
         "max_grid_import": max(max(grid_import_values) - max_grid_import, 0.0),
         "discharge_load": max(

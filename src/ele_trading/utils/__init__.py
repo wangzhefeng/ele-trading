@@ -9,9 +9,9 @@ from .time_index import (
     generate_quarters,
     generate_5mins,
     end_of_that_day,
-    start_of_this_es_cycle,
-    end_of_this_es_cycle,
-    es_cycle_window,
+    start_of_this_bess_cycle,
+    end_of_this_bess_cycle,
+    bess_cycle_window,
     process_time_index,
 )
 from .time_splitting import generate_month_ranges, generate_day_pairs, get_time_ranges

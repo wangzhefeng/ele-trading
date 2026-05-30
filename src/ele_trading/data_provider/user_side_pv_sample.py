@@ -8,7 +8,7 @@ from ele_trading.optimization.interfaces import (
     UserSidePVDispatchInput,
     UserSidePVExportParams,
     UserSidePVStorageDispatchInput,
-    UserSideStorageParams,
+    UserSideBESSParams,
 )
 
 
@@ -53,21 +53,21 @@ def build_user_side_pv_dispatch_input(
     )
 
 
-def build_user_side_pv_storage_dispatch_input(
+def build_user_side_pv_bess_dispatch_input(
     config: dict[str, Any],
 ) -> UserSidePVStorageDispatchInput:
-    """Build PV + storage dispatch input from deterministic demo config."""
+    """Build PV + bess dispatch input from deterministic demo config."""
     pv_input = build_user_side_pv_dispatch_input(config)
-    storage_config = config["storage"]
+    bess_config = config["bess"]
     dispatch_config = config["dispatch"]
-    storage = UserSideStorageParams(
-        capacity=float(storage_config["capacity"]),
-        soc_min=float(storage_config["soc_min"]),
-        soc_max=float(storage_config["soc_max"]),
-        p_ch_max=float(storage_config["p_ch_max"]),
-        p_dis_max=float(storage_config["p_dis_max"]),
-        eta_ch=float(storage_config["eta_ch"]),
-        eta_dis=float(storage_config["eta_dis"]),
+    bess = UserSideBESSParams(
+        capacity=float(bess_config["capacity"]),
+        soc_min=float(bess_config["soc_min"]),
+        soc_max=float(bess_config["soc_max"]),
+        p_ch_max=float(bess_config["p_ch_max"]),
+        p_dis_max=float(bess_config["p_dis_max"]),
+        eta_ch=float(bess_config["eta_ch"]),
+        eta_dis=float(bess_config["eta_dis"]),
     )
     return UserSidePVStorageDispatchInput(
         timestamps=pv_input.timestamps,
@@ -78,8 +78,8 @@ def build_user_side_pv_storage_dispatch_input(
         export=pv_input.export,
         demand_charge_rate=pv_input.demand_charge_rate,
         step_hours=pv_input.step_hours,
-        storage=storage,
-        initial_soc=float(storage_config["initial_soc"]),
+        bess=bess,
+        initial_soc=float(bess_config["initial_soc"]),
         terminal_soc_target=_optional_float(dispatch_config.get("terminal_soc_target")),
         cycle_cost_rate=float(dispatch_config.get("cycle_cost_rate", 0.0)),
     )

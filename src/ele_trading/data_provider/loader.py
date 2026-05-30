@@ -13,7 +13,7 @@ from .schemas import (
     PVProfileConfig,
     RenewableProfileResult,
     ScenarioRecord,
-    StorageConfig,
+    BESSConfig,
     WindProfileConfig,
 )
 
@@ -28,11 +28,11 @@ def load_price_series(path: str | Path, time_col: str, price_col: str, label: st
     )
 
 
-def load_storage_config(path: str | Path) -> StorageConfig:
+def load_bess_config(path: str | Path) -> BESSConfig:
     """读取储能参数配置。"""
     with open(path, 'r', encoding='utf-8') as f:
         data = yaml.safe_load(f)
-    return StorageConfig(**data)
+    return BESSConfig(**data)
 
 
 def load_price_scenarios(path: str | Path) -> List[ScenarioRecord]:

@@ -25,7 +25,7 @@ from ..evaluation.metrics import compute_irr
 
 
 @dataclass(slots=True)
-class StorageSizingConfig:
+class BESSSizingConfig:
     """多节点容量扫描配置。"""
     life_years: int = 10
     life_cycles: int = 4000
@@ -87,7 +87,7 @@ def _solve_single_capacity(
     dt: float,
     days: float,
     cap_mwh: float,
-    cfg: StorageSizingConfig,
+    cfg: BESSSizingConfig,
 ) -> dict[str, Any] | None:
     """对单一容量求解 PuLP MILP 套利调度。"""
     p_max = min(cfg.c_rate * cap_mwh, cfg.line_limit_mw)
@@ -97,7 +97,7 @@ def _solve_single_capacity(
     T = len(prices)
     discharge_allowed = (prices >= cfg.discharge_price_threshold).astype(float)
 
-    model = LpProblem("storage_arbitrage", LpMaximize)
+    model = LpProblem("bess_arbitrage", LpMaximize)
 
     ch = LpVariable.dicts("ch", range(T), lowBound=0, upBound=p_max)
     dis = LpVariable.dicts("dis", range(T), lowBound=0, upBound=p_max)
@@ -162,7 +162,7 @@ def _evaluate_with_degradation(
     sol: dict[str, Any],
     dt: float,
     days: float,
-    cfg: StorageSizingConfig,
+    cfg: BESSSizingConfig,
 ) -> CapacitySweepRow:
     """叠加衰减 + CAPEX/OPEX，计算 IRR 等经济指标。"""
     annual_revenue_1 = sol["annual_revenue_1"]
@@ -225,7 +225,7 @@ def scan_single_node(
     price_series: pd.Series,
     time_index: pd.DatetimeIndex,
     node_name: str = "node",
-    cfg: StorageSizingConfig = StorageSizingConfig(),
+    cfg: BESSSizingConfig = BESSSizingConfig(),
 ) -> NodeScanResult:
     """对单个电价节点进行容量轮巡扫描。
 
@@ -237,7 +237,7 @@ def scan_single_node(
         对应时间索引。
     node_name : str
         节点名称。
-    cfg : StorageSizingConfig
+    cfg : BESSSizingConfig
         扫描配置。
 
     Returns
@@ -279,7 +279,7 @@ def scan_multiple_nodes(
     df: pd.DataFrame,
     time_col: str = "Time",
     price_cols: list[str] | None = None,
-    cfg: StorageSizingConfig = StorageSizingConfig(),
+    cfg: BESSSizingConfig = BESSSizingConfig(),
 ) -> MultiNodeScanResult:
     """扫描多个电价节点并生成对比汇总。
 
@@ -291,7 +291,7 @@ def scan_multiple_nodes(
         时间列名。
     price_cols : list[str] | None
         要分析的电价列名列表。为 None 时自动识别所有数值列。
-    cfg : StorageSizingConfig
+    cfg : BESSSizingConfig
         扫描配置。
 
     Returns

@@ -111,7 +111,7 @@ def run_scenario(name: str, config: dict, rng: np.random.Generator,
     """运行单个容量规划场景，返回结果摘要。"""
     sc = config['scenario']
     cst = config['constraints']
-    storage_params = config['storage']
+    bess_params = config["bess"]
     cost_params = config['cost']
     search_params = config['search']
 
@@ -174,7 +174,7 @@ def run_scenario(name: str, config: dict, rng: np.random.Generator,
                 f'{search_params["coarse_step_mwh"]} MWh，精步长 '
                 f'{search_params["fine_step_mw"]} MW / {search_params["fine_step_mwh"]} MWh')
 
-    optimizer = CapacityOptimizer(storage_params, cost_params, search_params)
+    optimizer = CapacityOptimizer(bess_params, cost_params, search_params)
     plan: CapacityPlanResult = optimizer.optimize(
         load_series, wind_unit, solar_unit,
         green_ratio_min=green_min,
@@ -199,7 +199,7 @@ def run_scenario(name: str, config: dict, rng: np.random.Generator,
         load_series, wind_unit, solar_unit,
         wind_mw=plan.wind_mw, pv_mw=plan.pv_mw,
         ess_mwh=plan.ess_mwh,
-        storage_params=storage_params,
+        bess_params=bess_params,
     )
     total_load_mwh = float(load_series.sum())
     logger.info(f'  全年总负荷:     {total_load_mwh:.0f} MWh')
@@ -283,8 +283,8 @@ if __name__ == '__main__':
     cfg_c['search']['max_wind_mw'] = 120
     cfg_c['search']['max_pv_mw'] = 120
     cfg_c['search']['max_ess_mwh'] = 200
-    cfg_c['storage']['c_rate'] = 0.25
-    cfg_c['storage']['duration_hours'] = 4.0
+    cfg_c["bess"]['c_rate'] = 0.25
+    cfg_c["bess"]['duration_hours'] = 4.0
     run_scenario('C - 高绿电率碳中和（出口型企业）', cfg_c, rng)
 
     logger.info('=' * 60)

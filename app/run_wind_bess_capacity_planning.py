@@ -91,7 +91,7 @@ def main():
     config = read_yaml(CONFIG_PATH)
     sc = config['scenario']
     cst = config['constraints']
-    storage = config['storage']
+    bess = config["bess"]
     cost = config['cost']
     search = config['search']
     cap = config['capacity']
@@ -147,13 +147,13 @@ def main():
 
     # 构造 WindBESSPlanConfig
     cfg = WindBESSPlanConfig(
-        eta_charge=storage['eta_charge'],
-        eta_discharge=storage['eta_discharge'],
-        c_rate=storage['c_rate'],
-        soc_init=storage['soc_init'],
-        soc_min=storage['soc_min'],
-        soc_max=storage['soc_max'],
-        enforce_terminal_soc=storage.get('enforce_terminal_soc', False),
+        eta_charge=bess['eta_charge'],
+        eta_discharge=bess['eta_discharge'],
+        c_rate=bess['c_rate'],
+        soc_init=bess['soc_init'],
+        soc_min=bess['soc_min'],
+        soc_max=bess['soc_max'],
+        enforce_terminal_soc=bess.get('enforce_terminal_soc', False),
         min_green_self_consumption=cst['min_green_self_consumption'],
         min_load_coverage=cst['min_load_coverage'],
         capex_cny_per_kwh=cost['capex_cny_per_kwh'],

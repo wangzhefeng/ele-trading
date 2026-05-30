@@ -3,10 +3,10 @@ from __future__ import annotations
 import numpy as np
 from pulp import LpBinary, LpMaximize, LpProblem, LpVariable, PULP_CBC_CMD, lpSum, value
 
-from .interfaces import StorageArbitrageResult
+from .interfaces import BESSArbitrageResult
 
 
-def solve_storage_arbitrage(
+def solve_bess_arbitrage(
     prices,
     soc0=5.0,
     soc_min=1.0,
@@ -26,7 +26,7 @@ def solve_storage_arbitrage(
     - 目标是最大化电价套利收益减去退化成本。
     """
     T = range(len(prices))
-    m = LpProblem('storage_arbitrage', LpMaximize)
+    m = LpProblem('bess_arbitrage', LpMaximize)
 
     p_ch = {t: LpVariable(f'p_ch_{t}', lowBound=0, upBound=p_ch_max) for t in T}
     p_dis = {t: LpVariable(f'p_dis_{t}', lowBound=0, upBound=p_dis_max) for t in T}
@@ -65,6 +65,6 @@ def solve_storage_arbitrage(
     }
 
 
-def solve_storage_arbitrage_typed(**kwargs) -> StorageArbitrageResult:
-    result = solve_storage_arbitrage(**kwargs)
-    return StorageArbitrageResult(**result)
+def solve_bess_arbitrage_typed(**kwargs) -> BESSArbitrageResult:
+    result = solve_bess_arbitrage(**kwargs)
+    return BESSArbitrageResult(**result)
