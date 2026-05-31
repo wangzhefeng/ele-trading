@@ -13,7 +13,7 @@
 | `user_side_bess_dispatch.py` | 用户侧储能调度，最小化购电、需量和循环成本 |
 | `user_side_pv_dispatch.py` | 用户侧 PV-only 自用、上网、弃光和购电成本测算 |
 | `user_side_pv_bess_dispatch.py` | 用户侧 PV+BESS 联合调度 |
-| `cvxp_bess_dispatch.py` | CVXPY 储能调度 profile |
+| `user_side_bess_dispatch_cvxpy.py` | 用户侧 BESS 调度的 CVXPY 版本 profile |
 | `dist_ess_dispatch.py` | 分布式储能多柜容量搜索、调度模拟和结果输出 |
 
 ## 市场储能套利

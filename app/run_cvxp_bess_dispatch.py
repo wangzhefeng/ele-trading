@@ -14,7 +14,7 @@ from ele_trading.data_provider.cvxp_bess_sample import (
     build_synthetic_cvxp_dispatch_frame,
     build_cvxp_bess_dispatch_input,
 )
-from ele_trading.optimization.cvxp_bess_dispatch import (
+from ele_trading.optimization.user_side_bess_dispatch_cvxpy import (
     run_cvxp_bess_dispatch,
 )
 from ele_trading.utils.io import read_yaml

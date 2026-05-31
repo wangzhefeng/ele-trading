@@ -8,7 +8,7 @@ from ele_trading.optimization.interfaces import (
     CvxpBESSDispatchInput,
     UserSideBESSParams,
 )
-from ele_trading.optimization.cvxp_bess_dispatch import get_cvxp_profile
+from ele_trading.optimization.user_side_bess_dispatch_cvxpy import get_cvxp_profile
 
 
 def build_synthetic_cvxp_dispatch_frame(config: dict[str, Any]) -> pd.DataFrame:

@@ -86,7 +86,7 @@ ele-trading/
 - `user_side_bess_dispatch.py`：用户侧储能成本优化。
 - `user_side_pv_dispatch.py`：用户侧 PV 自用/上网/弃光调度。
 - `user_side_pv_bess_dispatch.py`：用户侧 PV+storage 联合调度。
-- `cvxp_bess_dispatch.py`：CVXPY 版本储能调度 profile。
+- `user_side_bess_dispatch_cvxpy.py`：用户侧 BESS 调度的 CVXPY 版本 profile。
 - `dist_ess_dispatch.py`：分布式储能多柜容量搜索和调度模拟。
 
 ### `capacity_planning`

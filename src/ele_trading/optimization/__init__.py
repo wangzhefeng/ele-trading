@@ -33,7 +33,7 @@ from .interfaces import (
     UserSidePVExportParams,
 )
 from .bess_arbitrage import solve_bess_arbitrage
-from .cvxp_bess_dispatch import CVXP_PROFILES, get_cvxp_profile, run_cvxp_bess_dispatch
+from .user_side_bess_dispatch_cvxpy import CVXP_PROFILES, get_cvxp_profile, run_cvxp_bess_dispatch
 from .mpc_bess import run_bess_mpc, solve_one_mpc_window
 from .two_stage_cvar import build_two_stage_cvar_model
 from .user_side_bess_dispatch import run_user_side_bess_dispatch
