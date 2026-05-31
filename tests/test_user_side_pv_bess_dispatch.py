@@ -11,6 +11,10 @@ from ele_trading.optimization.user_side_pv_bess_dispatch import (
     UserSideBESSParams,
     run_user_side_pv_bess_dispatch,
 )
+from ele_trading.optimization.user_side_renewable_bess_dispatch import (
+    UserSideRenewableBESSDispatchInput,
+    run_user_side_renewable_bess_dispatch,
+)
 
 
 def _storage() -> UserSideBESSParams:
@@ -72,6 +76,23 @@ def test_pv_bess_dispatch_energy_balance_and_soc():
     )
 
     result = run_user_side_pv_bess_dispatch(dispatch_input)
+    renewable_result = run_user_side_renewable_bess_dispatch(
+        UserSideRenewableBESSDispatchInput(
+            timestamps=dispatch_input.timestamps,
+            load_forecast=dispatch_input.load_forecast,
+            renewable_forecast=dispatch_input.pv_forecast,
+            buy_price=dispatch_input.buy_price,
+            price_type=dispatch_input.price_type,
+            export=dispatch_input.export,
+            demand_charge_rate=dispatch_input.demand_charge_rate,
+            step_hours=dispatch_input.step_hours,
+            bess=dispatch_input.bess,
+            initial_soc=dispatch_input.initial_soc,
+            terminal_soc_target=dispatch_input.terminal_soc_target,
+            cycle_cost_rate=dispatch_input.cycle_cost_rate,
+            policy=dispatch_input.policy,
+        )
+    )
 
     for t in range(len(dispatch_input.timestamps)):
         assert (
@@ -95,6 +116,9 @@ def test_pv_bess_dispatch_energy_balance_and_soc():
 
     assert min(result.soc) >= dispatch_input.bess.soc_min - 1e-7
     assert max(result.soc) <= dispatch_input.bess.soc_max + 1e-7
+    assert result.pv_to_bess == pytest.approx(renewable_result.renewable_to_bess)
+    assert result.grid_import == pytest.approx(renewable_result.grid_import)
+    assert result.total_cost == pytest.approx(renewable_result.total_cost)
     assert result.constraint_violations == {}
 
 

@@ -19,7 +19,7 @@
 当前主要链路：
 
 - **市场储能链路**：价格读取、储能套利、MPC、Two-stage + CVaR、结算、回测。
-- **用户侧链路**：负荷/电价/PV 样例构造，储能、PV-only、PV+storage 调度与需量电费核算。
+- **用户侧链路**：负荷/电价/PV 样例构造，储能、PV-only、PV+storage、Wind-only、Wind+BESS、Wind+PV+BESS 调度与需量电费核算。
 - **分布式储能链路**：多变压器、多柜组合、容量搜索、调度模拟和收益汇总。
 - **风光储链路**：负荷构造、PV/风电出力 profile、BESS/Wind+BESS/Wind+PV+BESS 容量规划。
 - **天气特征链路**：气象数据生成、读取、空间插值、相关性分析、聚类选点和权重计算。
@@ -84,8 +84,10 @@ ele-trading/
 - `mpc_storage.py`：单窗口 MPC 与滚动 MPC。
 - `two_stage_cvar.py`：Two-stage + CVaR 可求解模型。
 - `user_side_bess_dispatch.py`：用户侧储能成本优化。
-- `user_side_pv_dispatch.py`：用户侧 PV 自用/上网/弃光调度。
-- `user_side_pv_bess_dispatch.py`：用户侧 PV+storage 联合调度。
+- `user_side_renewable_dispatch.py`：用户侧通用可再生能源无储能调度内核。
+- `user_side_renewable_bess_dispatch.py`：用户侧通用可再生能源+BESS 调度内核。
+- `user_side_pv_dispatch.py`、`user_side_pv_bess_dispatch.py`：用户侧 PV 场景适配入口。
+- `user_side_wind_dispatch.py`、`user_side_wind_bess_dispatch.py`、`user_side_wind_pv_bess_dispatch.py`：用户侧 Wind / Wind+BESS / Wind+PV+BESS 场景适配入口。
 - `user_side_bess_dispatch_cvxpy.py`：用户侧 BESS 调度的 CVXPY 版本 profile。
 - `dist_ess_dispatch.py`：分布式储能多柜容量搜索和调度模拟。
 
@@ -95,7 +97,7 @@ ele-trading/
 
 - 联合容量优化：`capacity_optimizer.py`。
 - BESS / Wind+BESS / Wind+PV+BESS：`bess_capacity_planner.py`、`wind_bess_planner.py`、`wind_pv_bess_planner.py`。
-- 可行性、IRR 和多节点扫描：`feasibility_analyzer.py`、`pv_bess_irr_scanner.py`、`multi_node_scanner.py`。
+- 可行性、IRR 和多节点扫描：`feasibility_analyzer.py`、`pv_bess_irr_planner.py`、`multi_node_scanner.py`。
 
 ### `resource_simulation`
 

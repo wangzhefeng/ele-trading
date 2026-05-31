@@ -152,6 +152,184 @@ class UserSidePVBESSDispatchResult:
 
 
 @dataclass(slots=True)
+class UserSideRenewableDispatchInput:
+    timestamps: list[Any]
+    load_forecast: list[float]
+    renewable_forecast: list[float]
+    buy_price: list[float]
+    price_type: list[str]
+    export: UserSidePVExportParams
+    demand_charge_rate: float
+    step_hours: float
+
+
+@dataclass(slots=True)
+class UserSideRenewableDispatchResult:
+    renewable_to_load: list[float]
+    renewable_to_grid: list[float]
+    renewable_curtailment: list[float]
+    grid_import: list[float]
+    max_grid_import: float
+    energy_cost: float
+    demand_cost: float
+    sell_revenue: float
+    curtailment_cost: float
+    total_cost: float
+    constraint_violations: dict[str, float]
+
+
+@dataclass(slots=True)
+class UserSideRenewableBESSDispatchInput:
+    timestamps: list[Any]
+    load_forecast: list[float]
+    renewable_forecast: list[float]
+    buy_price: list[float]
+    price_type: list[str]
+    export: UserSidePVExportParams
+    demand_charge_rate: float
+    step_hours: float
+    bess: UserSideBESSParams
+    initial_soc: float
+    terminal_soc_target: float | None = None
+    cycle_cost_rate: float = 0.0
+    policy: UserSideDispatchPolicy | None = None
+
+
+@dataclass(slots=True)
+class UserSideRenewableBESSDispatchResult:
+    renewable_to_load: list[float]
+    renewable_to_bess: list[float]
+    renewable_to_grid: list[float]
+    renewable_curtailment: list[float]
+    grid_to_load: list[float]
+    grid_to_bess: list[float]
+    charge_power: list[float]
+    discharge_power: list[float]
+    net_bess_power: list[float]
+    soc: list[float]
+    grid_import: list[float]
+    max_grid_import: float
+    energy_cost: float
+    demand_cost: float
+    sell_revenue: float
+    curtailment_cost: float
+    cycle_cost: float
+    total_cost: float
+    constraint_violations: dict[str, float]
+
+
+@dataclass(slots=True)
+class UserSideWindDispatchInput:
+    timestamps: list[Any]
+    load_forecast: list[float]
+    wind_forecast: list[float]
+    buy_price: list[float]
+    price_type: list[str]
+    export: UserSidePVExportParams
+    demand_charge_rate: float
+    step_hours: float
+
+
+@dataclass(slots=True)
+class UserSideWindDispatchResult:
+    wind_to_load: list[float]
+    wind_to_grid: list[float]
+    wind_curtailment: list[float]
+    grid_import: list[float]
+    max_grid_import: float
+    energy_cost: float
+    demand_cost: float
+    sell_revenue: float
+    curtailment_cost: float
+    total_cost: float
+    constraint_violations: dict[str, float]
+
+
+@dataclass(slots=True)
+class UserSideWindBESSDispatchInput:
+    timestamps: list[Any]
+    load_forecast: list[float]
+    wind_forecast: list[float]
+    buy_price: list[float]
+    price_type: list[str]
+    export: UserSidePVExportParams
+    demand_charge_rate: float
+    step_hours: float
+    bess: UserSideBESSParams
+    initial_soc: float
+    terminal_soc_target: float | None = None
+    cycle_cost_rate: float = 0.0
+    policy: UserSideDispatchPolicy | None = None
+
+
+@dataclass(slots=True)
+class UserSideWindBESSDispatchResult:
+    wind_to_load: list[float]
+    wind_to_bess: list[float]
+    wind_to_grid: list[float]
+    wind_curtailment: list[float]
+    grid_to_load: list[float]
+    grid_to_bess: list[float]
+    charge_power: list[float]
+    discharge_power: list[float]
+    net_bess_power: list[float]
+    soc: list[float]
+    grid_import: list[float]
+    max_grid_import: float
+    energy_cost: float
+    demand_cost: float
+    sell_revenue: float
+    curtailment_cost: float
+    cycle_cost: float
+    total_cost: float
+    constraint_violations: dict[str, float]
+
+
+@dataclass(slots=True)
+class UserSideWindPVBESSDispatchInput:
+    timestamps: list[Any]
+    load_forecast: list[float]
+    pv_forecast: list[float]
+    wind_forecast: list[float]
+    buy_price: list[float]
+    price_type: list[str]
+    export: UserSidePVExportParams
+    demand_charge_rate: float
+    step_hours: float
+    bess: UserSideBESSParams
+    initial_soc: float
+    terminal_soc_target: float | None = None
+    cycle_cost_rate: float = 0.0
+    policy: UserSideDispatchPolicy | None = None
+
+
+@dataclass(slots=True)
+class UserSideWindPVBESSDispatchResult:
+    pv_forecast: list[float]
+    wind_forecast: list[float]
+    renewable_forecast: list[float]
+    renewable_to_load: list[float]
+    renewable_to_bess: list[float]
+    renewable_to_grid: list[float]
+    renewable_curtailment: list[float]
+    grid_to_load: list[float]
+    grid_to_bess: list[float]
+    charge_power: list[float]
+    discharge_power: list[float]
+    net_bess_power: list[float]
+    soc: list[float]
+    grid_import: list[float]
+    max_grid_import: float
+    energy_cost: float
+    demand_cost: float
+    sell_revenue: float
+    curtailment_cost: float
+    cycle_cost: float
+    total_cost: float
+    constraint_violations: dict[str, float]
+
+
+@dataclass(slots=True)
 class CvxpBESSProfile:
     """
     CVXPY 调度算法的行为配置。

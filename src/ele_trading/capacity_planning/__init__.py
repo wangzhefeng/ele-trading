@@ -8,7 +8,7 @@ from .multi_node_scanner import (
     BESSSizingConfig, CapacitySweepRow, NodeScanResult,
     MultiNodeScanResult, scan_single_node, scan_multiple_nodes,
 )
-from .pv_bess_irr_scanner import (
+from .pv_bess_irr_planner import (
     PVBESSIRRConfig, PVBESSIRRRow, PVBESSIRRResult,
     scan_pv_bess_irr, simulate_annual_gain,
 )

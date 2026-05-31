@@ -16,10 +16,12 @@ import pandas as pd
 from ele_trading.optimization.interfaces import (
     UserSideDispatchPolicy,
     UserSidePVExportParams,
-    UserSidePVBESSDispatchInput,
     UserSideBESSParams,
+    UserSideWindPVBESSDispatchInput,
 )
-from ele_trading.optimization.user_side_pv_bess_dispatch import run_user_side_pv_bess_dispatch
+from ele_trading.optimization.user_side_wind_pv_bess_dispatch import (
+    run_user_side_wind_pv_bess_dispatch,
+)
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 from run_legacy_data_preparation import (
@@ -105,10 +107,11 @@ def run_market_trading(config: dict) -> tuple[pd.DataFrame, object]:
 
     price_frame = _build_price_frame(window["Time"], config["price"])
     renewable_forecast_kw = window["pv_kw"] + window["Wind_kw"]
-    dispatch_input = UserSidePVBESSDispatchInput(
+    dispatch_input = UserSideWindPVBESSDispatchInput(
         timestamps=window["Time"].tolist(),
         load_forecast=window["P_kw"].astype(float).tolist(),
-        pv_forecast=renewable_forecast_kw.astype(float).tolist(),
+        pv_forecast=window["pv_kw"].astype(float).tolist(),
+        wind_forecast=window["Wind_kw"].astype(float).tolist(),
         buy_price=price_frame["buy_price"].astype(float).tolist(),
         price_type=price_frame["price_type"].astype(str).tolist(),
         export=UserSidePVExportParams(
@@ -133,7 +136,7 @@ def run_market_trading(config: dict) -> tuple[pd.DataFrame, object]:
         cycle_cost_rate=float(config["dispatch"].get("cycle_cost_rate", 0.0)),
         policy=_build_policy(config.get("policy")),
     )
-    result = run_user_side_pv_bess_dispatch(dispatch_input)
+    result = run_user_side_wind_pv_bess_dispatch(dispatch_input)
 
     result_df = pd.DataFrame(
         {
@@ -144,9 +147,10 @@ def run_market_trading(config: dict) -> tuple[pd.DataFrame, object]:
             "renewable_forecast_kw": renewable_forecast_kw,
             "buy_price": price_frame["buy_price"],
             "price_type": price_frame["price_type"],
-            "pv_to_load": result.pv_to_load,
-            "pv_to_bess": result.pv_to_bess,
-            "pv_to_grid": result.pv_to_grid,
+            "renewable_to_load": result.renewable_to_load,
+            "renewable_to_bess": result.renewable_to_bess,
+            "renewable_to_grid": result.renewable_to_grid,
+            "renewable_curtailment": result.renewable_curtailment,
             "charge_power": result.charge_power,
             "discharge_power": result.discharge_power,
             "soc": result.soc,

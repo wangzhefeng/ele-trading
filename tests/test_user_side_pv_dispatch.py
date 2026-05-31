@@ -8,6 +8,10 @@ from ele_trading.optimization.user_side_pv_dispatch import (
     UserSidePVExportParams,
     run_user_side_pv_dispatch,
 )
+from ele_trading.optimization.user_side_renewable_dispatch import (
+    UserSideRenewableDispatchInput,
+    run_user_side_renewable_dispatch,
+)
 
 
 def _pv_input(
@@ -38,14 +42,27 @@ def _pv_input(
 
 
 def test_pv_less_than_load_is_consumed_locally():
-    result = run_user_side_pv_dispatch(
-        _pv_input(load_forecast=[5.0, 6.0], pv_forecast=[2.0, 4.0])
+    dispatch_input = _pv_input(load_forecast=[5.0, 6.0], pv_forecast=[2.0, 4.0])
+    result = run_user_side_pv_dispatch(dispatch_input)
+    renewable_result = run_user_side_renewable_dispatch(
+        UserSideRenewableDispatchInput(
+            timestamps=dispatch_input.timestamps,
+            load_forecast=dispatch_input.load_forecast,
+            renewable_forecast=dispatch_input.pv_forecast,
+            buy_price=dispatch_input.buy_price,
+            price_type=dispatch_input.price_type,
+            export=dispatch_input.export,
+            demand_charge_rate=dispatch_input.demand_charge_rate,
+            step_hours=dispatch_input.step_hours,
+        )
     )
 
     assert result.pv_to_load == pytest.approx([2.0, 4.0])
     assert result.grid_import == pytest.approx([3.0, 2.0])
     assert result.pv_to_grid == pytest.approx([0.0, 0.0])
     assert result.pv_curtailment == pytest.approx([0.0, 0.0])
+    assert result.pv_to_load == pytest.approx(renewable_result.renewable_to_load)
+    assert result.total_cost == pytest.approx(renewable_result.total_cost)
     assert result.constraint_violations == {}
 
 

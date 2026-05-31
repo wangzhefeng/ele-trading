@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from ele_trading.utils import clean_value
 from .interfaces import (
     UserSidePVDispatchInput,
     UserSidePVDispatchResult,
     UserSidePVExportParams,
+    UserSideRenewableDispatchInput,
 )
+from .user_side_renewable_dispatch import run_user_side_renewable_dispatch
 
 
 def run_user_side_pv_dispatch(
@@ -13,58 +14,31 @@ def run_user_side_pv_dispatch(
 ) -> UserSidePVDispatchResult:
     """Run deterministic user-side PV dispatch without storage."""
     _validate_input(dispatch_input)
-
-    pv_to_load = []
-    pv_to_grid = []
-    pv_curtailment = []
-    grid_import = []
-
-    for load, pv in zip(dispatch_input.load_forecast, dispatch_input.pv_forecast):
-        local_pv = min(load, pv)
-        surplus = max(pv - local_pv, 0.0)
-        export_power = _export_power(surplus, dispatch_input.export)
-        curtailment = surplus - export_power
-
-        pv_to_load.append(clean_value(local_pv))
-        pv_to_grid.append(clean_value(export_power))
-        pv_curtailment.append(clean_value(curtailment))
-        grid_import.append(clean_value(max(load - local_pv, 0.0)))
-
-    max_grid_import = clean_value(max(grid_import))
-    energy_cost = sum(
-        dispatch_input.buy_price[t] * grid_import[t] * dispatch_input.step_hours
-        for t in range(len(dispatch_input.timestamps))
+    renewable_result = run_user_side_renewable_dispatch(
+        UserSideRenewableDispatchInput(
+            timestamps=dispatch_input.timestamps,
+            load_forecast=dispatch_input.load_forecast,
+            renewable_forecast=dispatch_input.pv_forecast,
+            buy_price=dispatch_input.buy_price,
+            price_type=dispatch_input.price_type,
+            export=dispatch_input.export,
+            demand_charge_rate=dispatch_input.demand_charge_rate,
+            step_hours=dispatch_input.step_hours,
+        )
     )
-    demand_cost = dispatch_input.demand_charge_rate * max_grid_import
-    sell_revenue = sum(
-        dispatch_input.export.sell_price * pv_to_grid[t] * dispatch_input.step_hours
-        for t in range(len(dispatch_input.timestamps))
-    )
-    curtailment_cost = sum(
-        dispatch_input.export.curtailment_cost_rate
-        * pv_curtailment[t]
-        * dispatch_input.step_hours
-        for t in range(len(dispatch_input.timestamps))
-    )
-
     return UserSidePVDispatchResult(
-        pv_to_load=pv_to_load,
-        pv_to_grid=pv_to_grid,
-        pv_curtailment=pv_curtailment,
-        grid_import=grid_import,
-        max_grid_import=max_grid_import,
-        energy_cost=energy_cost,
-        demand_cost=demand_cost,
-        sell_revenue=sell_revenue,
-        curtailment_cost=curtailment_cost,
-        total_cost=energy_cost + demand_cost + curtailment_cost - sell_revenue,
-        constraint_violations=_constraint_violations(
-            dispatch_input,
-            pv_to_load,
-            pv_to_grid,
-            pv_curtailment,
-            grid_import,
-            max_grid_import,
+        pv_to_load=renewable_result.renewable_to_load,
+        pv_to_grid=renewable_result.renewable_to_grid,
+        pv_curtailment=renewable_result.renewable_curtailment,
+        grid_import=renewable_result.grid_import,
+        max_grid_import=renewable_result.max_grid_import,
+        energy_cost=renewable_result.energy_cost,
+        demand_cost=renewable_result.demand_cost,
+        sell_revenue=renewable_result.sell_revenue,
+        curtailment_cost=renewable_result.curtailment_cost,
+        total_cost=renewable_result.total_cost,
+        constraint_violations=_pv_constraint_violations(
+            renewable_result.constraint_violations
         ),
     )
 
@@ -103,35 +77,8 @@ def _validate_input(dispatch_input: UserSidePVDispatchInput) -> None:
         raise ValueError("export.export_limit must be non-negative")
 
 
-def _export_power(surplus: float, export: UserSidePVExportParams) -> float:
-    if not export.allow_export:
-        return 0.0
-    if export.export_limit is None:
-        return surplus
-    return min(surplus, export.export_limit)
-
-
-def _constraint_violations(
-    dispatch_input: UserSidePVDispatchInput,
-    pv_to_load: list[float],
-    pv_to_grid: list[float],
-    pv_curtailment: list[float],
-    grid_import: list[float],
-    max_grid_import: float,
-) -> dict[str, float]:
-    tolerance = 1e-6
-    violations = {
-        "pv_balance": max(
-            abs(pv_to_load[t] + pv_to_grid[t] + pv_curtailment[t] - pv)
-            for t, pv in enumerate(dispatch_input.pv_forecast)
-        ),
-        "load_balance": max(
-            abs(pv_to_load[t] + grid_import[t] - load)
-            for t, load in enumerate(dispatch_input.load_forecast)
-        ),
-        "grid_import_min": max(-min(grid_import), 0.0),
-        "max_grid_import": max(max(grid_import) - max_grid_import, 0.0),
-    }
+def _pv_constraint_violations(violations: dict[str, float]) -> dict[str, float]:
     return {
-        name: amount for name, amount in violations.items() if amount > tolerance
+        ("pv_balance" if name == "renewable_balance" else name): amount
+        for name, amount in violations.items()
     }

@@ -31,6 +31,16 @@ from .interfaces import (
     UserSidePVDispatchInput,
     UserSidePVDispatchResult,
     UserSidePVExportParams,
+    UserSideRenewableBESSDispatchInput,
+    UserSideRenewableBESSDispatchResult,
+    UserSideRenewableDispatchInput,
+    UserSideRenewableDispatchResult,
+    UserSideWindBESSDispatchInput,
+    UserSideWindBESSDispatchResult,
+    UserSideWindDispatchInput,
+    UserSideWindDispatchResult,
+    UserSideWindPVBESSDispatchInput,
+    UserSideWindPVBESSDispatchResult,
 )
 from .bess_arbitrage import solve_bess_arbitrage
 from .user_side_bess_dispatch_cvxpy import CVXP_PROFILES, get_cvxp_profile, run_cvxp_bess_dispatch
@@ -39,3 +49,8 @@ from .two_stage_cvar import build_two_stage_cvar_model
 from .user_side_bess_dispatch import run_user_side_bess_dispatch
 from .user_side_pv_bess_dispatch import run_user_side_pv_bess_dispatch
 from .user_side_pv_dispatch import run_user_side_pv_dispatch
+from .user_side_renewable_bess_dispatch import run_user_side_renewable_bess_dispatch
+from .user_side_renewable_dispatch import run_user_side_renewable_dispatch
+from .user_side_wind_bess_dispatch import run_user_side_wind_bess_dispatch
+from .user_side_wind_dispatch import run_user_side_wind_dispatch
+from .user_side_wind_pv_bess_dispatch import run_user_side_wind_pv_bess_dispatch
