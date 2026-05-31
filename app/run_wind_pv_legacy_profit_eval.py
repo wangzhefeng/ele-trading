@@ -12,25 +12,16 @@ if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
 import pandas as pd
-import yaml
 
+from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 from run_legacy_data_preparation import (
     build_legacy_total_frame,
     ensure_legacy_temp_data,
-    load_bridge_config,
 )
 
 
 CONFIG_PATH = PROJECT_ROOT / 'configs' / 'wind_pv_legacy_profit_eval.yaml'
-
-
-def load_config(path: str | Path = CONFIG_PATH) -> dict:
-    with open(path, "r", encoding="utf-8") as file:
-        config = yaml.safe_load(file)
-    if not isinstance(config, dict):
-        raise ValueError("profit eval config must be a mapping")
-    return config
 
 
 def _resolve_path(path_value: str | Path) -> Path:
@@ -79,7 +70,7 @@ def run_profit_eval(config: dict) -> dict[str, float]:
     if bool(config["data"].get("refresh_before_run", False)):
         ensure_legacy_temp_data(bridge_config_path)
 
-    bridge_config = load_bridge_config(bridge_config_path)
+    bridge_config = read_yaml(bridge_config_path)
     compatibility = bridge_config["compatibility"]
 
     load_df = _read_time_csv(_resolve_path(config["data"]["df_2025_path"]))
@@ -150,7 +141,7 @@ def run_profit_eval(config: dict) -> dict[str, float]:
 
 
 if __name__ == "__main__":
-    config = load_config(CONFIG_PATH)
+    config = read_yaml(CONFIG_PATH)
     summary = run_profit_eval(config)
     logger.info("=== wind pv legacy 收益测算 ===")
     logger.info(f"config_path={CONFIG_PATH}")

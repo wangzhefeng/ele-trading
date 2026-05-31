@@ -5,13 +5,13 @@ from pathlib import Path
 from ele_trading.data_provider import (
     build_synthetic_user_side_pv_bess_dispatch_frame,
     build_user_side_pv_bess_dispatch_input,
-    load_user_side_pv_bess_dispatch_config,
 )
 from ele_trading.optimization.user_side_pv_bess_dispatch import (
     UserSideDispatchPolicy,
     UserSidePVBESSDispatchInput,
     run_user_side_pv_bess_dispatch,
 )
+from ele_trading.utils.io import read_yaml
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -19,7 +19,7 @@ CONFIG_PATH = PROJECT_ROOT / 'configs' / 'user_side_pv_bess_dispatch.yaml'
 
 
 def test_user_side_pv_bess_dispatch_config_can_be_loaded():
-    config = load_user_side_pv_bess_dispatch_config(CONFIG_PATH)
+    config = read_yaml(CONFIG_PATH)
 
     assert set(config) == {"dispatch", "bess", "export", "synthetic_data", "policy"}
     assert config["dispatch"]["step_hours"] > 0
@@ -28,7 +28,7 @@ def test_user_side_pv_bess_dispatch_config_can_be_loaded():
 
 
 def test_synthetic_user_side_pv_bess_dispatch_frame_shape_and_columns():
-    config = load_user_side_pv_bess_dispatch_config(CONFIG_PATH)
+    config = read_yaml(CONFIG_PATH)
 
     frame = build_synthetic_user_side_pv_bess_dispatch_frame(config)
 
@@ -47,7 +47,7 @@ def test_synthetic_user_side_pv_bess_dispatch_frame_shape_and_columns():
 
 
 def test_synthetic_user_side_pv_bess_dispatch_input_solves_without_violations():
-    config = load_user_side_pv_bess_dispatch_config(CONFIG_PATH)
+    config = read_yaml(CONFIG_PATH)
 
     dispatch_input = build_user_side_pv_bess_dispatch_input(config)
     result = run_user_side_pv_bess_dispatch(dispatch_input)

@@ -19,7 +19,6 @@ if str(SRC_ROOT) not in sys.path:
 import argparse
 
 import pandas as pd
-import yaml
 
 from ele_trading.resource_simulation import (
     PVProfileConfig,
@@ -29,22 +28,11 @@ from ele_trading.resource_simulation import (
 )
 from ele_trading.data_provider.load_profile import LoadProfileBuildConfig, build_load_profile_from_raw
 from ele_trading.data_provider.resource_weather import fetch_weather_open_meteo
+from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 
 
-# ─────────────────────────────────────────────
-# Config / IO helpers
-# ─────────────────────────────────────────────
-
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / 'configs' / 'wind_pv_es_calc_data_bridge.yaml'
-
-
-def load_bridge_config(path: str | Path = DEFAULT_CONFIG_PATH) -> dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as file:
-        config = yaml.safe_load(file)
-    if not isinstance(config, dict):
-        raise ValueError("bridge config must be a mapping")
-    return config
 
 
 def _resolve_path(path_value: str | Path) -> Path:
@@ -218,7 +206,7 @@ def build_legacy_temp_data(config: dict[str, Any]) -> dict[str, pd.DataFrame]:
 
 
 def ensure_legacy_temp_data(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict[str, pd.DataFrame]:
-    config = load_bridge_config(config_path)
+    config = read_yaml(config_path)
     result = build_legacy_temp_data(config)
     logger.info(
         "legacy temp data prepared: load=%s pv=%s wind=%s",
@@ -235,7 +223,7 @@ def ensure_legacy_temp_data(config_path: str | Path = DEFAULT_CONFIG_PATH) -> di
 
 def main(config_path: str | None = None) -> None:
     path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
-    config = load_bridge_config(path)
+    config = read_yaml(path)
 
     site = config.get("site", {})
     run = config.get("run", {})

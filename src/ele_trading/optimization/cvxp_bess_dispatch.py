@@ -10,10 +10,16 @@ from .interfaces import (
 )
 
 
-def _to_list(arr) -> list[float]:
+def _to_list(arr, tol: float = 1e-6) -> list[float]:
     if arr is None:
         return []
-    return [round(float(x), 6) for x in np.asarray(arr).flatten()]
+    values = []
+    for x in np.asarray(arr).flatten():
+        value = float(x)
+        if abs(value) <= tol:
+            value = 0.0
+        values.append(round(value, 6))
+    return values
 
 
 CVXP_PROFILES: dict[str, CvxpBESSProfile] = {
@@ -103,7 +109,7 @@ def run_cvxp_bess_dispatch(dispatch_input: CvxpBESSDispatchInput) -> CvxpBESSDis
         prev_soc = dispatch_input.initial_soc if t == 0 else soc[t - 1]
         constraints += [
             soc[t] == prev_soc
-            + e_c_in[t] * time_ratio * eta_ch
+            - e_c_in[t] * time_ratio * eta_ch
             - e_c_out[t] * time_ratio / eta_dis
         ]
 
@@ -136,14 +142,14 @@ def run_cvxp_bess_dispatch(dispatch_input: CvxpBESSDispatchInput) -> CvxpBESSDis
     # ------------------------------
     # 输出结果
     # ------------------------------
-    charge_vals = _to_list(e_c_in.value)
+    charge_vals = _to_list(-e_c_in.value)
     discharge_vals = _to_list(e_c_out.value)
     soc_vals = _to_list(soc.value)
 
     return CvxpBESSDispatchResult(
         charge_power=charge_vals,
         discharge_power=discharge_vals,
-        net_power=[round(c + d_val, 6) for c, d_val in zip(charge_vals, discharge_vals)],
+        net_power=[round(d_val - c, 6) for c, d_val in zip(charge_vals, discharge_vals)],
         soc=soc_vals,
         objective_value=result if result is not None else 0.0,
     )

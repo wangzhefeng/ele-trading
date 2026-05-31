@@ -1,24 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import yaml
 
 from ele_trading.optimization.user_side_bess_dispatch import (
     UserSideBESSDispatchInput,
     UserSideBESSParams,
 )
-
-
-def load_user_side_bess_dispatch_config(path: str | Path) -> dict[str, Any]:
-    """Load user-side bess dispatch demo config."""
-    with open(path, "r", encoding="utf-8") as file:
-        config = yaml.safe_load(file)
-    if not isinstance(config, dict):
-        raise ValueError("user-side bess dispatch config must be a mapping")
-    return config
 
 
 def build_synthetic_user_side_bess_dispatch_frame(config: dict[str, Any]) -> pd.DataFrame:

@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Iterable, List
 
 import pandas as pd
-import yaml
 
+from ele_trading.utils.io import read_yaml
 from .schemas import (
     CaseDataset,
     LoadProfileBuildConfig,
@@ -30,9 +30,7 @@ def load_price_series(path: str | Path, time_col: str, price_col: str, label: st
 
 def load_bess_config(path: str | Path) -> BESSConfig:
     """读取储能参数配置。"""
-    with open(path, 'r', encoding='utf-8') as f:
-        data = yaml.safe_load(f)
-    return BESSConfig(**data)
+    return BESSConfig(**read_yaml(path))
 
 
 def load_price_scenarios(path: str | Path) -> List[ScenarioRecord]:
@@ -56,21 +54,15 @@ def load_load_profile(path: str | Path) -> pd.DataFrame:
 
 
 def load_load_profile_build_config(path: str | Path) -> LoadProfileBuildConfig:
-    with open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    return LoadProfileBuildConfig(**data)
+    return LoadProfileBuildConfig(**read_yaml(path))
 
 
 def load_pv_profile_config(path: str | Path) -> PVProfileConfig:
-    with open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    return PVProfileConfig(**data)
+    return PVProfileConfig(**read_yaml(path))
 
 
 def load_wind_profile_config(path: str | Path) -> WindProfileConfig:
-    with open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    return WindProfileConfig(**data)
+    return WindProfileConfig(**read_yaml(path))
 
 
 def load_renewable_profile(path: str | Path, value_col: str) -> RenewableProfileResult:

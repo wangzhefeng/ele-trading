@@ -1,24 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import yaml
 
 from ele_trading.optimization.interfaces import (
     UserSidePVDispatchInput,
     UserSidePVExportParams,
 )
-
-
-def load_user_side_pv_dispatch_config(path: str | Path) -> dict[str, Any]:
-    """Load user-side PV dispatch demo config."""
-    with open(path, "r", encoding="utf-8") as file:
-        config = yaml.safe_load(file)
-    if not isinstance(config, dict):
-        raise ValueError("user-side PV dispatch config must be a mapping")
-    return config
 
 
 def build_synthetic_user_side_pv_dispatch_frame(config: dict[str, Any]) -> pd.DataFrame:

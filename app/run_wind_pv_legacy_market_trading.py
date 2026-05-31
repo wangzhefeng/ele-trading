@@ -12,7 +12,6 @@ if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
 import pandas as pd
-import yaml
 
 from ele_trading.optimization.interfaces import (
     UserSideDispatchPolicy,
@@ -21,23 +20,15 @@ from ele_trading.optimization.interfaces import (
     UserSideBESSParams,
 )
 from ele_trading.optimization.user_side_pv_bess_dispatch import run_user_side_pv_bess_dispatch
+from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 from run_legacy_data_preparation import (
     build_legacy_total_frame,
     ensure_legacy_temp_data,
-    load_bridge_config,
 )
 
 
 CONFIG_PATH = PROJECT_ROOT / 'configs' / 'wind_pv_legacy_market_trading.yaml'
-
-
-def load_config(path: str | Path = CONFIG_PATH) -> dict:
-    with open(path, "r", encoding="utf-8") as file:
-        config = yaml.safe_load(file)
-    if not isinstance(config, dict):
-        raise ValueError("market trading config must be a mapping")
-    return config
 
 
 def _resolve_path(path_value: str | Path) -> Path:
@@ -99,7 +90,7 @@ def run_market_trading(config: dict) -> tuple[pd.DataFrame, object]:
     if bool(config["data"].get("refresh_before_run", False)):
         ensure_legacy_temp_data(bridge_config_path)
 
-    bridge_config = load_bridge_config(bridge_config_path)
+    bridge_config = read_yaml(bridge_config_path)
     compatibility = bridge_config["compatibility"]
     load_df = _read_time_csv(_resolve_path(config["data"]["df_2025_path"]))
     pv_df = _read_time_csv(_resolve_path(config["data"]["df_pv_2025_path"]))
@@ -170,7 +161,7 @@ def run_market_trading(config: dict) -> tuple[pd.DataFrame, object]:
 
 
 if __name__ == "__main__":
-    config = load_config(CONFIG_PATH)
+    config = read_yaml(CONFIG_PATH)
     result_df, result = run_market_trading(config)
     logger.info("=== wind pv legacy market trading ===")
     logger.info(f"config_path={CONFIG_PATH}")

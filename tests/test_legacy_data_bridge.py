@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
-import yaml
+
+from ele_trading.utils.io import read_yaml
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -103,9 +104,7 @@ def test_bridge_config_file_exists_and_defaults_to_cached():
     config_path = PROJECT_ROOT / 'configs' / 'wind_pv_es_calc_data_bridge.yaml'
     assert config_path.exists()
 
-    with open(config_path, "r", encoding="utf-8") as file:
-        config = yaml.safe_load(file)
+    config = read_yaml(config_path)
 
     assert config["run"]["refresh_mode"] == "use_cached"
     assert config["run"]["write_df_total"] is True
-

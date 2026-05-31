@@ -13,11 +13,11 @@ if str(SRC_ROOT) not in sys.path:
 from ele_trading.data_provider import (
     build_synthetic_user_side_bess_dispatch_frame,
     build_user_side_bess_dispatch_input,
-    load_user_side_bess_dispatch_config,
 )
 from ele_trading.optimization.user_side_bess_dispatch import (
     run_user_side_bess_dispatch,
 )
+from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 
 
@@ -25,7 +25,7 @@ CONFIG_PATH = PROJECT_ROOT / 'configs' / 'user_side_bess_dispatch.yaml'
 
 
 if __name__ == "__main__":
-    config = load_user_side_bess_dispatch_config(CONFIG_PATH)
+    config = read_yaml(CONFIG_PATH)
     input_frame = build_synthetic_user_side_bess_dispatch_frame(config)
     dispatch_input = build_user_side_bess_dispatch_input(config)
     result = run_user_side_bess_dispatch(dispatch_input)
