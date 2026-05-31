@@ -6,6 +6,46 @@ import numpy as np
 import pandas as pd
 
 
+def ensure_datetime_index(df: pd.DataFrame, time_col: str = "Time") -> pd.DataFrame:
+    """返回以 DatetimeIndex 排序的 DataFrame 副本。"""
+    result = df.copy()
+    if isinstance(result.index, pd.DatetimeIndex):
+        return result.sort_index()
+    if time_col not in result.columns:
+        raise ValueError(f"Cannot find time column '{time_col}'")
+
+    result.index = pd.to_datetime(result[time_col])
+    result = result.drop(columns=[time_col])
+    return result.sort_index()
+
+
+def read_time_value_csv(
+    path,
+    start_time,
+    end_time,
+    *,
+    time_col: str = "time",
+    value_col: str = "value",
+) -> pd.Series:
+    """读取 time/value CSV，并按左闭右开时间范围返回数值 Series。"""
+    data = pd.read_csv(path)
+    if time_col not in data.columns or value_col not in data.columns:
+        raise ValueError(f"CSV must contain '{time_col}' and '{value_col}' columns")
+
+    data[time_col] = pd.to_datetime(data[time_col])
+    try:
+        data[value_col] = pd.to_numeric(data[value_col], errors="raise")
+    except Exception as exc:
+        raise ValueError(f"column '{value_col}' contains non-numeric values") from exc
+
+    start = pd.to_datetime(start_time)
+    end = pd.to_datetime(end_time)
+    data = data[(data[time_col] >= start) & (data[time_col] < end)]
+    data = data.set_index(time_col).sort_index()
+    data.index.name = time_col
+    return data[value_col]
+
+
 def align_to_time(t: pd.Series, s: pd.Series) -> np.ndarray:
     """将 Series s 对齐到时间轴 t，线性插值，缺失填 0。"""
     idx = pd.DatetimeIndex(pd.to_datetime(t))

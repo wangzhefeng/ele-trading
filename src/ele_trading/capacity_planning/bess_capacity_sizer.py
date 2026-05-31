@@ -9,7 +9,9 @@ from dataclasses import dataclass, field
 from typing import List
 
 import numpy as np
-from pulp import LpBinary, LpMaximize, LpProblem, LpVariable, PULP_CBC_CMD, lpSum, value
+from pulp import LpBinary, LpMaximize, LpProblem, LpVariable, LpStatus, PULP_CBC_CMD, lpSum, value
+
+from ele_trading.utils import check_pulp_status
 
 
 @dataclass(slots=True)
@@ -204,9 +206,11 @@ def solve_capacity_sizing(
     model += discharge_revenue - charge_cost - annualized_capex - opex
 
     model.solve(PULP_CBC_CMD(msg=False, timeLimit=solver_time_limit))
-    status = str(model.status)
+    status = LpStatus[model.status]
 
-    if status != "Optimal":
+    try:
+        check_pulp_status(model, "storage capacity sizing")
+    except RuntimeError:
         return CapacitySizingResult(feasible=False, solver_status=status)
 
     optimal_capacity = value(Cap_rated)

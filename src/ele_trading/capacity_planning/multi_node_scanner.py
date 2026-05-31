@@ -15,13 +15,13 @@ from pulp import (
     LpMaximize,
     LpProblem,
     LpVariable,
-    LpStatus,
     PULP_CBC_CMD,
     lpSum,
     value,
 )
 
 from ..evaluation.metrics import compute_irr
+from ..utils import check_pulp_status
 
 
 @dataclass(slots=True)
@@ -136,9 +136,11 @@ def _solve_single_capacity(
         model += total_discharge_energy <= cfg.max_daily_cycles * cap_mwh * days
 
     model.solve(PULP_CBC_CMD(msg=False))
-    status = LpStatus[model.status]
-    if status != "Optimal":
+    try:
+        check_pulp_status(model, "multi-node bess arbitrage")
+    except RuntimeError:
         return None
+    status = "Optimal"
 
     ch_v = np.array([value(ch[t]) for t in range(T)])
     dis_v = np.array([value(dis[t]) for t in range(T)])

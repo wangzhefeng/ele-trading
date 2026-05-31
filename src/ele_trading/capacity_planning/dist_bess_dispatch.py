@@ -25,6 +25,9 @@ import numpy as np
 import pandas as pd
 from cvxpy.error import SolverError
 
+from ..utils.data_alignment import read_time_value_csv
+from ..utils.demand_charge import monthly_peak_demand_cost
+from ..utils.time_splitting import generate_month_ranges
 from ..optimization.interfaces import (
     DIST_BESS_CABINET_CAPACITY_KWH,
     DIST_BESS_CABINET_POWER_KW,
@@ -506,33 +509,13 @@ class BESSDistributionScheduler:
 _FULL_GRID_WORKER_CONTEXT: dict | None = None
 
 
-def generate_month_ranges(start_time: datetime, end_time: datetime):
-    if start_time >= end_time:
-        return []
-    result = []
-    current = start_time.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    while current < end_time:
-        if current.month == 12:
-            next_m = current.replace(year=current.year + 1, month=1, day=1)
-        else:
-            next_m = current.replace(month=current.month + 1)
-        result.append((current, next_m))
-        current = next_m
-    return result
-
-
 def combo_key(cabinet_counts: tuple[int, ...], transformer_configs=None) -> str:
     configs = tuple(transformer_configs or TRANSFORMERS)
     return "__".join(f"{cfg.name}-{cabinet_counts[idx]}" for idx, cfg in enumerate(configs))
 
 
 def load_series(path: Path, start_time: datetime, end_time: datetime) -> pd.Series:
-    data = pd.read_csv(path)
-    data["time"] = pd.to_datetime(data["time"])
-    data["value"] = pd.to_numeric(data["value"], errors="raise")
-    data = data[(data["time"] >= start_time) & (data["time"] < end_time)]
-    data = data.set_index("time").sort_index()
-    return data["value"]
+    return read_time_value_csv(path, start_time, end_time)
 
 
 def load_inputs(base_dir: Path, start_time: datetime, end_time: datetime,
@@ -579,7 +562,7 @@ def build_devices_info(cabinet_counts: tuple[int, ...], transformer_configs=None
 
 
 def monthly_demand_cost(load: pd.Series, max_demand_price: float) -> float:
-    return float(load.resample("ME").max().sum() * max_demand_price)
+    return monthly_peak_demand_cost(load, max_demand_price)
 
 
 def calculate_system_power_limit(system_load: pd.Series) -> float:
@@ -1084,7 +1067,7 @@ class SimulationResult:
 
 
 def monthly_max_cost(load: pd.Series, max_demand_price: float) -> float:
-    return float(load.resample("ME").max().sum() * max_demand_price)
+    return monthly_peak_demand_cost(load, max_demand_price)
 
 
 def parse_cabinet_counts_from_key(key: str) -> tuple[int, ...]:

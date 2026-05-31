@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from ele_trading.utils.num_utils import inclusive_float_range
 from ele_trading.utils.time_index import infer_dt_hours, monthly_kwh
 
 
@@ -47,9 +48,9 @@ class CapacityOptimizer:
         max_pv = s['max_pv_mw'] or float(load_series.max()) * 2
         max_ess = s['max_ess_mwh'] or float(load_series.max()) * 4
 
-        wind_candidates = [fixed_wind_mw] if fixed_wind_mw is not None else _arange(0, max_wind, s['coarse_step_mw'])
-        pv_candidates = [fixed_pv_mw] if fixed_pv_mw is not None else _arange(0, max_pv, s['coarse_step_mw'])
-        ess_candidates = _arange(0, max_ess, s['coarse_step_mwh'])
+        wind_candidates = [fixed_wind_mw] if fixed_wind_mw is not None else inclusive_float_range(0, max_wind, s['coarse_step_mw'], ndigits=6)
+        pv_candidates = [fixed_pv_mw] if fixed_pv_mw is not None else inclusive_float_range(0, max_pv, s['coarse_step_mw'], ndigits=6)
+        ess_candidates = inclusive_float_range(0, max_ess, s['coarse_step_mwh'], ndigits=6)
 
         best = self._grid_search(
             load_series, wind_unit_output, pv_unit_output,
@@ -63,20 +64,23 @@ class CapacityOptimizer:
             )
 
         r = s['fine_range_ratio']
-        fine_wind = [fixed_wind_mw] if fixed_wind_mw is not None else _arange(
+        fine_wind = [fixed_wind_mw] if fixed_wind_mw is not None else inclusive_float_range(
             max(0, best.wind_mw * (1 - r)),
             best.wind_mw * (1 + r) + s['fine_step_mw'],
             s['fine_step_mw'],
+            ndigits=6,
         )
-        fine_pv = [fixed_pv_mw] if fixed_pv_mw is not None else _arange(
+        fine_pv = [fixed_pv_mw] if fixed_pv_mw is not None else inclusive_float_range(
             max(0, best.pv_mw * (1 - r)),
             best.pv_mw * (1 + r) + s['fine_step_mw'],
             s['fine_step_mw'],
+            ndigits=6,
         )
-        fine_ess = _arange(
+        fine_ess = inclusive_float_range(
             max(0, best.ess_mwh * (1 - r)),
             best.ess_mwh * (1 + r) + s['fine_step_mwh'],
             s['fine_step_mwh'],
+            ndigits=6,
         )
 
         refined = self._grid_search(
@@ -241,13 +245,3 @@ def curve_based_energy_check(load_series, pv_unit_output, green_ratio_min=0.30, 
         'pv_required_MWp': gen_required / yield_per_kwp / 1000,
     }
 
-
-def _arange(lo, hi, step):
-    if step <= 0 or lo > hi:
-        return [lo]
-    result = []
-    v = lo
-    while v <= hi + 1e-9:
-        result.append(round(v, 6))
-        v += step
-    return result

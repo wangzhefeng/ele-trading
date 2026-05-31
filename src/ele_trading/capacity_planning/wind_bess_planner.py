@@ -14,7 +14,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from ele_trading.utils.data_alignment import align_and_merge
+from ele_trading.utils.data_alignment import align_and_merge, ensure_datetime_index
 
 
 # ============================================================
@@ -508,20 +508,8 @@ def plan_wind_bess_system(
 def _read_timeseries(obj, time_col: str = "Time") -> pd.DataFrame:
     """读取时间序列数据，返回 DatetimeIndex 的 DataFrame。"""
     if isinstance(obj, pd.DataFrame):
-        df = obj.copy()
-    else:
-        raise ValueError(f"Unsupported input type: {type(obj)}")
-
-    # 确保有 DatetimeIndex
-    if not isinstance(df.index, pd.DatetimeIndex):
-        if time_col in df.columns:
-            df.index = pd.to_datetime(df[time_col])
-            df = df.drop(columns=[time_col])
-        else:
-            raise ValueError(f"Cannot find time column '{time_col}'")
-
-    df = df.sort_index()
-    return df
+        return ensure_datetime_index(obj, time_col)
+    raise ValueError(f"Unsupported input type: {type(obj)}")
 
 
 # ============================================================

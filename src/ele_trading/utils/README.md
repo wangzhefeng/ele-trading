@@ -9,6 +9,8 @@
 - **`time_process.py`** — 时间处理辅助（内部使用）
 - **`data_alignment.py`** — 时间序列对齐与规范化
 - **`energy_price.py`** — 电价相关工具
+- **`demand_charge.py`** — 需量电费计算工具
+- **`num_utils.py`** — 数值清洗和浮点扫描工具
 - **`io.py`** — 文件读写（YAML、文本）
 - **`log_util.py`** — 日志工具
 - **`day2month.py`** — 日期 → 月份映射
@@ -30,8 +32,13 @@ from ele_trading.utils import (
     generate_month_ranges, generate_day_pairs, get_time_ranges,
     # data_alignment
     as_time_series, normalize_time_and_load, align_to_time, align_and_merge,
+    ensure_datetime_index, read_time_value_csv,
     # energy_price
     flatten_valley_price_diff,
+    # demand_charge
+    monthly_peak_demand_cost,
+    # num_utils
+    clean_value, clean_list, inclusive_float_range,
     # io
     read_yaml, write_text,
     # log_util
@@ -84,6 +91,8 @@ from ele_trading.utils import (
 | `normalize_time_and_load(df, ...)` | 规范化负荷 DataFrame：提取时间轴和负荷数组（kW），按时间排序 |
 | `align_to_time(s, t)` | 将 Series 对齐到时间轴 t，线性插值，缺失填 0 |
 | `align_and_merge(load_df, wind_df, ...)` | 将负荷（kW）和风电（MW）对齐到统一时间轴 |
+| `ensure_datetime_index(df, ...)` | 返回以 DatetimeIndex 排序的 DataFrame 副本 |
+| `read_time_value_csv(path, ...)` | 读取 time/value CSV 并按时间范围返回 Series |
 
 ### energy_price.py
 
@@ -111,6 +120,20 @@ from ele_trading.utils import (
 from ele_trading.utils.energy_price import flatten_valley_price_diff
 df = flatten_valley_price_diff(df)
 ```
+
+### demand_charge.py
+
+| 函数 | 说明 |
+|------|------|
+| `monthly_peak_demand_cost(load, demand_price, ...)` | 按月最大需量合计计算需量电费 |
+
+### num_utils.py
+
+| 函数 | 说明 |
+|------|------|
+| `clean_value(raw, ...)` | 清洗求解器返回的数值 |
+| `clean_list(arr, ...)` | 清洗数组或可迭代对象为 float list |
+| `inclusive_float_range(lo, hi, step, ...)` | 生成包含右端点的浮点扫描序列 |
 
 ### io.py
 

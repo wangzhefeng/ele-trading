@@ -9,6 +9,7 @@ import pandas as pd
 
 from ele_trading.evaluation.metrics import compute_irr
 from ele_trading.utils.data_alignment import as_time_series, align_to_time
+from ele_trading.utils.num_utils import inclusive_float_range
 from ele_trading.utils.time_index import infer_dt_hours
 
 from .wind_pv_bess_planner import WindPVBESSPlanConfig, _dispatch_annual
@@ -103,11 +104,11 @@ def plan_wind_pv_bess_for_target_irr(
     candidates: list[dict[str, Any]] = []
     diagnostics: list[dict[str, Any]] = []
 
-    for wind_mw in _scan_values(0.0, cfg.wind_max_mw, cfg.wind_step_mw):
+    for wind_mw in inclusive_float_range(0.0, cfg.wind_max_mw, cfg.wind_step_mw):
         wind_kw_arr = wind_unit_arr * float(wind_mw)
-        for pv_mw in _scan_values(0.0, cfg.pv_max_mw, cfg.pv_step_mw):
+        for pv_mw in inclusive_float_range(0.0, cfg.pv_max_mw, cfg.pv_step_mw):
             pv_kw_arr = pv_unit_arr * float(pv_mw) * 1000.0
-            for bess_mwh in _scan_values(0.0, cfg.bess_max_mwh, cfg.bess_step_mwh):
+            for bess_mwh in inclusive_float_range(0.0, cfg.bess_max_mwh, cfg.bess_step_mwh):
                 st = _dispatch_annual(
                     load_kw_arr,
                     wind_kw_arr,
@@ -267,15 +268,3 @@ def _result_from_row(status: str, row: dict[str, Any], diagnostics: pd.DataFrame
         diagnostics=diagnostics,
     )
 
-
-def _scan_values(lo: float, hi: float, step: float) -> list[float]:
-    if step <= 0:
-        raise ValueError("scan step must be positive")
-    values: list[float] = []
-    v = lo
-    while v <= hi + 1e-9:
-        values.append(round(v, 9))
-        v += step
-    if not values or values[-1] < hi - 1e-9:
-        values.append(float(hi))
-    return values

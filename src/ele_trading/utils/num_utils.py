@@ -1,6 +1,25 @@
 """通用数值清洗工具。"""
 
 
+def inclusive_float_range(lo: float, hi: float, step: float, ndigits: int = 9) -> list[float]:
+    """生成包含右端点的浮点扫描序列。"""
+    if step <= 0:
+        raise ValueError("step must be positive")
+
+    values: list[float] = []
+    current = float(lo)
+    upper = float(hi)
+    tolerance = abs(step) * 1e-9
+    while current <= upper + tolerance:
+        values.append(round(current, ndigits))
+        current += step
+
+    rounded_hi = round(upper, ndigits)
+    if not values or values[-1] < rounded_hi:
+        values.append(rounded_hi)
+    return values
+
+
 def clean_value(raw: float | None, tol: float = 1e-9) -> float:
     """将求解器返回值清洗为干净的 float。
 
