@@ -1,30 +1,20 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import yaml
 
 from ele_trading.optimization.interfaces import (
     CvxpBESSDispatchInput,
-    CvxpBESSProfile,
     UserSideBESSParams,
 )
 from ele_trading.optimization.cvxp_bess_dispatch import get_cvxp_profile
 
 
-def load_cvxp_bess_dispatch_config(path: str | Path) -> dict[str, Any]:
-    """加载 CVXPY 储能调度 demo 配置。"""
-    with open(path, "r", encoding="utf-8") as file:
-        config = yaml.safe_load(file)
-    if not isinstance(config, dict):
-        raise ValueError("cvxp bess dispatch config must be a mapping")
-    return config
-
-
 def build_synthetic_cvxp_dispatch_frame(config: dict[str, Any]) -> pd.DataFrame:
-    """构建含 demand_load、ele_prices、ele_types 的合成数据。"""
+    """
+    构建含 demand_load、ele_prices、ele_types 的合成数据。
+    """
     synthetic = config["synthetic_data"]
     start_time = pd.to_datetime(synthetic["start_time"])
     periods = int(synthetic["periods"])
@@ -46,10 +36,10 @@ def build_synthetic_cvxp_dispatch_frame(config: dict[str, Any]) -> pd.DataFrame:
     return pd.DataFrame.from_records(records)
 
 
-def build_cvxp_bess_dispatch_input(
-    config: dict[str, Any],
-) -> CvxpBESSDispatchInput:
-    """构建 CVXPY 调度算法输入。"""
+def build_cvxp_bess_dispatch_input(config: dict[str, Any]) -> CvxpBESSDispatchInput:
+    """
+    构建 CVXPY 调度算法输入。
+    """
     frame = build_synthetic_cvxp_dispatch_frame(config)
     bess_config = config["bess"]
     dispatch_config = config["dispatch"]
@@ -81,6 +71,9 @@ def build_cvxp_bess_dispatch_input(
     )
 
 
+# ------------------------------
+# 
+# ------------------------------
 def _load_for_hour(hour: int, synthetic: dict[str, Any]) -> float:
     base_load = float(synthetic["base_load"])
     midday_peak = float(synthetic["midday_peak_load"])
@@ -101,16 +94,14 @@ def _ele_type_for_hour(hour: int, periods: list[dict[str, Any]]) -> str:
     raise ValueError(f"no price type configured for hour: {hour}")
 
 
-_PRICE_KEY_MAP = {
-    "深谷": "deep_valley_price",
-    "谷": "valley_price",
-    "平": "flat_price",
-    "峰": "peak_price",
-    "尖峰": "sharp_peak_price",
-}
-
-
 def _price_key_for_type(ele_type: str) -> str:
+    _PRICE_KEY_MAP = {
+        "深谷": "deep_valley_price",
+        "谷": "valley_price",
+        "平": "flat_price",
+        "峰": "peak_price",
+        "尖峰": "sharp_peak_price",
+    }
     if ele_type in _PRICE_KEY_MAP:
         return _PRICE_KEY_MAP[ele_type]
     raise ValueError(f"unknown electricity type: {ele_type}")

@@ -1,7 +1,7 @@
 dispatch:
+  version: "optim"
   max_demand_price: 35.0
   freq_minutes: 60
-  version: "optim"
   transform_capacity: 63000
 
 bess:

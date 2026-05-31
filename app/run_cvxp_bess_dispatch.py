@@ -13,11 +13,11 @@ if str(SRC_ROOT) not in sys.path:
 from ele_trading.data_provider.cvxp_bess_sample import (
     build_synthetic_cvxp_dispatch_frame,
     build_cvxp_bess_dispatch_input,
-    load_cvxp_bess_dispatch_config,
 )
 from ele_trading.optimization.cvxp_bess_dispatch import (
     run_cvxp_bess_dispatch,
 )
+from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 
 
@@ -25,11 +25,15 @@ CONFIG_PATH = PROJECT_ROOT / 'configs' / 'cvxp_bess_dispatch.yaml'
 
 
 if __name__ == "__main__":
-    config = load_cvxp_bess_dispatch_config(CONFIG_PATH)
+    # config
+    config = read_yaml(CONFIG_PATH)
+    # input
     input_frame = build_synthetic_cvxp_dispatch_frame(config)
+    # dispatch input
     dispatch_input = build_cvxp_bess_dispatch_input(config)
+    # model
     result = run_cvxp_bess_dispatch(dispatch_input)
-
+    # model result
     result_df = pd.DataFrame(
         {
             "timestamp": input_frame["timestamp"],

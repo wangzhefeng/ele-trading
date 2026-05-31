@@ -153,7 +153,9 @@ class UserSidePVBESSDispatchResult:
 
 @dataclass(slots=True)
 class CvxpBESSProfile:
-    """CVXPY 调度算法的行为配置。"""
+    """
+    CVXPY 调度算法的行为配置。
+    """
     objective_energy_multiplier: float = 1.0
     demand_charge_type: str = "exact_max_net"
     smoothing_enabled: bool = False
@@ -163,7 +165,9 @@ class CvxpBESSProfile:
 
 @dataclass(slots=True)
 class CvxpBESSDispatchInput:
-    """CVXPY 凸优化单节点储能调度输入。"""
+    """
+    CVXPY 凸优化单节点储能调度输入。
+    """
     timestamps: list[datetime]
     demand_load: list[float]
     ele_prices: list[float]
@@ -178,7 +182,9 @@ class CvxpBESSDispatchInput:
 
 @dataclass(slots=True)
 class CvxpBESSDispatchResult:
-    """CVXPY 凸优化单节点储能调度输出。"""
+    """
+    CVXPY 凸优化单节点储能调度输出。
+    """
     charge_power: list[float]
     discharge_power: list[float]
     net_power: list[float]
