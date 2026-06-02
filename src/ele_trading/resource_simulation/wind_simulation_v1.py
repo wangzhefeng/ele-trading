@@ -164,7 +164,7 @@ def simulate_wind_farm_output(weather_df: pd.DataFrame, config: WindProfileConfi
     turbine_count = max(1, round(config.farm_capacity_mw * 1000.0 / config.rated_power_kw))
     farm_output_mw = single_turbine_kw * turbine_count / 1000.0
     # 二次标定（核心）
-    dt_hours = pd.to_timedelta(config.freq).total_seconds() / 3600.0
+    dt_hours = (prepared.index[1] - prepared.index[0]).total_seconds() / 3600.0
     scaled = rescale_wind_output_to_target_flh(farm_output_mw, dt_hours, config)
     # 输出
     return pd.Series(np.clip(scaled, 0.0, None), index=prepared.index, name="wind_kw") * 1000.0
