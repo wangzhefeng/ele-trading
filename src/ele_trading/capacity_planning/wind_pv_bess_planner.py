@@ -27,9 +27,6 @@ except Exception:
         return deco
 
 
-# ============================================================
-# 配置数据类
-# ============================================================
 @dataclass(slots=True)
 class WindPVBESSPlanConfig:
     """
@@ -70,7 +67,9 @@ class WindPVBESSPlanConfig:
 
 @dataclass(slots=True)
 class WindPVBESSResult:
-    """Wind+PV+BESS 容量规划结果。"""
+    """
+    Wind+PV+BESS 容量规划结果。
+    """
     status: str  # "ok", "gate_failed", "no_solution"
     pv_kwp: float = 0.0
     bess_kwh: float = 0.0
@@ -90,9 +89,6 @@ class WindPVBESSResult:
     message: str | None = None
 
 
-# ============================================================
-# 年度调度 - Numba 加速版
-# ============================================================
 @njit
 def _dispatch_annual_numba(
     load_kw: np.ndarray,
@@ -108,7 +104,9 @@ def _dispatch_annual_numba(
     soc_max_frac: float,
     switch_gap_steps: int,
 ) -> tuple[float, float, float, float, float, float]:
-    """贪心调度（Numba JIT），支持充放切换间隔。"""
+    """
+    贪心调度（Numba JIT），支持充放切换间隔。
+    """
     gen_e = 0.0
     used_e = 0.0
     load_e = 0.0

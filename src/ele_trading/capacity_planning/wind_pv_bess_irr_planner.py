@@ -35,6 +35,7 @@ class WindPVBESSIRRPlanConfig:
 
     self_use_ratio_min: float = 0.60  # 绿电消纳最低要求：至少60%自用
     load_cover_ratio_min: float = 0.35  # 绿电消纳最低要求：占业主用电量最低35%
+
     wind_capex_yuan_per_kw: float = 5000.0  # 风电单位投资，元/kW
     pv_capex_yuan_per_kwp: float = 3500.0  # 光伏单位投资，元/kWp
     bess_capex_yuan_per_kwh: float = 1500.0  # BESS 单位投资，元/kWh
