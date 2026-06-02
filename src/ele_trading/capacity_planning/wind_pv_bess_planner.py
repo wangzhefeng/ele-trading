@@ -32,7 +32,9 @@ except Exception:
 # ============================================================
 @dataclass(slots=True)
 class WindPVBESSPlanConfig:
-    """Wind+PV+BESS 容量规划配置。"""
+    """
+    Wind+PV+BESS 容量规划配置。
+    """
     # 成本
     pv_capex_yuan_per_kwp: float = 2000.0
     bess_capex_yuan_per_kwh: float = 1000.0

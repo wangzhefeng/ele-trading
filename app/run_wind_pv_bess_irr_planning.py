@@ -85,11 +85,9 @@ def _to_config(config: dict) -> WindPVBESSIRRPlanConfig:
 def main() -> None:
     config = read_yaml(CONFIG_PATH)
     scenario = config["scenario"]
-    df_load = _make_load(
-        int(scenario["n_hours"]),
-        scenario["timezone"],
-        float(scenario["load_mean_kw"]),
-    )
+    # load
+    df_load = _make_load(int(scenario["n_hours"]), scenario["timezone"], float(scenario["load_mean_kw"]))
+    # wind and pv
     idx = pd.DatetimeIndex(df_load["Time"])
     wind_unit = _make_wind_unit(idx)
     pv_unit = _make_pv_unit(idx)

@@ -2,7 +2,9 @@
 
 
 def inclusive_float_range(lo: float, hi: float, step: float, ndigits: int = 9) -> list[float]:
-    """生成包含右端点的浮点扫描序列。"""
+    """
+    生成包含右端点的浮点扫描序列。
+    """
     if step <= 0:
         raise ValueError("step must be positive")
 
