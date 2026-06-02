@@ -12,7 +12,19 @@ from ele_trading.utils.data_alignment import as_time_series, align_to_time
 from ele_trading.utils.num_utils import inclusive_float_range
 from ele_trading.utils.time_index import infer_dt_hours
 
-from .wind_pv_bess_planner import WindPVBESSPlanConfig, _dispatch_annual
+from .wind_pv_bess_planner import _dispatch_annual
+
+# Numba 兼容层
+try:
+    from numba import njit
+    _NUMBA_OK = True
+except Exception:
+    _NUMBA_OK = False
+
+    def njit(*args, **kwargs):
+        def deco(f):
+            return f
+        return deco
 
 
 @dataclass(slots=True)
@@ -77,13 +89,20 @@ class WindPVBESSIRRResult:
     message: str | None = None  # 失败原因说明
 
 
-def _prepare_arrays(
-    df_load: pd.DataFrame,
-    wind_unit_kw: pd.Series | pd.DataFrame,
-    pv_unit_kw: pd.Series | pd.DataFrame,
-    load_col: str,
-    time_col: str,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+def _prepare_arrays(df_load: pd.DataFrame, wind_unit_kw: pd.Series | pd.DataFrame, pv_unit_kw: pd.Series | pd.DataFrame, load_col: str, time_col: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    """
+    TODO 补充注释
+
+    Args:
+        df_load (pd.DataFrame): _description_
+        wind_unit_kw (pd.Series | pd.DataFrame): _description_
+        pv_unit_kw (pd.Series | pd.DataFrame): _description_
+        load_col (str): _description_
+        time_col (str): _description_
+
+    Returns:
+        tuple[np.ndarray, np.ndarray, np.ndarray, float]: _description_
+    """
     # 取出 Time 和 P_kw
     df = df_load[[time_col, load_col]].copy()
     # 时间转 datetime 并排序
@@ -92,7 +111,6 @@ def _prepare_arrays(
     # 负荷转成连续 float64 数组，缺失值按 0.0
     load_kw_arr = pd.to_numeric(df[load_col], errors="coerce").fillna(0.0).to_numpy(dtype="float64")
     load_kw_arr = np.ascontiguousarray(load_kw_arr, dtype=np.float64)
-    
     # 将风、光单位出力曲线对齐到负荷时间轴
     wind_s = as_time_series(
         wind_unit_kw,
@@ -101,7 +119,6 @@ def _prepare_arrays(
         scale=1.0,
     )
     wind_unit_arr = align_to_time(df[time_col], wind_s)
-    
     # 将风、光单位出力曲线对齐到负荷时间轴
     pv_s = as_time_series(
         pv_unit_kw,
@@ -110,7 +127,6 @@ def _prepare_arrays(
         scale=1.0,
     )
     pv_unit_arr = align_to_time(df[time_col], pv_s)
-
     # 推断时间步长 dt_hours
     dt_hours = infer_dt_hours(df[time_col])
     
@@ -119,7 +135,7 @@ def _prepare_arrays(
 
 def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[str, float], cfg: WindPVBESSIRRPlanConfig) -> dict[str, Any]:
     """
-    评估单个风光储组合
+    TODO 完善注释：评估单个风光储组合
     """
     # 绿电发电量
     gen = st["ren_gen_kwh"]
@@ -143,7 +159,7 @@ def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[
     if self_use < cfg.self_use_ratio_min or cover < cfg.load_cover_ratio_min:
         return {"reason": "physical_infeasible", "irr_gap": np.inf}
     # ------------------------------
-    # 绿电价格/PPA 价格反推
+    # 3.绿电价格/PPA 价格约束
     # ------------------------------
     # 电网购电量
     grid_buy_kwh = max(load - used, 0.0)
@@ -154,7 +170,7 @@ def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[
     ) / used
     # PPA 价格再扣除绿电附加价
     ppa_price = green_price - cfg.green_price_adder_yuan_per_kwh
-    # TODO 添加注释
+    # TODO 补充注释
     owner_avg_price = (
         green_price * used + cfg.grid_buy_price_yuan_per_kwh * grid_buy_kwh
     ) / load
@@ -176,7 +192,7 @@ def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[
     if green_price <= 0.0 or ppa_price <= 0.0:
         return {**row, "reason": "non_positive_ppa", "irr": np.nan, "irr_gap": np.inf}
     # ------------------------------
-    # 经济模型和 IRR
+    # 5.经济模型和 IRR
     # ------------------------------
     # CAPEX
     total_capex = (
@@ -212,6 +228,17 @@ def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[
 
 
 def _result_from_row(status: str, row: dict[str, Any], diagnostics: pd.DataFrame | None) -> WindPVBESSIRRResult:
+    """
+    TODO 补充注释
+
+    Args:
+        status (str): _description_
+        row (dict[str, Any]): _description_
+        diagnostics (pd.DataFrame | None): _description_
+
+    Returns:
+        WindPVBESSIRRResult: _description_
+    """
     return WindPVBESSIRRResult(
         status=status,
         wind_mw=float(row["wind_mw"]),
@@ -250,23 +277,13 @@ def plan_wind_pv_bess_for_target_irr(
     load_kw_arr, wind_unit_arr, pv_unit_arr, dt_hours = _prepare_arrays(
         df_load, wind_unit_kw, pv_unit_kw, load_col, time_col
     )
-    # 调度配置
-    dispatch_cfg = WindPVBESSPlanConfig(
-        eta_roundtrip=cfg.eta_roundtrip,
-        c_rate=cfg.c_rate,
-        soc_init_frac=cfg.soc_init_frac,
-        soc_min_frac=cfg.soc_min_frac,
-        soc_max_frac=cfg.soc_max_frac,
-        self_use_ratio_min=cfg.self_use_ratio_min,
-        load_cover_ratio_min=cfg.load_cover_ratio_min,
-        switch_gap_hours=cfg.switch_gap_hours,
-        use_numba=cfg.use_numba,
-    )
+    
+    # TODO 补充注释
     switch_gap_steps = int(round(cfg.switch_gap_hours / dt_hours)) if cfg.switch_gap_hours > 0 else 0
 
+    # 风光储容量组合搜索算法
     candidates: list[dict[str, Any]] = []
     diagnostics: list[dict[str, Any]] = []
-
     for wind_mw in inclusive_float_range(0.0, cfg.wind_max_mw, cfg.wind_step_mw):
         wind_kw_arr = wind_unit_arr * float(wind_mw)
         for pv_mw in inclusive_float_range(0.0, cfg.pv_max_mw, cfg.pv_step_mw):
@@ -274,28 +291,29 @@ def plan_wind_pv_bess_for_target_irr(
             for bess_mwh in inclusive_float_range(0.0, cfg.bess_max_mwh, cfg.bess_step_mwh):
                 # 年度调度模型
                 st = _dispatch_annual(
-                    load_kw_arr,
-                    wind_kw_arr,
-                    pv_kw_arr,
-                    np.zeros_like(load_kw_arr, dtype=np.float64),
-                    dt_hours,
-                    float(bess_mwh) * 1000.0,
-                    dispatch_cfg,
-                    switch_gap_steps,
+                    load_kw = load_kw_arr,
+                    wind_kw = wind_kw_arr,
+                    pv_kw = pv_kw_arr,
+                    other_kw = np.zeros_like(load_kw_arr, dtype=np.float64),
+                    dt_hours = dt_hours,
+                    batt_kwh = float(bess_mwh) * 1000.0,
+                    cfg = cfg,
+                    switch_gap_steps = switch_gap_steps,
                 )
-                # 评估
+                # TODO 补充注释
                 evaluated = _evaluate_candidate(float(wind_mw), float(pv_mw), float(bess_mwh), st, cfg)
-                
                 reason = evaluated.pop("reason")
+                # 物理约束满足、PPA 为正、IRR 在目标容差内
                 if reason == "ok":
                     candidates.append(evaluated)
+                # 物理约束不满足, 不会作为可行解，但会进入 diagnostics
                 elif reason in {"non_positive_ppa", "irr_out_of_tolerance"}:
                     diagnostics.append({**evaluated, "reason": reason})
-
+    # TODO 补充注释
     if candidates:
         best = min(candidates, key=lambda row: (row["total_capex_yuan"], row["irr_gap"]))
         return _result_from_row("ok", best, pd.DataFrame(candidates))
-
+    # TODO 补充注释
     if diagnostics:
         diag_df = pd.DataFrame(diagnostics).sort_values("irr_gap", na_position="last").reset_index(drop=True)
         return WindPVBESSIRRResult(
@@ -303,7 +321,7 @@ def plan_wind_pv_bess_for_target_irr(
             diagnostics=diag_df,
             message="未找到满足 PPA/IRR 约束的风光储组合。",
         )
-
+    # TODO 补充注释
     return WindPVBESSIRRResult(
         status="no_solution",
         diagnostics=pd.DataFrame(),

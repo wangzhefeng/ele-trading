@@ -5,14 +5,14 @@ PV 粗扫 + 细扫两阶段搜索 + BESS 二分搜索，Numba JIT 加速调度�
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
 
-from ele_trading.utils.time_index import infer_dt_hours, monthly_kwh
 from ele_trading.utils.data_alignment import as_time_series, align_to_time
+from ele_trading.utils.time_index import infer_dt_hours, monthly_kwh
 
 # Numba 兼容层
 try:
@@ -197,15 +197,22 @@ def _dispatch_annual(
     other_kw: np.ndarray,
     dt_hours: float,
     batt_kwh: float,
-    cfg: WindPVBESSPlanConfig,
+    cfg: Dict,
     switch_gap_steps: int = 0,
 ) -> dict[str, float]:
     if cfg.use_numba and _NUMBA_OK:
         gen_e, used_e, load_e, direct_e, bess_dis, curtail_e = _dispatch_annual_numba(
-            load_kw, wind_kw, pv_kw, other_kw,
-            dt_hours, float(batt_kwh),
-            float(cfg.eta_roundtrip), float(cfg.c_rate),
-            float(cfg.soc_init_frac), float(cfg.soc_min_frac), float(cfg.soc_max_frac),
+            load_kw, 
+            wind_kw, 
+            pv_kw, 
+            other_kw,
+            dt_hours, 
+            float(batt_kwh),
+            float(cfg.eta_roundtrip), 
+            float(cfg.c_rate),
+            float(cfg.soc_init_frac), 
+            float(cfg.soc_min_frac), 
+            float(cfg.soc_max_frac),
             switch_gap_steps,
         )
     else:
