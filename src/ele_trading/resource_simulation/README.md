@@ -1,318 +1,345 @@
-# resource_simulation — 风光资源仿真与 profile 构造
+# 新能源出力仿真算法说明 (resource_simulation)
 
-本模块负责把气象、站点参数和缓存文件转换为容量规划可消费的风电/光伏出力曲线。
+## 1. 概述
 
-## 当前文件
+本目录包含四套独立的新能源出力仿真算法，用于生成典型年份下光伏（PV）和风电（Wind）的**逐时出力曲线**（kW）。每类资源各有两个版本：
 
-| 文件 | 职责 |
-|------|------|
-| `pv_simulation.py` | 基于 `pvlib` 的 PV 物理仿真，支持等效小时数校准 |
-| `wind_simulation.py` | 基于 `windpowerlib` 的风电物理仿真，支持机型选择和等效小时数校准 |
-| `pv_profile.py` | PV profile 构造，支持 `clear_sky`、`weather_driven`、`replay` 和 CSV 缓存 |
-| `wind_profile.py` | 风电 profile 构造，支持高度外推、功率曲线和满发小时校准 |
+| 模块 | 文件 | 定位 | 核心方法 |
+|------|------|------|----------|
+| 光伏 v1 | `pv_simulation_v1.py` | 配置驱动，支持多模式 | 清晰天空 / 气象驱动 / 回放 |
+| 光伏 v2 | `pv_simulation_v2.py` | 气象驱动仿真器类 | GHI→DNI/DHI + 斜面辐照 + PVWatts |
+| 风电 v1 | `wind_simulation_v1.py` | 配置驱动，气象数据自动获取 | 功率曲线 + 幂律外推 + FLH 标定 |
+| 风电 v2 | `wind_simulation_v2.py` | 仿真器类，自动匹配机型 | windpowerlib ModelChain + 等效小时数校准 |
 
-## 模块定位
+所有模块的输出统一为 `SimulationResult`（定义在 `models.py`），功率单位统一为 **kW**。
 
-本模块只负责风光资源侧的出力曲线生成，不负责容量规划、IRR 测算或储能调度。容量规划算法消费本模块生成的曲线后，再自行做容量缩放、消纳统计、经济性计算。
+---
 
-典型数据流：
+## 2. 目录结构
 
-```text
-气象 / 站点参数 / 历史出力 / 缓存 CSV
-→ resource_simulation
-→ 风电出力曲线 / 光伏出力曲线
-→ capacity_planning
-→ 风光储容量规划、BESS 搜索、IRR 测算
+```
+resource_simulation/
+├── models.py                 # 共用数据模型 SimulationResult
+├── pv_simulation_v1.py       # 光伏 v1: 配置驱动，多模式入口
+├── pv_simulation_v2.py       # 光伏 v2: PVSimulator 类
+├── wind_simulation_v1.py     # 风电 v1: 配置驱动，自动获取气象
+├── wind_simulation_v2.py     # 风电 v2: WindSimulator 类
+├── __init__.py               # 对外导出接口
+└── README.md
 ```
 
-## `pv_simulation.py` 原理
+---
 
-`pv_simulation.py` 提供 `PVSimulator`，基于 `pvlib` 做光伏物理仿真。输入气象数据需要包含：
-
-| 字段 | 含义 |
-|------|------|
-| `ghi` | 水平总辐照度，W/m2 |
-| `temp_air` | 环境温度，degC |
-| `wind_speed` | 风速，m/s |
-
-核心计算流程：
-
-1. 根据经纬度和时间计算太阳位置。
-2. 使用 DISC 模型把 `GHI` 分解为 `DNI`。
-3. 按下式计算 `DHI`：
-
-   ```text
-   DHI_t = GHI_t - DNI_t * cos(zenith_t)
-   ```
-
-4. 使用 Hay-Davies 模型计算组件斜面辐照度 `POA`。
-5. 使用 SAPM 温度模型计算组件温度：
-
-   ```text
-   T_cell_t = f(POA_t, temp_air_t, wind_speed_t)
-   ```
-
-6. 使用 PVWatts 计算 1 MW 基准 DC 出力：
-
-   ```text
-   P_dc_t = PVWatts(POA_t, T_cell_t, pdc0=1MW)
-   ```
-
-7. 乘系统综合效率 `_SYSTEM_EFF = 0.96` 并转换为 MW：
-
-   ```text
-   P_ac_raw_t = P_dc_t * 0.96 / 1e6
-   ```
-
-8. 根据目标等效小时数 `equiv_hours` 做年发电量校准：
-
-   ```text
-   E_raw = sum(P_ac_raw_t * dt_hours)
-   E_target = 1MW * equiv_hours
-   K = E_target / E_raw
-   ```
-
-9. 缩放到目标装机容量：
-
-   ```text
-   output_mw_t = P_ac_raw_t * K * target_capacity_mw
-   ```
-
-输出 `PVSimResult`：
-
-| 字段 | 含义 |
-|------|------|
-| `output_mw` | 指定 `target_capacity_mw` 下的光伏 MW 出力曲线 |
-| `total_generation_mwh` | 模拟期总发电量，MWh |
-| `scale_factor` | 等效小时数校准系数 `K` |
-
-如果 `target_capacity_mw = 1.0`，`output_mw` 是 1 MW 光伏装机下的 MW 出力曲线。
-
-## `wind_simulation.py` 原理
-
-`wind_simulation.py` 提供 `WindSimulator`，基于 `windpowerlib` 做风电物理仿真。输入气象数据需要包含：
-
-| 字段 | 含义 |
-|------|------|
-| `wind_speed` | 参考高度风速，m/s |
-| `temperature` | 环境温度，degC |
-| `pressure` | 气压，Pa |
-
-核心计算流程：
-
-1. 从 `windpowerlib` 内置机型库中选择风机型号。若传入 `single_turbine_capacity_mw`，选择额定功率最接近的机型；否则选择接近中位额定功率的机型。
-2. 使用幂律将参考高度风速外推到轮毂高度：
-
-   ```text
-   v_hub_t = v_ref_t * (hub_height / wind_speed_ref_height) ^ wind_shear_exp
-   ```
-
-3. 构造 `windpowerlib.ModelChain` 所需的气象 MultiIndex 表。
-4. 用风机功率曲线计算单机出力，并归一化为容量因子：
-
-   ```text
-   CF_t = P_turbine_t / P_rated
-   ```
-
-5. 应用系统综合折减 `_SYSTEM_EFF = 0.92`：
-
-   ```text
-   CF_sys_t = CF_t * 0.92
-   ```
-
-6. 根据目标等效小时数 `equiv_hours` 做校准：
-
-   ```text
-   E_raw_per_mw = sum(CF_sys_t * dt_hours)
-   K = equiv_hours / E_raw_per_mw
-   ```
-
-7. 缩放到目标风电装机：
-
-   ```text
-   output_mw_t = CF_sys_t * K * target_capacity_mw
-   ```
-
-输出 `WindSimResult`：
-
-| 字段 | 含义 |
-|------|------|
-| `output_mw` | 指定 `target_capacity_mw` 下的风电 MW 出力曲线 |
-| `total_generation_mwh` | 模拟期总发电量，MWh |
-| `scale_factor` | 等效小时数校准系数 `K` |
-| `selected_turbine` | 选用风机型号 |
-| `turbine_count` | 按目标容量估算的风机台数 |
-
-如果 `target_capacity_mw = 1.0`，`output_mw` 是 1 MW 风电装机下的 MW 出力曲线。
-
-## `pv_profile.py` 原理
-
-`pv_profile.py` 是光伏 profile 构造层，面向业务流程封装仿真、回放和缓存。核心入口是：
+## 3. 共用模型：SimulationResult
 
 ```python
-load_or_build_pv_profile(config, time_index=None, weather_df=None, cache_path=None)
+@dataclass(slots=True)
+class SimulationResult:
+    power_series: pd.Series              # 出力时序（kW）
+    total_generation_mwh: float          # 年发电量（MWh）
+    scale_factor: float                  # 校准系数 K
+    selected_turbine: str | None = None  # 风电专属：机型名称
+    turbine_count: int | None = None     # 风电专属：风机台数
+    metadata: dict[str, float | str] | None = None  # 兼容层
 ```
 
-`PVProfileConfig` 主要参数：
+---
 
-| 字段 | 含义 |
+## 4. 光伏仿真算法
+
+### 4.1 光伏 v1：`PVProfileConfig` + 多模式入口
+
+**配置类：`PVProfileConfig`**
+
+| 字段 | 说明 |
 |------|------|
-| `latitude`, `longitude`, `timezone` | 站点位置和时区 |
-| `capacity_kwp` | 光伏装机容量，kWp |
-| `tilt`, `azimuth` | 倾角和方位角 |
-| `system_loss` | 系统损耗比例 |
-| `temp_coeff` | 温度功率系数 |
-| `cloud_factor` | 晴空模式下的云量/资源折减系数 |
-| `mode` | 构造模式 |
+| `latitude / longitude` | 场址经纬度 |
+| `timezone` | 时区，如 `"Asia/Shanghai"` |
+| `capacity_kwp` | 装机容量（kWp） |
+| `tilt` | 组件倾角，`None` 则取纬度绝对值 |
+| `azimuth` | 组件方位角（°） |
+| `system_loss` | 系统综合损耗率 |
+| `temp_coeff` | 功率温度系数（1/°C） |
+| `cloud_factor` | 云量折减系数（仅清晰天空模式） |
+| `mode` | `"clear_sky"` / `"weather_driven"` / `"replay"` |
 
-支持三种模式：
+**三种仿真模式：**
 
-| mode | 逻辑 |
+1. **`clear_sky`**：基于 pvlib Ineichen 清晰天空模型，计算斜面辐照度 → 组件温度 → PVWatts DC/AC 出力。适用于无实测气象数据的典型年估算。
+2. **`weather_driven`**：委托 `PVSimulator`（v2），使用实测 GHI 气象数据进行物理仿真。
+3. **`replay`**：直接回放历史 `pv_kw` 数据，用于对照或基准测试。
+
+**主入口：`load_or_build_pv_profile()`**
+
+```
+输入: config + time_index/weather_df + 可选 cache_path
+  ↓
+检查缓存 → 命中则直接读取
+  ↓ (未命中)
+根据 mode 分派:
+  clear_sky      → simulate_pv_clear_sky()
+  weather_driven → simulate_pv_from_weather() → PVSimulator.simulate()
+  replay         → 直接取 weather_df["pv_kw"]
+  ↓
+计算等效小时数 + 总发电量
+  ↓ (首次运行且指定 cache_path)
+写入 CSV 缓存
+  ↓
+输出: SimulationResult
+```
+
+### 4.2 光伏 v2：`PVSimulator` 类
+
+面向实测气象数据的光伏仿真器，封装为类便于复用和参数化。
+
+**仿真流程：**
+
+```
+输入: weather_df (ghi, temp_air, wind_speed) + equiv_hours + target_capacity_mw
+  ↓
+① 太阳位置计算 → pvlib.location.get_solarposition()
+  ↓
+② GHI → DNI + DHI → pvlib.irradiance.disc()（DISC 模型）
+  ↓
+③ 斜面辐照度 → pvlib.irradiance.get_total_irradiance()（Hay-Davies 模型）
+  ↓
+④ 组件温度 → pvlib.temperature.sapm_cell()（SAPM 开放架构参数）
+  ↓
+⑤ DC 功率 → pvlib.pvsystem.pvwatts_dc()（以 1 MW 为基准）
+  ↓
+⑥ AC 出力 = DC × 系统综合效率(0.96) → MW
+  ↓
+⑦ 校准: K = equiv_hours / (原始等效小时数)
+  ↓
+⑧ 缩放: output_kw = pac_mw × K × target_capacity_mw × 1000
+  ↓
+输出: SimulationResult
+```
+
+**关键参数：**
+
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| `_GAMMA_PDC` | -0.004 /°C | PVWatts 功率温度系数 |
+| `_SYSTEM_EFF` | 0.96 | 逆变器 × 线损 × 其他损耗 |
+| SAPM 组件参数 | a=-3.56, b=-0.075, deltaT=3 | 开放架构玻璃-玻璃组件 |
+
+---
+
+## 5. 风电仿真算法
+
+### 5.1 风电 v1：`WindProfileConfig` + 自动气象获取
+
+**配置类：`WindProfileConfig`**
+
+| 字段 | 说明 |
 |------|------|
-| `clear_sky` | 基于经纬度、时间和 Ineichen 晴空模型生成辐照，再计算光伏出力 |
-| `weather_driven` | 调用 `PVSimulator`，用外部气象驱动光伏仿真 |
-| `replay` | 直接使用 `weather_df["pv_kw"]` 作为已有光伏出力 |
-
-`clear_sky` 模式中，出力计算口径是：
-
-```text
-pv_kw_t = AC_t / 1000 * capacity_kwp
-```
-
-`weather_driven` 模式中，先将 `capacity_kwp` 换算为 MW：
-
-```text
-capacity_mw = capacity_kwp / 1000
-```
-
-再调用 `PVSimulator.simulate(..., target_capacity_mw=capacity_mw)`，最后把 MW 输出转成 kW：
-
-```text
-pv_kw_t = output_mw_t * 1000
-```
-
-因此 `load_or_build_pv_profile()` 的输出 `RenewableProfileResult.power_series` 是：
-
-```text
-指定 capacity_kwp 光伏装机下的 kW 总出力曲线
-```
-
-## `wind_profile.py` 原理
-
-`wind_profile.py` 是风电 profile 构造层，面向业务流程封装风速外推、简化功率曲线、满发小时校准和缓存。核心入口是：
-
-```python
-load_or_build_wind_profile(config, weather_df=None, cache_path=None)
-```
-
-`WindProfileConfig` 主要参数：
-
-| 字段 | 含义 |
-|------|------|
-| `year`, `freq` | 年份和时间粒度 |
-| `farm_capacity_mw` | 风场装机容量，MW |
-| `target_full_load_hours` | 目标等效满发小时数 |
-| `mean_wind_speed_target` | 目标平均风速，用于资源强度校准 |
-| `meteo_height_m`, `met_mast_height_m`, `hub_height_m` | 气象高度、测风塔高度和轮毂高度 |
+| `year` | 仿真目标年份 |
+| `freq` | 时间分辨率（如 `"1h"`） |
+| `farm_capacity_mw` | 风场总装机容量（MW） |
+| `mean_wind_speed_target` | 测风塔高度处年均风速校准目标（m/s） |
+| `target_full_load_hours` | 年等效满发小时数目标（h） |
+| `meteo_height_m` | 气象数据风速测量高度（m） |
+| `met_mast_height_m` | 测风塔高度（m） |
+| `hub_height_m` | 风机轮毂高度（m） |
 | `shear_alpha` | 风切变指数 |
-| `rated_power_kw` | 单机额定功率 |
-| `cut_in`, `rated_speed`, `cut_out` | 切入、额定、切出风速 |
-| `max_power_ratio` | 风场最大出力相对装机的上限 |
-| `mode` | 构造模式 |
+| `rated_power_kw` | 单机额定功率（kW） |
+| `cut_in / rated_speed / cut_out` | 切入/额定/切出风速（m/s） |
+| `max_power_ratio` | 最大出力与装机容量的比值上限 |
+| `mode` | `"resource_simulation"` 自动获取气象数据 |
 
-核心计算流程：
+**仿真流程：**
 
-1. 读取或获取包含 `wind_speed_100m`、`temperature_2m` 的气象数据。
-2. 使用幂律做高度外推：
-
-   ```text
-   v_140_t = v_100_t * (met_mast_height_m / meteo_height_m) ^ shear_alpha
-   v_hub_t = v_140_t * (hub_height_m / met_mast_height_m) ^ shear_alpha
-   ```
-
-3. 如果配置了 `mean_wind_speed_target`，按目标平均风速整体缩放：
-
-   ```text
-   v_140_t = v_140_t * mean_wind_speed_target / mean(v_140)
-   ```
-
-4. 根据配置构造简化风机功率曲线：
-
-   ```text
-   P(v) = 0, v < cut_in
-   P(v) = ((v - cut_in) / (rated_speed - cut_in)) ^ 3 * rated_power_kw
-   P(v) = rated_power_kw, rated_speed <= v < cut_out
-   P(v) = 0, v >= cut_out
-   ```
-
-5. 用 `ModelChain` 计算单台风机出力。
-6. 按装机容量和单机容量估算风机台数：
-
-   ```text
-   turbine_count = round(farm_capacity_mw * 1000 / rated_power_kw)
-   ```
-
-7. 得到风场原始 MW 出力：
-
-   ```text
-   farm_output_mw_t = single_turbine_kw_t * turbine_count / 1000
-   ```
-
-8. 如设置 `target_full_load_hours`，将年发电量校准到目标：
-
-   ```text
-   E_target = farm_capacity_mw * target_full_load_hours
-   ```
-
-   同时限制最大出力：
-
-   ```text
-   P_t <= farm_capacity_mw * max_power_ratio
-   ```
-
-`simulate_wind_farm_output()` 内部返回 kW 曲线，但 `load_or_build_wind_profile()` 最终会除以 1000，因此 `RenewableProfileResult.power_series` 是：
-
-```text
-指定 farm_capacity_mw 风电装机下的 MW 总出力曲线
+```
+输入: config + 可选 weather_df + 可选 cache_path
+  ↓
+检查缓存 → 命中则直接读取
+  ↓ (未命中)
+自动获取气象数据 → fetch_weather_open_meteo() (wind_speed_100m, temperature_2m)
+  ↓
+① 风速高度外推: 100m → 测风塔高度(140m) → 轮毂高度
+   使用幂律公式: v₂ = v₁ × (h₂/h₁)^α
+  ↓
+② 年均风速校准（可选）: v₁₄₀ ×= target / mean(v₁₄₀)
+  ↓
+③ 构建自定义功率曲线:
+   - 切入~额定: P = ((v-cut_in)/(rated_speed-cut_in))³ × rated_power
+   - 额定~切出: P = rated_power
+  ↓
+④ 单机功率 → windpowerlib ModelChain
+  ↓
+⑤ 风场聚合: 单机功率 × 台数(装机容量/单机容量)
+  ↓
+⑥ 二次标定 rescale_wind_output_to_target_flh():
+   迭代 8 次:
+     a) 全局缩放至目标能量
+     b) 削峰至 max_power_ratio × 装机
+     c) 将被削能量回补至未饱和时段
+   目标: 峰值 ≤ 1.2×装机 且 年 FLH ≈ target
+  ↓
+输出: SimulationResult (含缓存)
 ```
 
-## 输出口径
+**风场级聚合控制（核心算法）：**
 
-- `PVSimulator.simulate()` 输出指定 MW 光伏容量下的 MW 出力曲线。
-- `WindSimulator.simulate()` 输出指定 MW 风电容量下的 MW 出力曲线。
-- `load_or_build_pv_profile()` 输出指定 kWp 光伏容量下的 kW 出力曲线。
-- `load_or_build_wind_profile()` 输出指定 MW 风电容量下的 MW 出力曲线。
+`rescale_wind_output_to_target_flh()` 实现"削峰回补"策略，确保：
+- 峰值出力不超过 `max_power_ratio × farm_capacity_mw`（默认 1.2 倍）
+- 年等效满发小时数精确对标目标值
+- 能量守恒（削峰损失的电量在低出力时段回补）
 
-容量规划算法如需单位出力曲线，应在调用侧显式归一化，例如：
+### 5.2 风电 v2：`WindSimulator` 类
+
+面向实测气象数据的风电仿真器，自动从 windpowerlib 内置库匹配风机机型。
+
+**仿真流程：**
+
+```
+输入: weather_df (wind_speed, temperature, pressure) + equiv_hours + target_capacity_mw
+  ↓
+① 机型选择 → _select_turbine():
+   遍历 windpowerlib 内置库，逐一实例化获取额定功率
+   - 指定单机容量: 选最接近的机型
+   - 未指定: 选中位数机型
+   (结果由 lru_cache 缓存)
+  ↓
+② 风速外推: ref_height → hub_height（幂律）
+  ↓
+③ 构建 MultiIndex 列格式 → windpowerlib ModelChain
+  ↓
+④ 单机功率 → 归一化为容量因子 [0, 1]
+  ↓
+⑤ 应用系统综合效率(0.92): 尾流损耗 + 可用率 + 集电线损
+  ↓
+⑥ 校准: K = equiv_hours / (原始等效小时数)
+  ↓
+⑦ 缩放: output_kw = cf × eff × K × target_capacity_mw × 1000
+  ↓
+输出: SimulationResult (含 selected_turbine, turbine_count)
+```
+
+**关键参数：**
+
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| `_SYSTEM_EFF` | 0.92 | 尾流损耗 + 可用率 + 集电线损 |
+| `hub_height` | 100.0 m | 默认轮毂高度 |
+| `wind_shear_exp` | 0.143 | 默认风切变指数 |
+| `wind_speed_ref_height` | 10.0 m | 气象数据参考高度 |
+
+---
+
+## 6. 版本对比
+
+### 光伏 v1 vs v2
+
+| 维度 | v1 (PVProfileConfig) | v2 (PVSimulator) |
+|------|---------------------|------------------|
+| 入口方式 | 配置类 + 函数式 | 类封装 |
+| 气象输入 | GHI 或 time_index | 必须 GHI |
+| 辐照分解 | Ineichen 清晰天空 或 DISC | DISC |
+| 斜面模型 | 默认 Perez | Hay-Davies |
+| 组件温度 | pvsyst_cell | SAPM (open-rack) |
+| 缓存支持 | ✅ | ❌ |
+| 多模式 | clear_sky / weather_driven / replay | 单一模式 |
+
+### 风电 v1 vs v2
+
+| 维度 | v1 (WindProfileConfig) | v2 (WindSimulator) |
+|------|----------------------|-------------------|
+| 入口方式 | 配置类 + 函数式 | 类封装 |
+| 机型定义 | 手动定义功率曲线 | 自动匹配 windpowerlib 内置库 |
+| 风速校准 | 年均风速 + FLH 双重校准 | 仅 FLH 校准 |
+| 峰值约束 | 削峰回补（max_power_ratio） | 无显式峰值约束 |
+| 系统效率 | 无独立系数（含在校准中） | 0.92 综合折减 |
+| 缓存支持 | ✅ | ❌ |
+| 气象获取 | 自动 (Open-Meteo) | 外部传入 |
+
+---
+
+## 7. 外部依赖
+
+| 库 | 用途 |
+|----|------|
+| `pvlib` | 太阳位置、辐照分解、斜面辐照、组件温度、PVWatts DC/AC |
+| `windpowerlib` | 风机功率曲线、ModelChain、机型库 |
+| `pandas` | 时序数据处理 |
+| `numpy` | 数值计算 |
+| `ele_trading.data_provider` | 气象数据获取（Open-Meteo，仅 v1） |
+
+---
+
+## 8. 使用示例
+
+### 光伏 v1（配置驱动）
 
 ```python
-pv_unit_kw = pv_profile.power_series / pv_cfg.capacity_kwp
-wind_unit_kw = wind_profile.power_series / wind_cfg.farm_capacity_mw * 1000.0
+from ele_trading.resource_simulation import PVProfileConfig, load_or_build_pv_profile
+
+config = PVProfileConfig(
+    latitude=30.5928,
+    longitude=114.3055,
+    timezone="Asia/Shanghai",
+    capacity_kwp=100000,
+    tilt=None,         # 自动取纬度
+    azimuth=180.0,
+    system_loss=0.15,
+    temp_coeff=-0.004,
+    cloud_factor=0.8,  # 仅清晰天空模式
+    mode="clear_sky",
+)
+result = load_or_build_pv_profile(
+    config=config,
+    time_index=pd.date_range("2024-01-01", "2024-12-31 23:00", freq="h"),
+)
 ```
 
-如果直接使用仿真器且 `target_capacity_mw = 1.0`：
+### 光伏 v2（仿真器类）
 
 ```python
-pv_unit_kw = solar_result.output_mw
-wind_unit_kw = wind_result.output_mw * 1000.0
+from ele_trading.resource_simulation import PVSimulator
+
+sim = PVSimulator(latitude=30.5928, longitude=114.3055)
+result = sim.simulate(
+    weather_df=weather_df,       # 含 ghi, temp_air, wind_speed
+    equiv_hours=1200.0,
+    target_capacity_mw=100.0,
+)
 ```
 
-原因是容量规划中的单位出力约定为：
+### 风电 v1（配置驱动）
 
-| 输入 | 语义 | 单位 |
-|------|------|------|
-| `pv_unit_kw` | 1 kWp 光伏装机对应的出力 | kW |
-| `wind_unit_kw` | 1 MW 风电装机对应的出力 | kW |
+```python
+from ele_trading.resource_simulation import WindProfileConfig, load_or_build_wind_profile
 
-所以：
-
-```text
-pv_unit_kw_t = pv_kw_t / capacity_kwp
-wind_unit_kw_t = wind_mw_t / farm_capacity_mw * 1000
+config = WindProfileConfig(
+    year=2024,
+    freq="1h",
+    farm_capacity_mw=200,
+    mean_wind_speed_target=7.5,
+    target_full_load_hours=2200,
+    meteo_height_m=100.0,
+    met_mast_height_m=140.0,
+    hub_height_m=140.0,
+    shear_alpha=0.14,
+    rated_power_kw=5000,
+    cut_in=3.0,
+    rated_speed=11.0,
+    cut_out=25.0,
+    max_power_ratio=1.2,
+    mode="resource_simulation",
+)
+result = load_or_build_wind_profile(config=config)
 ```
 
-## 缓存边界
+### 风电 v2（仿真器类）
 
-`load_or_build_pv_profile()` 和 `load_or_build_wind_profile()` 支持 `cache_path`。当缓存文件存在时会直接读取 CSV，不重新仿真；修改站点、容量、等效小时数或气象来源后，应刷新缓存或更换缓存路径。
+```python
+from ele_trading.resource_simulation import WindSimulator
 
-当前缓存只按 `cache_path` 是否存在判断是否复用，不会自动校验缓存内容是否匹配当前配置。真实项目中建议让缓存文件名包含关键参数，例如年份、站点、装机容量、等效小时数和模式。
+sim = WindSimulator(hub_height=100.0)
+result = sim.simulate(
+    weather_df=weather_df,       # 含 wind_speed, temperature, pressure
+    equiv_hours=2000.0,
+    target_capacity_mw=200.0,
+)
+```

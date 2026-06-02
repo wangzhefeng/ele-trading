@@ -24,8 +24,6 @@ from ele_trading.capacity_planning import (
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 
-CONFIG_PATH = PROJECT_ROOT / 'configs' / 'wind_pv_bess_irr_planning.yaml'
-
 
 def _load_demand(csv_path: Path) -> pd.DataFrame:
     """从 CSV 读取真实负荷数据。
@@ -63,7 +61,7 @@ def _build_wind_unit_curve(config: dict, cache_path: Path) -> pd.Series:
     wind_cfg = WindProfileConfig(**wind_cfg_dict)
 
     # 气象数据缓存
-    weather_cache = PROJECT_ROOT / "data" / "profit_calc" / "wind_pv_bess" / "v1" / "weather_cache.csv"
+    weather_cache = cache_path.parent / "weather_cache.csv"
     if weather_cache.exists():
         weather_df = pd.read_csv(weather_cache, parse_dates=["timestamp"]).set_index("timestamp")
     else:
@@ -155,21 +153,22 @@ def _to_config(config: dict) -> WindPVBESSIRRPlanConfig:
     )
 
 
-def main() -> None:
+def main() -> None: 
+    CONFIG_PATH = PROJECT_ROOT / 'configs' / 'wind_pv_bess_irr_planning.yaml'
     config = read_yaml(CONFIG_PATH)
+    
+    data_dir = PROJECT_ROOT / "data" / "profit_calc" / "wind_pv_bess" / "v1"
 
     # 1. 加载真实负荷数据
-    load_csv = PROJECT_ROOT / "data" / "profit_calc" / "wind_pv_bess" / "v1" / "demand_load.csv"
-    df_load = _load_demand(load_csv)
+    df_load = _load_demand(csv_path=data_dir / "demand_load.csv")
     logger.info("负荷数据加载完成: %d 行, 时间范围 %s ~ %s", len(df_load), df_load["Time"].iloc[0], df_load["Time"].iloc[-1])
 
     idx = pd.DatetimeIndex(df_load["Time"])
 
     # 2. 风电单位出力曲线（已有缓存则直接读取，否则仿真并保存）
-    data_dir = PROJECT_ROOT / "data" / "profit_calc" / "wind_pv_bess" / "v1"
     wind_curve_path = data_dir / "wind_unit_curve.csv"
     logger.info("风电单位出力曲线 (1MW)...")
-    wind_unit = _build_wind_unit_curve(config, wind_curve_path)
+    wind_unit = _build_wind_unit_curve(config, cache_path=wind_curve_path)
     logger.info("风电单位出力曲线就绪 (行数=%d, 均值=%.2f kW/MW)", len(wind_unit), wind_unit.mean())
 
     # 3. 光伏单位出力曲线（已有缓存则直接读取，否则仿真并保存）
