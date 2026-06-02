@@ -275,11 +275,11 @@ def plan_wind_pv_bess_for_target_irr(
     # 风光储容量组合搜索算法
     candidates: list[dict[str, Any]] = []
     diagnostics: list[dict[str, Any]] = []
-    for wind_mw in inclusive_float_range(0.0, cfg.wind_max_mw, cfg.wind_step_mw):
+    for wind_mw in inclusive_float_range(10.0, cfg.wind_max_mw, cfg.wind_step_mw):
         wind_kw_arr = wind_unit_arr * float(wind_mw)
-        for pv_mw in inclusive_float_range(0.0, cfg.pv_max_mw, cfg.pv_step_mw):
+        for pv_mw in inclusive_float_range(10.0, cfg.pv_max_mw, cfg.pv_step_mw):
             pv_kw_arr = pv_unit_arr * float(pv_mw) * 1000.0
-            for bess_mwh in inclusive_float_range(0.0, cfg.bess_max_mwh, cfg.bess_step_mwh):
+            for bess_mwh in inclusive_float_range(20.0, cfg.bess_max_mwh, cfg.bess_step_mwh):
                 # 年度调度模型
                 st = _dispatch_annual(
                     load_kw = load_kw_arr,
