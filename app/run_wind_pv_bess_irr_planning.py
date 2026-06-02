@@ -63,7 +63,7 @@ def _build_wind_unit_curve(config: dict, cache_path: Path) -> pd.Series:
     wind_cfg = WindProfileConfig(**wind_cfg_dict)
 
     # 气象数据缓存
-    weather_cache = PROJECT_ROOT / "data" / "profit_calc" / "wind_pv_bess" / "weather_cache.csv"
+    weather_cache = PROJECT_ROOT / "data" / "profit_calc" / "wind_pv_bess" / "v1" / "weather_cache.csv"
     if weather_cache.exists():
         weather_df = pd.read_csv(weather_cache, parse_dates=["timestamp"]).set_index("timestamp")
     else:
@@ -166,7 +166,7 @@ def main() -> None:
     idx = pd.DatetimeIndex(df_load["Time"])
 
     # 2. 风电单位出力曲线（已有缓存则直接读取，否则仿真并保存）
-    data_dir = PROJECT_ROOT / "data" / "profit_calc" / "wind_pv_bess"
+    data_dir = PROJECT_ROOT / "data" / "profit_calc" / "wind_pv_bess" / "v1"
     wind_curve_path = data_dir / "wind_unit_curve.csv"
     logger.info("风电单位出力曲线 (1MW)...")
     wind_unit = _build_wind_unit_curve(config, wind_curve_path)

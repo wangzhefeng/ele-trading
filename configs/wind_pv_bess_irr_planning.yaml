@@ -53,9 +53,9 @@ capacity:
   bess_max_mwh: 1000.0
 
 search:
-  wind_step_mw: 10.0
-  pv_step_mw: 10.0
-  bess_step_mwh: 20.0
+  wind_step_mw: 5.0
+  pv_step_mw: 5.0
+  bess_step_mwh: 5.0
 
 bess:
   eta_roundtrip: 0.92
