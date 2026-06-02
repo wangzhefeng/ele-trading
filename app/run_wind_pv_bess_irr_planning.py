@@ -42,13 +42,20 @@ def _load_demand(csv_path: Path) -> pd.DataFrame:
     return df.sort_values("Time").reset_index(drop=True)
 
 
-def _build_wind_unit_curve(config: dict) -> pd.Series:
+def _build_wind_unit_curve(config: dict, cache_path: Path) -> pd.Series:
     """使用 wind_simulation_v1 仿真 1MW 风电的单位出力曲线 (kW per MW)。
 
-    仿真一次后可直接按候选容量缩放。
+    如果 cache_path 已存在则直接读取，否则仿真后保存。
     """
     from ele_trading.resource_simulation import WindProfileConfig, load_or_build_wind_profile
     from ele_trading.data_provider.resource_weather import fetch_weather_open_meteo
+
+    # 读取缓存
+    if cache_path.exists():
+        logger.info("读取已有的风电单位出力曲线: %s", cache_path)
+        series = pd.read_csv(cache_path, parse_dates=["timestamp"]).set_index("timestamp").iloc[:, 0]
+        series.name = "wind_unit_kw"
+        return series
 
     wind_cfg_dict = dict(config["wind_simulation"])
     site = config["site"]
@@ -75,15 +82,27 @@ def _build_wind_unit_curve(config: dict) -> pd.Series:
     series = result.power_series.rename("wind_unit_kw")
     if series.index.tz is not None:
         series.index = series.index.tz_localize(None)
+
+    # 保存缓存
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    series.to_frame().to_csv(cache_path, index_label="timestamp")
+    logger.info("风电单位出力曲线已保存: %s", cache_path)
     return series
 
 
-def _build_pv_unit_curve(config: dict, time_index: pd.DatetimeIndex) -> pd.Series:
+def _build_pv_unit_curve(config: dict, time_index: pd.DatetimeIndex, cache_path: Path) -> pd.Series:
     """使用 pv_simulation_v1 仿真 1kWp 光伏的单位出力曲线 (kW per kWp)。
 
-    仿真一次后可直接按候选容量缩放。
+    如果 cache_path 已存在则直接读取，否则仿真后保存。
     """
     from ele_trading.resource_simulation import PVProfileConfig, load_or_build_pv_profile
+
+    # 读取缓存
+    if cache_path.exists():
+        logger.info("读取已有的光伏单位出力曲线: %s", cache_path)
+        series = pd.read_csv(cache_path, parse_dates=["timestamp"]).set_index("timestamp").iloc[:, 0]
+        series.name = "pv_unit_kw"
+        return series
 
     pv_cfg_dict = dict(config["pv_simulation"])
     pv_cfg_dict["capacity_kwp"] = 1.0
@@ -93,6 +112,11 @@ def _build_pv_unit_curve(config: dict, time_index: pd.DatetimeIndex) -> pd.Serie
     series = result.power_series.rename("pv_unit_kw")
     if series.index.tz is not None:
         series.index = series.index.tz_localize(None)
+
+    # 保存缓存
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    series.to_frame().to_csv(cache_path, index_label="timestamp")
+    logger.info("光伏单位出力曲线已保存: %s", cache_path)
     return series
 
 
@@ -141,20 +165,18 @@ def main() -> None:
 
     idx = pd.DatetimeIndex(df_load["Time"])
 
-    # 2. 仿真风电单位出力曲线
-    logger.info("开始仿真风电单位出力曲线 (1MW)...")
-    wind_unit = _build_wind_unit_curve(config)
-    wind_curve_path = PROJECT_ROOT / "data" / "profit_calc" / "wind_pv_bess" / "wind_unit_curve.csv"
-    wind_curve_path.parent.mkdir(parents=True, exist_ok=True)
-    wind_unit.to_frame().to_csv(wind_curve_path, index_label="timestamp")
-    logger.info("风电单位出力曲线已保存: %s (行数=%d, 均值=%.2f kW/MW)", wind_curve_path, len(wind_unit), wind_unit.mean())
+    # 2. 风电单位出力曲线（已有缓存则直接读取，否则仿真并保存）
+    data_dir = PROJECT_ROOT / "data" / "profit_calc" / "wind_pv_bess"
+    wind_curve_path = data_dir / "wind_unit_curve.csv"
+    logger.info("风电单位出力曲线 (1MW)...")
+    wind_unit = _build_wind_unit_curve(config, wind_curve_path)
+    logger.info("风电单位出力曲线就绪 (行数=%d, 均值=%.2f kW/MW)", len(wind_unit), wind_unit.mean())
 
-    # 3. 仿真光伏单位出力曲线
-    logger.info("开始仿真光伏单位出力曲线 (1kWp)...")
-    pv_unit = _build_pv_unit_curve(config, idx)
-    pv_curve_path = PROJECT_ROOT / "data" / "profit_calc" / "wind_pv_bess" / "pv_unit_curve.csv"
-    pv_unit.to_frame().to_csv(pv_curve_path, index_label="timestamp")
-    logger.info("光伏单位出力曲线已保存: %s (行数=%d, 均值=%.4f kW/kWp)", pv_curve_path, len(pv_unit), pv_unit.mean())
+    # 3. 光伏单位出力曲线（已有缓存则直接读取，否则仿真并保存）
+    pv_curve_path = data_dir / "pv_unit_curve.csv"
+    logger.info("光伏单位出力曲线 (1kWp)...")
+    pv_unit = _build_pv_unit_curve(config, idx, pv_curve_path)
+    logger.info("光伏单位出力曲线就绪 (行数=%d, 均值=%.4f kW/kWp)", len(pv_unit), pv_unit.mean())
 
     # 4. 运行容量规划
     cfg = _to_config(config)

@@ -16,31 +16,31 @@ class WindProfileConfig:
     """
     定义风场级别的关键参数，如装机规模、轮毂高度、功率曲线参数、等效利用小时数目标、峰值比例限制等
     """
-    year: int # TODO 补充注释
-    freq: str # TODO 补充注释
-    farm_capacity_mw: float # TODO 补充注释
-    
+    year: int  # 仿真目标年份，用于确定气象数据取值范围
+    freq: str  # 时间分辨率，如 "1h"、"5min"，决定输出时序粒度
+    farm_capacity_mw: float  # 风场总装机容量 (MW)
+
     # 校正目标
     # old_name: mean_wind_speed_140m
-    mean_wind_speed_target: float | None # TODO 补充注释
+    mean_wind_speed_target: float | None  # 测风塔高度处的年均风速校准目标 (m/s)，None 表示不校准
     # old_name: eq_full_load_hours
-    target_full_load_hours: float | None # TODO 补充注释
+    target_full_load_hours: float | None  # 年等效满发小时数目标 (h)，用于二次标定发电量
     # 高度与地形
-    meteo_height_m: float # TODO 补充注释
-    met_mast_height_m: float # TODO 补充注释
-    hub_height_m: float # TODO 补充注释
-    shear_alpha: float # TODO 补充注释
-    
+    meteo_height_m: float  # 气象数据的风速测量高度 (m)，如 Open-Meteo 的 100m
+    met_mast_height_m: float  # 测风塔高度 (m)，用于风速外推的中间参考高度
+    hub_height_m: float  # 风机轮毂高度 (m)，最终风速外推到此高度
+    shear_alpha: float  # 风切变指数，幂律风速廓线的高度换算参数
+
     # 风机（≤8MW，低风速）
-    rated_power_kw: float # TODO 补充注释
-    cut_in: float # TODO 补充注释
-    rated_speed: float # TODO 补充注释
-    cut_out: float # TODO 补充注释
-    
+    rated_power_kw: float  # 单机额定功率 (kW)
+    cut_in: float  # 切入风速 (m/s)，低于此风速风机不发电
+    rated_speed: float  # 额定风速 (m/s)，达到此风速后出力恒定在额定值
+    cut_out: float  # 切出风速 (m/s)，超过此风速风机停机保护
+
     # 峰值 ≤ 1.2 × 装机
-    max_power_ratio: float # TODO 补充注释
-    
-    mode: str # TODO 补充注释
+    max_power_ratio: float  # 最大出力与装机容量的比值上限，用于削峰约束
+
+    mode: str  # 运行模式: "resource_simulation" 自动获取气象数据仿真
 
 
 def power_law(speed: pd.Series, h_from: float, h_to: float, alpha: float) -> pd.Series:
@@ -120,12 +120,12 @@ def rescale_wind_output_to_target_flh(
         3) 能量守恒（削峰后通过未饱和时段回补）
 
     Args:
-        power_mw (np.ndarray): _description_
-        dt_hours (float): _description_
-        config (WindProfileConfig): _description_
+        power_mw (np.ndarray): 原始风场出力时序 (MW)
+        dt_hours (float): 时间步长 (小时)
+        config (WindProfileConfig): 风场配置，含装机容量、满发小时数目标、峰值比例上限
 
     Returns:
-        np.ndarray: _description_
+        np.ndarray: 标定后的风场出力时序 (MW)，满足峰值约束且年发电量接近目标
     """
     if config.target_full_load_hours is None:
         return np.clip(power_mw, 0.0, config.farm_capacity_mw * config.max_power_ratio)
@@ -196,7 +196,7 @@ def load_or_build_wind_profile(
         output = Path(cache_path)
         output.parent.mkdir(parents=True, exist_ok=True)
         series.rename("wind_kw").to_frame().to_csv(output, index_label="timestamp")
-    # TODO 补充注释
+    # 推断时间步长
     dt_hours = 1.0
     if len(series) > 1:
         dt_hours = (series.index[1] - series.index[0]).total_seconds() / 3600.0
