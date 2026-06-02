@@ -9,7 +9,7 @@ from windpowerlib import ModelChain, WindTurbine
 
 from ele_trading.data_provider.resource_weather import fetch_weather_open_meteo
 
-from .pv_profile import RenewableProfileResult
+from .pv_simulation_v1 import RenewableProfileResult
 
 
 @dataclass(slots=True)

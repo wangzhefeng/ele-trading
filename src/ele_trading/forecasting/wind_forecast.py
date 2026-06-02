@@ -61,7 +61,7 @@ class WindPowerForecaster:
             capacity_mw: Installed capacity (MW).
             equiv_hours: Annual equivalent full-load hours for calibration.
         """
-        from ele_trading.resource_simulation.wind_simulation import WindSimulator
+        from ele_trading.resource_simulation.wind_simulation_v2 import WindSimulator
         sim = WindSimulator(
             hub_height=self.hub_height,
             wind_shear_exp=self.wind_shear_exp,

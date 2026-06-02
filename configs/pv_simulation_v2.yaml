@@ -1,0 +1,22 @@
+site:
+  latitude: 28.42
+  longitude: 117.88
+  timezone: Asia/Shanghai
+
+run:
+  target_year: 2025
+  freq: 1h
+  refresh_mode: regenerate
+
+paths:
+  output: data/profit_calc/wind_pv_bess/v2/pv_power.csv
+
+pv_simulation:
+  latitude: 28.42
+  longitude: 117.88
+  timezone: Asia/Shanghai
+  tilt: null
+  azimuth: 180.0
+  altitude: 0.0
+  equiv_hours: 1200.0
+  target_capacity_mw: 28.25

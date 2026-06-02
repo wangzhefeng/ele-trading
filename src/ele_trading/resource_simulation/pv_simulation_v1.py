@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pvlib
 
-from .pv_simulation import PVSimulator
+from .pv_simulation_v2 import PVSimulator
 
 
 @dataclass(slots=True)

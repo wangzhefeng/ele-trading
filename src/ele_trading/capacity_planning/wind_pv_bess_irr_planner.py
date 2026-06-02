@@ -12,19 +12,7 @@ from ele_trading.utils.data_alignment import as_time_series, align_to_time
 from ele_trading.utils.num_utils import inclusive_float_range
 from ele_trading.utils.time_index import infer_dt_hours
 
-from .wind_pv_bess_planner import _dispatch_annual
-
-# Numba 兼容层
-try:
-    from numba import njit
-    _NUMBA_OK = True
-except Exception:
-    _NUMBA_OK = False
-
-    def njit(*args, **kwargs):
-        def deco(f):
-            return f
-        return deco
+from .dispatch_algo import _dispatch_annual
 
 
 @dataclass(slots=True)
@@ -91,17 +79,17 @@ class WindPVBESSIRRResult:
 
 def _prepare_arrays(df_load: pd.DataFrame, wind_unit_kw: pd.Series | pd.DataFrame, pv_unit_kw: pd.Series | pd.DataFrame, load_col: str, time_col: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
     """
-    TODO 补充注释
+    数据预处理：将负荷、风电、光伏数据对齐到统一时间轴并转为连续数组。
 
     Args:
-        df_load (pd.DataFrame): _description_
-        wind_unit_kw (pd.Series | pd.DataFrame): _description_
-        pv_unit_kw (pd.Series | pd.DataFrame): _description_
-        load_col (str): _description_
-        time_col (str): _description_
+        df_load (pd.DataFrame): 负荷数据 DataFrame
+        wind_unit_kw (pd.Series | pd.DataFrame): 风电单位出力曲线（每 MW 对应的 kW 出力）
+        pv_unit_kw (pd.Series | pd.DataFrame): 光伏单位出力曲线（每 kWp 对应的 kW 出力）
+        load_col (str): 负荷列名
+        time_col (str): 时间列名
 
     Returns:
-        tuple[np.ndarray, np.ndarray, np.ndarray, float]: _description_
+        tuple[np.ndarray, np.ndarray, np.ndarray, float]: (负荷数组, 风电单位出力数组, 光伏单位出力数组, 时间步长小时数)
     """
     # 取出 Time 和 P_kw
     df = df_load[[time_col, load_col]].copy()
@@ -119,7 +107,7 @@ def _prepare_arrays(df_load: pd.DataFrame, wind_unit_kw: pd.Series | pd.DataFram
         scale=1.0,
     )
     wind_unit_arr = align_to_time(df[time_col], wind_s)
-    # 将风、光单位出力曲线对齐到负荷时间轴
+    # 将光伏单位出力曲线对齐到负荷时间轴
     pv_s = as_time_series(
         pv_unit_kw,
         time_col=time_col,
@@ -135,7 +123,10 @@ def _prepare_arrays(df_load: pd.DataFrame, wind_unit_kw: pd.Series | pd.DataFram
 
 def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[str, float], cfg: WindPVBESSIRRPlanConfig) -> dict[str, Any]:
     """
-    TODO 完善注释：评估单个风光储组合
+    评估单个风光储容量组合的可行性与经济性。
+
+    依次检查：物理约束（发电/消纳/负荷非零）、绿电消纳率与负荷覆盖率、
+    绿电/PPA 价格为正、IRR 是否在目标容差内。
     """
     # 绿电发电量
     gen = st["ren_gen_kwh"]
@@ -170,7 +161,7 @@ def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[
     ) / used
     # PPA 价格再扣除绿电附加价
     ppa_price = green_price - cfg.green_price_adder_yuan_per_kwh
-    # TODO 补充注释
+    # 业主综合电价 = (绿电用电量×绿电价 + 电网购电量×电网电价) / 总用电量
     owner_avg_price = (
         green_price * used + cfg.grid_buy_price_yuan_per_kwh * grid_buy_kwh
     ) / load
@@ -229,15 +220,15 @@ def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[
 
 def _result_from_row(status: str, row: dict[str, Any], diagnostics: pd.DataFrame | None) -> WindPVBESSIRRResult:
     """
-    TODO 补充注释
+    从评估结果字典构造 WindPVBESSIRRResult 对象。
 
     Args:
-        status (str): _description_
-        row (dict[str, Any]): _description_
-        diagnostics (pd.DataFrame | None): _description_
+        status (str): 结果状态，"ok" 或 "no_solution"
+        row (dict[str, Any]): 候选组合的评估结果字典
+        diagnostics (pd.DataFrame | None): 候选诊断表
 
     Returns:
-        WindPVBESSIRRResult: _description_
+        WindPVBESSIRRResult: 容量规划结果对象
     """
     return WindPVBESSIRRResult(
         status=status,
@@ -278,7 +269,7 @@ def plan_wind_pv_bess_for_target_irr(
         df_load, wind_unit_kw, pv_unit_kw, load_col, time_col
     )
     
-    # TODO 补充注释
+    # 将充放切换间隔（小时）转换为时间步数
     switch_gap_steps = int(round(cfg.switch_gap_hours / dt_hours)) if cfg.switch_gap_hours > 0 else 0
 
     # 风光储容量组合搜索算法
@@ -300,7 +291,7 @@ def plan_wind_pv_bess_for_target_irr(
                     cfg = cfg,
                     switch_gap_steps = switch_gap_steps,
                 )
-                # TODO 补充注释
+                # 对当前风光储组合进行物理约束、价格约束和 IRR 约束的综合评估
                 evaluated = _evaluate_candidate(float(wind_mw), float(pv_mw), float(bess_mwh), st, cfg)
                 reason = evaluated.pop("reason")
                 # 物理约束满足、PPA 为正、IRR 在目标容差内
@@ -309,11 +300,11 @@ def plan_wind_pv_bess_for_target_irr(
                 # 物理约束不满足, 不会作为可行解，但会进入 diagnostics
                 elif reason in {"non_positive_ppa", "irr_out_of_tolerance"}:
                     diagnostics.append({**evaluated, "reason": reason})
-    # TODO 补充注释
+    # 存在满足所有约束的候选组合，选取总投资最低且 IRR 偏差最小的方案
     if candidates:
         best = min(candidates, key=lambda row: (row["total_capex_yuan"], row["irr_gap"]))
         return _result_from_row("ok", best, pd.DataFrame(candidates))
-    # TODO 补充注释
+    # 无满足所有约束的候选，返回 PPA/IRR 不满足的诊断信息供参考
     if diagnostics:
         diag_df = pd.DataFrame(diagnostics).sort_values("irr_gap", na_position="last").reset_index(drop=True)
         return WindPVBESSIRRResult(
@@ -321,7 +312,7 @@ def plan_wind_pv_bess_for_target_irr(
             diagnostics=diag_df,
             message="未找到满足 PPA/IRR 约束的风光储组合。",
         )
-    # TODO 补充注释
+    # 所有候选均不满足物理消纳约束，返回空诊断信息
     return WindPVBESSIRRResult(
         status="no_solution",
         diagnostics=pd.DataFrame(),
