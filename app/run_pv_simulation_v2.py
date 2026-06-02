@@ -70,9 +70,8 @@ def run_pv_simulation_v2(config: dict[str, Any]) -> pd.DataFrame:
         target_capacity_mw=float(pv_cfg["target_capacity_mw"]),
     )
 
-    # 输出为 timestamp, pv_kw 格式（MW → kW）
-    pv_kw = result.output_mw * 1000.0
-    df = pv_kw.rename("pv_kw").to_frame().reset_index()
+    # 输出为 timestamp, pv_kw 格式
+    df = result.power_series.rename("pv_kw").to_frame().reset_index()
     df.columns = ["timestamp", "pv_kw"]
 
     output_path = _resolve_path(paths["output"])

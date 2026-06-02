@@ -13,8 +13,23 @@ def fetch_weather_open_meteo(
     longitude: float,
     start_date: str,
     end_date: str,
-    hourly_fields: list[str],
+    hourly_fields: list[str] =["wind_speed_100m", "temperature_2m"],
 ) -> pd.DataFrame:
+    """
+    Open-Meteo 接口获取 ERA5-Land 小时级天气数据，主要使用风速和气温作为风电建模输入
+    返回列：Time, wind_speed_100m, temperature_2m
+
+    TODO 补充注释
+    Args:
+        latitude (float): _description_
+        longitude (float): _description_
+        start_date (str): _description_
+        end_date (str): _description_
+        hourly_fields (list[str]): _description_
+
+    Returns:
+        pd.DataFrame: _description_
+    """
     url = "https://archive-api.open-meteo.com/v1/era5"
     params = {
         "latitude": latitude,
@@ -31,6 +46,7 @@ def fetch_weather_open_meteo(
     data = {"timestamp": pd.to_datetime(hourly["time"])}
     for field in hourly_fields:
         data[field] = hourly[field]
+    
     return ensure_datetime_column(pd.DataFrame(data))
 
 

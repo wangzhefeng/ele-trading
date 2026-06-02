@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pvlib
 
+from .models import SimulationResult
 from .pv_simulation_v2 import PVSimulator
 
 
@@ -21,13 +22,6 @@ class PVProfileConfig:
     temp_coeff: float
     cloud_factor: float | None
     mode: str
-
-
-@dataclass(slots=True)
-class RenewableProfileResult:
-    power_series: pd.Series
-    metadata: dict[str, float | str]
-    quality_flags: pd.DataFrame | None = None
 
 
 def simulate_pv_clear_sky(time_index: pd.DatetimeIndex, config: PVProfileConfig) -> pd.Series:
@@ -75,7 +69,7 @@ def simulate_pv_from_weather(weather_df: pd.DataFrame, config: PVProfileConfig) 
         equiv_hours=float(weather_df.attrs.get("equiv_hours", 1200.0)),
         target_capacity_mw=capacity_mw,
     )
-    return (result.output_mw * 1000.0).rename("pv_kw")
+    return result.power_series.rename("pv_kw")
 
 
 def validate_equivalent_hours(power_series: pd.Series, capacity_kwp: float) -> float:
@@ -91,7 +85,7 @@ def load_or_build_pv_profile(
     time_index: pd.DatetimeIndex | None = None,
     weather_df: pd.DataFrame | None = None,
     cache_path: str | Path | None = None,
-) -> RenewableProfileResult:
+) -> SimulationResult:
     if cache_path is not None and Path(cache_path).exists():
         cached = pd.read_csv(cache_path, index_col="timestamp", parse_dates=True)
         series = cached.iloc[:, 0].rename("pv_kw")
@@ -115,12 +109,17 @@ def load_or_build_pv_profile(
         output.parent.mkdir(parents=True, exist_ok=True)
         series.rename("pv_kw").to_frame().to_csv(output, index_label="timestamp")
 
+    equiv_hours = validate_equivalent_hours(series, config.capacity_kwp)
+    dt_hours = (series.index[1] - series.index[0]).total_seconds() / 3600.0 if len(series) > 1 else 1.0
+    total_generation_mwh = float(series.sum() * dt_hours / 1000.0)
     metadata = {
         "mode": config.mode,
         "capacity_kwp": config.capacity_kwp,
-        "equivalent_hours": validate_equivalent_hours(series, config.capacity_kwp),
+        "equivalent_hours": equiv_hours,
     }
-    quality_flags = pd.DataFrame(
-        {"timestamp": pd.to_datetime(series.index), "quality_score": [1.0] * len(series)}
+    return SimulationResult(
+        power_series=series,
+        total_generation_mwh=total_generation_mwh,
+        scale_factor=1.0,
+        metadata=metadata,
     )
-    return RenewableProfileResult(power_series=series, metadata=metadata, quality_flags=quality_flags)

@@ -22,8 +22,8 @@ import numpy as np
 import pandas as pd
 
 from ele_trading.resource_simulation import (
-    PVSimulator, PVSimResult,
-    WindSimulator, WindSimResult,
+    PVSimulator, SimulationResult,
+    WindSimulator,
 )
 from ele_trading.capacity_planning.capacity_optimizer import (
     CapacityOptimizer, CapacityPlanResult, simulate_operation,
@@ -145,27 +145,27 @@ def run_scenario(name: str, config: dict, rng: np.random.Generator,
         latitude=latitude, longitude=longitude,
         timezone=timezone, altitude=50.0,
     )
-    pv_result: PVSimResult = pv_sim.simulate(
+    pv_result: SimulationResult = pv_sim.simulate(
         pv_weather, equiv_hours=pv_eq, target_capacity_mw=1.0,
     )
     logger.info(f'  等效小时数校准: {pv_result.total_generation_mwh:.1f} MWh/MW'
                 f'（目标 {pv_eq} h，K={pv_result.scale_factor:.4f}）')
 
     # ── Step 3: 风电出力模拟（1 MW 基准）────────
-    pv_unit = pv_result.output_mw
+    pv_unit = pv_result.power_series / 1000.0  # kW → per-unit MW
     if fixed_wind == 0.0:
         logger.info('Step 3  风电出力模拟（跳过，fixed_wind_mw=0）')
         wind_unit = pd.Series(0.0, index=pv_unit.index)
     else:
         logger.info('Step 3  风电出力模拟（windpowerlib）')
         wind_sim = WindSimulator(hub_height=100.0)
-        wind_result: WindSimResult = wind_sim.simulate(
+        wind_result: SimulationResult = wind_sim.simulate(
             wind_weather, equiv_hours=wind_eq, target_capacity_mw=1.0,
         )
         logger.info(f'  等效小时数校准: {wind_result.total_generation_mwh:.1f} MWh/MW'
                     f'（目标 {wind_eq} h，K={wind_result.scale_factor:.4f}）')
         logger.info(f'  选用机型: {wind_result.selected_turbine}')
-        wind_unit = wind_result.output_mw
+        wind_unit = wind_result.power_series / 1000.0  # kW → per-unit MW
 
     # ── Step 4: 容量规划优化 ──────────────────
     logger.info('Step 4  两阶段容量规划优化')

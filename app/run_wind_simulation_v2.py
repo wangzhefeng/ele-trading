@@ -67,9 +67,9 @@ def run_wind_simulation_v2(config: dict[str, Any]) -> pd.DataFrame:
         target_capacity_mw=float(wind_cfg["target_capacity_mw"]),
     )
 
-    # 输出为 timestamp, wind_power_mw 格式
-    df = result.output_mw.rename("wind_power_mw").to_frame().reset_index()
-    df.columns = ["timestamp", "wind_power_mw"]
+    # 输出为 timestamp, wind_power_kw 格式
+    df = result.power_series.rename("wind_power_kw").to_frame().reset_index()
+    df.columns = ["timestamp", "wind_power_kw"]
 
     output_path = _resolve_path(paths["output"])
     output_path.parent.mkdir(parents=True, exist_ok=True)

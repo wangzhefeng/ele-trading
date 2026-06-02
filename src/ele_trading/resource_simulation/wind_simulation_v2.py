@@ -7,18 +7,11 @@ import numpy as np
 import pandas as pd
 from windpowerlib import ModelChain, WindTurbine, get_turbine_types
 
+from .models import SimulationResult
+
 
 # 综合折减系数（尾流损耗 + 可用率 + 集电线损等）
 _SYSTEM_EFF = 0.92
-
-
-@dataclass(slots=True)
-class WindSimResult:
-    output_mw: pd.Series          # 出力时序（MW），与输入气象数据同频
-    total_generation_mwh: float   # 模拟年发电量（MWh）
-    scale_factor: float           # 等效小时数校准系数 K
-    selected_turbine: str         # 选用的机型名称
-    turbine_count: int            # 风机台数
 
 
 class WindSimulator:
@@ -46,7 +39,7 @@ class WindSimulator:
         equiv_hours: float,
         target_capacity_mw: float = 1.0,
         single_turbine_capacity_mw: float | None = None,
-    ) -> WindSimResult:
+    ) -> SimulationResult:
         """模拟风电场出力时间序列。
 
         Args:
@@ -57,8 +50,8 @@ class WindSimulator:
             single_turbine_capacity_mw: 指定单机容量（MW），None 则自动匹配中位数机型。
 
         Returns:
-            WindSimResult with output_mw, total_generation_mwh, scale_factor,
-            selected_turbine, turbine_count.
+            SimulationResult with power_series (kW), total_generation_mwh,
+            scale_factor, selected_turbine, turbine_count.
         """
         turbine_type, rated_mw = _select_turbine(self.hub_height, single_turbine_capacity_mw)
         turbine_count = max(1, round(target_capacity_mw / rated_mw))
@@ -77,12 +70,12 @@ class WindSimulator:
         e_raw_per_mw = (capacity_factor * _SYSTEM_EFF).sum() * dt_hours  # MWh/MW
         K = equiv_hours / e_raw_per_mw if e_raw_per_mw > 0 else 1.0
 
-        output_mw = capacity_factor * _SYSTEM_EFF * K * target_capacity_mw
-        output_mw.name = "wind_output_mw"
+        output_kw = capacity_factor * _SYSTEM_EFF * K * target_capacity_mw * 1000.0
+        output_kw.name = "wind_kw"
 
-        return WindSimResult(
-            output_mw=output_mw,
-            total_generation_mwh=float(output_mw.sum() * dt_hours),
+        return SimulationResult(
+            power_series=output_kw,
+            total_generation_mwh=float(output_kw.sum() * dt_hours / 1000.0),
             scale_factor=K,
             selected_turbine=turbine_type,
             turbine_count=turbine_count,

@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import pvlib
 
+from .models import SimulationResult
+
 
 # SAPM 开放架构组件（open-rack glass-glass）典型参数
 _SAPM_PARAMS = {"a": -3.56, "b": -0.075, "deltaT": 3}
@@ -14,13 +16,6 @@ _SAPM_PARAMS = {"a": -3.56, "b": -0.075, "deltaT": 3}
 _GAMMA_PDC = -0.004  # 功率温度系数 [1/°C]
 # 系统综合效率（逆变器 × 线损 × 其他损耗）
 _SYSTEM_EFF = 0.96
-
-
-@dataclass(slots=True)
-class PVSimResult:
-    output_mw: pd.Series         # 出力时序（MW），与输入气象数据同频
-    total_generation_mwh: float  # 模拟年发电量（MWh）
-    scale_factor: float          # 等效小时数校准系数 K
 
 
 class PVSimulator:
@@ -55,7 +50,7 @@ class PVSimulator:
         weather_df: pd.DataFrame,
         equiv_hours: float,
         target_capacity_mw: float = 1.0,
-    ) -> PVSimResult:
+    ) -> SimulationResult:
         """模拟光伏出力时序。
 
         Args:
@@ -65,7 +60,7 @@ class PVSimulator:
             target_capacity_mw: 目标装机容量（MW），默认 1 MW。
 
         Returns:
-            PVSimResult with output_mw, total_generation_mwh, scale_factor.
+            SimulationResult with power_series (kW), total_generation_mwh, scale_factor.
         """
         # 1. 计算太阳位置
         solar_pos = self._location.get_solarposition(weather_df.index)
@@ -122,13 +117,13 @@ class PVSimulator:
         e_target = 1.0 * equiv_hours     # MWh（目标，基于 1 MW 基准容量）
         K = e_target / e_raw if e_raw > 0 else 1.0
 
-        # 8. 应用校准系数并缩放到目标容量
-        output_mw = pac_mw * K * target_capacity_mw
-        output_mw.name = "pv_output_mw"
+        # 8. 应用校准系数并缩放到目标容量，转为 kW
+        output_kw = pac_mw * K * target_capacity_mw * 1000.0
+        output_kw.name = "pv_kw"
 
-        return PVSimResult(
-            output_mw=output_mw,
-            total_generation_mwh=float(output_mw.sum() * dt_hours),
+        return SimulationResult(
+            power_series=output_kw,
+            total_generation_mwh=float(output_kw.sum() * dt_hours / 1000.0),
             scale_factor=K,
         )
 

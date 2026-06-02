@@ -68,7 +68,7 @@ class WindPowerForecaster:
             wind_speed_ref_height=self.wind_speed_ref_height,
         )
         result = sim.simulate(weather_df, equiv_hours=equiv_hours, target_capacity_mw=capacity_mw)
-        point = result.output_mw.tolist()
+        point = (result.power_series / 1000.0).tolist()  # kW → MW
         horizon = len(point)
         lower = [min(max(0.0, p * 0.75), capacity_mw) for p in point]
         upper = [min(capacity_mw, p * 1.25) for p in point]

@@ -168,7 +168,7 @@ def test_load_or_build_wind_profile_from_local_weather_respects_cap():
     result = load_or_build_wind_profile(config=config, weather_df=weather_df)
 
     assert len(result.power_series) == len(weather_df)
-    assert result.power_series.max() <= 24.0 + 1e-6
+    assert result.power_series.max() <= 24000.0 + 1e-6  # kW (20 MW × 1.2)
     assert result.metadata["mode"] == "resource_simulation"
 
 

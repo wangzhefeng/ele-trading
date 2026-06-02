@@ -52,12 +52,11 @@ def run_wind_simulation_v1(config: dict[str, Any]) -> pd.DataFrame:
         end_date=f"{target_year}-12-31",
         hourly_fields=["wind_speed_100m", "temperature_2m"],
     ).set_index("timestamp")
-
     result = load_or_build_wind_profile(config=wind_cfg, weather_df=weather_df)
 
-    # 输出为 timestamp, wind_power_mw 格式
-    df = result.power_series.rename("wind_power_mw").to_frame().reset_index()
-    df.columns = ["timestamp", "wind_power_mw"]
+    # 输出为 timestamp, wind_power_kw 格式
+    df = result.power_series.rename("wind_power_kw").to_frame().reset_index()
+    df.columns = ["timestamp", "wind_power_kw"]
 
     output_path = _resolve_path(paths["output"])
     output_path.parent.mkdir(parents=True, exist_ok=True)

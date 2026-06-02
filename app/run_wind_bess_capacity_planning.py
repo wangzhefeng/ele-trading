@@ -22,7 +22,7 @@ from ele_trading.capacity_planning import (
     WindBESSPlanConfig, ShiftPolicy, WindBESSResult,
     plan_wind_bess_system,
 )
-from ele_trading.resource_simulation import WindSimulator, WindSimResult
+from ele_trading.resource_simulation import WindSimulator, SimulationResult
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 
@@ -117,15 +117,15 @@ def main():
     # ── Step 2: 风电出力模拟 ──────────────────
     logger.info('Step 2  风电出力模拟（windpowerlib）')
     wind_sim = WindSimulator(hub_height=100.0)
-    wind_result: WindSimResult = wind_sim.simulate(
+    wind_result: SimulationResult = wind_sim.simulate(
         wind_weather, equiv_hours=sc['wind_equiv_hours'], target_capacity_mw=1.0,
     )
     logger.info(f'  等效小时数: {wind_result.total_generation_mwh:.0f} h')
 
     # ── Step 3: 构造输入 DataFrame ────────────
     logger.info('Step 3  构造输入数据')
-    # 风电功率曲线（MW）= 单位出力(MW/MW) × 装机(MW)
-    wind_mw_series = wind_result.output_mw * cap['wind_farm_mw']
+    # 风电功率曲线（MW）= 单位出力(kW/kW) × 装机(MW)
+    wind_mw_series = wind_result.power_series / 1000.0 * cap['wind_farm_mw']
     df_wind = pd.DataFrame({
         'Time': wind_mw_series.index,
         'WindPower_MW': wind_mw_series.values,
