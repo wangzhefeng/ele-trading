@@ -11,8 +11,8 @@ from ele_trading.evaluation.metrics import compute_irr
 from ele_trading.utils.data_alignment import as_time_series, align_to_time
 from ele_trading.utils.num_utils import inclusive_float_range
 from ele_trading.utils.time_index import infer_dt_hours
-
-from .dispatch_algo import _dispatch_annual
+from ele_trading.utils.log_util import logger
+from .dispatch_algo import dispatch_annual
 
 
 @dataclass(slots=True)
@@ -268,31 +268,45 @@ def plan_wind_pv_bess_for_target_irr(
     load_kw_arr, wind_unit_arr, pv_unit_arr, dt_hours = _prepare_arrays(
         df_load, wind_unit_kw, pv_unit_kw, load_col, time_col
     )
-    
+    logger.info(f"dt_hours: {dt_hours}")
     # 将充放切换间隔（小时）转换为时间步数
     switch_gap_steps = int(round(cfg.switch_gap_hours / dt_hours)) if cfg.switch_gap_hours > 0 else 0
+    logger.info(f"switch_gap_steps: {switch_gap_steps}")
 
     # 风光储容量组合搜索算法
     candidates: list[dict[str, Any]] = []
     diagnostics: list[dict[str, Any]] = []
-    for wind_mw in inclusive_float_range(5.0, cfg.wind_max_mw, cfg.wind_step_mw):
+    for wind_mw in inclusive_float_range(cfg.wind_step_mw, cfg.wind_max_mw, cfg.wind_step_mw):
         wind_kw_arr = wind_unit_arr * float(wind_mw)
-        for pv_mw in inclusive_float_range(5.0, cfg.pv_max_mw, cfg.pv_step_mw):
+        for pv_mw in inclusive_float_range(cfg.pv_step_mw, cfg.pv_max_mw, cfg.pv_step_mw):
             pv_kw_arr = pv_unit_arr * float(pv_mw) * 1000.0
-            for bess_mwh in inclusive_float_range(5.0, cfg.bess_max_mwh, cfg.bess_step_mwh):
+            for bess_mwh in inclusive_float_range(cfg.bess_step_mwh, cfg.bess_max_mwh, cfg.bess_step_mwh):
+                # ------------------------------
                 # 年度调度模型
-                st = _dispatch_annual(
+                # ------------------------------
+                st = dispatch_annual(
                     load_kw = load_kw_arr,
                     wind_kw = wind_kw_arr,
                     pv_kw = pv_kw_arr,
                     other_kw = np.zeros_like(load_kw_arr, dtype=np.float64),
-                    dt_hours = dt_hours,
                     batt_kwh = float(bess_mwh) * 1000.0,
+                    dt_hours = dt_hours,
                     cfg = cfg,
                     switch_gap_steps = switch_gap_steps,
                 )
+                # ------------------------------
                 # 对当前风光储组合进行物理约束、价格约束和 IRR 约束的综合评估
-                evaluated = _evaluate_candidate(float(wind_mw), float(pv_mw), float(bess_mwh), st, cfg)
+                # ------------------------------
+                evaluated = _evaluate_candidate(
+                    wind_mw = float(wind_mw), 
+                    pv_mw = float(pv_mw), 
+                    bess_mwh = float(bess_mwh), 
+                    st = st, 
+                    cfg = cfg,
+                )
+                # ------------------------------
+                # 结果解析
+                # ------------------------------
                 reason = evaluated.pop("reason")
                 # 物理约束满足、PPA 为正、IRR 在目标容差内
                 if reason == "ok":

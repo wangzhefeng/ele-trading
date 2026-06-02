@@ -14,7 +14,7 @@ import pandas as pd
 from ele_trading.utils.data_alignment import as_time_series, align_to_time
 from ele_trading.utils.time_index import infer_dt_hours, monthly_kwh
 
-from .dispatch_algo import _dispatch_annual, _NUMBA_OK
+from .dispatch_algo import dispatch_annual, _NUMBA_OK
 
 
 @dataclass(slots=True)
@@ -94,7 +94,7 @@ def _find_min_bess_kwh(
     """返回 (bess_kwh, stats)；若找不到可行解返回 None。"""
 
     def feasible(batt_kwh: float) -> tuple[bool, dict[str, float]]:
-        st = _dispatch_annual(load_kw, wind_kw, pv_kw, other_kw, dt_hours, batt_kwh, cfg, switch_gap_steps)
+        st = dispatch_annual(load_kw, wind_kw, pv_kw, other_kw, batt_kwh, dt_hours, cfg, switch_gap_steps)
         gen = st["ren_gen_kwh"]
         used = st["ren_used_kwh"]
         load = st["load_kwh"]
@@ -229,13 +229,13 @@ def evaluate_fixed_wind_pv_bess_capacity(
 
     dt_hours = infer_dt_hours(df[time_col])
     switch_gap_steps = int(round(cfg.switch_gap_hours / dt_hours)) if cfg.switch_gap_hours > 0 else 0
-    st = _dispatch_annual(
+    st = dispatch_annual(
         load_kw_arr,
         wind_kw_arr,
         pv_kw_arr,
         other_kw_arr,
-        dt_hours,
         float(bess_mwh) * 1000.0,
+        dt_hours,
         cfg,
         switch_gap_steps,
     )
@@ -385,9 +385,9 @@ def plan_wind_pv_bess(
                 continue
             bess_kwh, st = found
         else:
-            st = _dispatch_annual(
-                load_kw_arr, wind_kw_arr, pv_kw_arr, other_kw_arr,
-                dt_hours, 0.0, cfg, switch_gap_steps,
+            st = dispatch_annual(
+                load_kw_arr, wind_kw_arr, pv_kw_arr, other_kw_arr, 0.0,
+                dt_hours, cfg, switch_gap_steps,
             )
             if st["ren_gen_kwh"] <= 1e-9:
                 continue
@@ -450,9 +450,9 @@ def plan_wind_pv_bess(
                     continue
                 bess_kwh, st = found
             else:
-                st = _dispatch_annual(
-                    load_kw_arr, wind_kw_arr, pv_kw_arr, other_kw_arr,
-                    dt_hours, 0.0, cfg, switch_gap_steps,
+                st = dispatch_annual(
+                    load_kw_arr, wind_kw_arr, pv_kw_arr, other_kw_arr, 0.0,
+                    dt_hours, cfg, switch_gap_steps,
                 )
                 if st["ren_gen_kwh"] <= 1e-9:
                     continue
@@ -618,9 +618,9 @@ def evaluate_wind_pv_bess(
             "curtail_kwh": st.get("curtail_kwh", 0.0),
         }
     else:
-        st = _dispatch_annual(
-            load_kw_arr, wind_kw_arr, pv_kw_arr, other_kw_arr,
-            dt_hours, 0.0, cfg, switch_gap_steps,
+        st = dispatch_annual(
+            load_kw_arr, wind_kw_arr, pv_kw_arr, other_kw_arr, 0.0,
+            dt_hours, cfg, switch_gap_steps,
         )
         gen = st["ren_gen_kwh"]
         used = st["ren_used_kwh"]

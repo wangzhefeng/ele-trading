@@ -50,7 +50,7 @@ constraints:
 capacity:
   wind_max_mw: 280.0
   pv_max_mw: 140.0
-  bess_max_mwh: 1000.0
+  bess_max_mwh: 2000.0
 
 search:
   wind_step_mw: 10.0

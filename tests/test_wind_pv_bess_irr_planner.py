@@ -6,7 +6,7 @@ import pytest
 
 from ele_trading.capacity_planning.wind_pv_bess_planner import (
     WindPVBESSPlanConfig,
-    _dispatch_annual,
+    dispatch_annual,
     evaluate_fixed_wind_pv_bess_capacity,
 )
 from ele_trading.capacity_planning.wind_pv_bess_irr_planner import (
@@ -43,7 +43,7 @@ def test_fixed_capacity_helper_matches_dispatch_engine():
     wind = np.full(4, 500.0)
     pv = np.full(4, 400.0)
     other = np.zeros(4)
-    expected = _dispatch_annual(load, wind, pv, other, 1.0, 200.0, cfg)
+    expected = dispatch_annual(load, wind, pv, other, 200.0, 1.0, cfg)
 
     assert result["ren_gen_kwh"] == pytest.approx(expected["ren_gen_kwh"])
     assert result["ren_used_kwh"] == pytest.approx(expected["ren_used_kwh"])
