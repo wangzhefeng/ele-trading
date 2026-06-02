@@ -19,12 +19,12 @@ constraints:
 capacity:
   wind_max_mw: 280.0
   pv_max_mw: 140.0
-  bess_max_mwh: 200.0
+  bess_max_mwh: 1000.0
 
 search:
-  wind_step_mw: 70.0
-  pv_step_mw: 35.0
-  bess_step_mwh: 100.0
+  wind_step_mw: 10.0
+  pv_step_mw: 10.0
+  bess_step_mwh: 20.0
 
 bess:
   eta_roundtrip: 0.92
