@@ -36,28 +36,47 @@ def _dispatch_annual_numba(
     soc_max_frac: float,
     switch_gap_steps: int,
 ) -> tuple[float, float, float, float, float, float]:
+    """贪心调度（Numba JIT），支持充放切换间隔。
+
+    按时间步遍历全年负荷/新能源序列，每个时步依次：
+      1) 计算新能源直供负荷的部分 (direct)；
+      2) 多余电 (surplus) 优先给电池充电；
+      3) 缺额 (deficit) 优先由电池放电补充；
+      4) 未能消纳的 surplus 计入弃电。
+
+    通过 last_action / last_action_t 记录最近一次充放电方向与步号，
+    实现充放电相邻动作之间的最小间隔控制 (switch_gap_steps)。
+
+    参数:
+        load_kw, wind_kw, pv_kw, other_kw: 各序列长度均为 n 的时序 (kW)
+        dt_hours: 单个时间步时长 (h)
+        batt_kwh: 电池额定容量 (kWh)
+        eta_roundtrip: 电池往返效率
+        c_rate: 电池最大充放电倍率 (C)
+        soc_init_frac / soc_min_frac / soc_max_frac: SOC 初始/下限/上限 (占容量比)
+        switch_gap_steps: 充放电方向切换的最小时间间隔 (步)
+
+    返回 (单位均为 kWh):
+        gen_e, used_e, load_e, direct_e, bess_dis, curtail_e
     """
-    贪心调度（Numba JIT），支持充放切换间隔。
-    # TODO 补充注释
-    """
-    gen_e = 0.0  # TODO 补充注释
-    used_e = 0.0  # TODO 补充注释
-    load_e = 0.0  # TODO 补充注释
-    direct_e = 0.0  # TODO 补充注释
-    bess_dis = 0.0  # TODO 补充注释
-    curtail_e = 0.0  # TODO 补充注释
-    
-    # TODO 补充注释
+    gen_e = 0.0      # 新能源总发电量 (kWh)
+    used_e = 0.0     # 新能源被消纳的总电量：直供 + 充电 (kWh)
+    load_e = 0.0     # 负荷总用电量 (kWh)
+    direct_e = 0.0   # 新能源直接供给负荷的电量 (kWh，未经过电池)
+    bess_dis = 0.0   # 电池放电量 (kWh)
+    curtail_e = 0.0  # 弃电量 (kWh)
+
+    # 充放电效率对称拆分：往返效率开方，便于 SOC 增减计算
     eta_c = eta_roundtrip ** 0.5
     eta_d = eta_roundtrip ** 0.5
-    
-    # TODO 补充注释
+
+    # 电池额定容量 (kWh)
     E = batt_kwh
 
-    # TODO 补充注释
+    # 电池最大充放电功率 (kW)，由容量与 C 率决定
     Pmax = c_rate * E
 
-    # TODO 补充注释
+    # SOC 下限 / 上限 / 初始值 (kWh)；若初始值越界则裁剪到 [soc_min, soc_max]
     soc_min = soc_min_frac * E
     soc_max = soc_max_frac * E
     soc = soc_init_frac * E
@@ -66,11 +85,12 @@ def _dispatch_annual_numba(
     if soc > soc_max:
         soc = soc_max
 
-    # TODO 补充注释
+    # 充放电方向状态机（+1=充电，-1=放电，0=空闲），
+    # 配合 last_action_t 实现充放电切换的最小时间间隔
     last_action = 0  # +1=charge, -1=discharge, 0=idle
     last_action_t = -10**9
 
-    # TODO 补充注释
+    # 时间步总数
     n = load_kw.shape[0]
     for i in range(n):
         # 负荷 (kW)
@@ -92,9 +112,9 @@ def _dispatch_annual_numba(
         used_e += direct * dt_hours
         direct_e += direct * dt_hours
 
-        # TODO 完善注释 多余电 (kW)
+        # surplus: 新能源超出直供负荷的多余电功率 (kW)，可尝试充电
         surplus = G - direct
-        # TODO 完善注释 缺额 (kW)
+        # deficit: 直供后仍未能覆盖的负荷缺额 (kW)，可尝试放电
         deficit = L - direct
 
         # 判断是否可以充放电（考虑切换间隔）
@@ -161,18 +181,19 @@ def dispatch_annual(
             switch_gap_steps = switch_gap_steps,
         )
     else:
-        # TODO 补充注释
+        # 简化版调度：不模拟电池充放电，按直供/弃电两类分别累计
+        # 新能源总出力 (kW)
         gen_kw = wind_kw + pv_kw + other_kw
-        # TODO 补充注释
+        # 新能源直接供给负荷的部分 (kW)，取负荷与发电的较小者
         direct_kw = np.minimum(load_kw, np.maximum(gen_kw, 0.0))
-        # TODO 补充注释
+        # 年新能源发电量 (kWh)
         gen_e = float(np.maximum(gen_kw, 0.0).sum() * dt_hours)
-        # TODO 补充注释
+        # 年总负荷用电量 (kWh)
         load_e = float(np.maximum(load_kw, 0.0).sum() * dt_hours)
-        # TODO 补充注释
+        # 新能源被直供消纳的电能 (kWh)
         used_e = float(direct_kw.sum() * dt_hours)
         direct_e = used_e
-        # TODO 补充注释
+        # 简化路径不模拟电池充放电，故放电量记为 0
         bess_dis = 0.0
         # 弃电量（简化：surplus 部分减去充电）
         surplus_e = float(np.maximum(gen_kw - load_kw, 0.0).sum() * dt_hours)
