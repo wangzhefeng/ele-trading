@@ -300,35 +300,235 @@ WindPVBESSPlanConfig:
 
 ### 8. wind_pv_bess_irr_planner.py - IRR 目标型规划
 
-**功能**：扫描风光储容量组合，寻找满足 IRR 目标的最低投资方案。
+#### 8.1 算法定位与适用场景
 
-**算法特点**：
-- 三维网格搜索（Wind × PV × BESS）
-- PPA 电价反推
-- IRR 容差约束
+**一句话定位**：在业主综合电价上限给定的前提下，反推「风电 + 光伏 + 储能」三要素的最优容量配比，使项目财务 IRR 达到目标值。
 
-**电价模型**：
-```python
-green_price = (target_owner_price * load - grid_buy_price * grid_buy_kwh) / used
-ppa_price = green_price - green_price_adder
-owner_avg_price = (green_price * used + grid_buy_price * grid_buy_kwh) / load
+**与其他规划器的区别**：
+
+| 规划器 | 优化目标 | 决策方向 |
+|---|---|---|
+| #4 `capacity_optimizer` | 满足消纳/覆盖约束的最低成本 | 风/光/储组合成本最小 |
+| #7 `wind_pv_bess_planner` | 满足约束的最小 BESS 容量 | 给定 PV 反求 BESS |
+| **本模块 IRR 目标型** | 满足 IRR 目标 + 约束的最低投资 | 三维联合 + 电价反推 |
+
+**适用场景**：业主自建/合建新能源项目，电价已锁定，需要在给定回报率下校核可建规模；或开发商需要回答「业主综合电价多少时项目可做」的反问题。
+
+#### 8.2 算法测试运行流程
+
+入口脚本：`app/run_wind_pv_bess_irr_planning.py`。端到端流程分为 6 步：
+
+| 步骤 | 动作 | 输入 | 输出 | 典型耗时 |
+|---|---|---|---|---|
+| 1 | 加载负荷数据 | `data/profit_calc/wind_pv_bess/v1/demand_load.csv` | `df_load`（105,120 行，5min 步长，2023 全年） | < 1s |
+| 2 | 构建/读取风电单位出力曲线 | `wind_simulation_v1` + Open-Meteo 气象数据 | `wind_unit` Series（8760 行，kW/MW） | 首次 ~30s（带气象下载），缓存命中 < 0.1s |
+| 3 | 构建/读取光伏单位出力曲线 | `pv_simulation_v1` | `pv_unit` Series（105,120 行，kW/kWp） | 首次 ~3s，缓存命中 < 0.1s |
+| 4 | 三维网格扫描 + BESS 调度仿真 | 三项 + `WindPVBESSIRRPlanConfig` | 候选列表 / 诊断表 | ~18s（Numba 加速） |
+| 5 | 保存结果 | 扫描结果 | `results/wind_pv_bess_irr/optimal_solution.csv`、`diagnostics.csv` | < 1s |
+| 6 | 日志输出关键指标 | 扫描结果 | 结构化日志 | < 0.1s |
+
+**缓存机制**：
+- 风电单位曲线缓存于 `wind_unit_curve.csv`（小时级）
+- 光伏单位曲线缓存于 `pv_unit_curve.csv`（5min 级）
+- 气象数据缓存于 `weather_cache.csv`（避免重复调用 Open-Meteo）
+- 任一缓存命中即跳过仿真，仅做读 CSV → 索引对齐
+
+**配置加载**：YAML 路径 `configs/wind_pv_bess_irr_planning.yaml`，通过 `_to_config()` 装配为 `WindPVBESSIRRPlanConfig` dataclass。
+
+#### 8.3 算法原理（数学建模）
+
+##### 8.3.1 决策变量与搜索空间
+
+决策变量为风电装机 $w$、光伏装机 $pv$、储能容量 $b$（单位 MW、MWh）：
+
+$$
+(w,\ pv,\ b) \in [w_{\min}, w_{\max}] \times [pv_{\min}, pv_{\max}] \times [b_{\min}, b_{\max}]
+$$
+
+按配置默认步长（`wind_step_mw=10`、`pv_step_mw=10`、`bess_step_mwh=10`），搜索空间为：
+
+$$
+N_{cand} = 28 \times 14 \times 100 = 39{,}200 \text{ 候选}
+$$
+
+##### 8.3.2 物理层：BESS 贪心调度（逐时步仿真）
+
+对每个候选 $(w, pv, b)$，先把单位出力曲线按装机缩放，再做 105,120 步逐时步仿真。设时步长 $\Delta t$（小时），$L_t$ 为负荷功率（kW），新能源发电为：
+
+$$
+G_t = w \cdot 1000 \cdot \tilde{W}_t + pv \cdot 1000 \cdot \tilde{P}_t \quad \text{(kW)}
+$$
+
+其中 $\tilde{W}_t, \tilde{P}_t \in [0, 1]$ 为单位出力曲线。
+
+定义直供、盈余、缺口：
+
+$$
+D_t = \min(L_t, G_t),\quad S_t = \max(G_t - L_t, 0),\quad D'_t = \max(L_t - G_t, 0)
+$$
+
+**充放电决策**（Numba JIT，`_dispatch_annual_numba`）：
+
+$$
+p_t^{ch} = \min\!\left(S_t,\ P_{\max},\ \frac{soc_{\max} - soc_{t-1}}{\eta_c \cdot \Delta t}\right)
+$$
+
+$$
+p_t^{dis} = \min\!\left(D'_t,\ P_{\max},\ \frac{(soc_{t-1} - soc_{\min}) \cdot \eta_d}{\Delta t}\right)
+$$
+
+**SOC 演化**：
+
+$$
+soc_t = soc_{t-1} + \eta_c \cdot p_t^{ch} \cdot \Delta t - \frac{p_t^{dis} \cdot \Delta t}{\eta_d}
+$$
+
+**弃电**：
+
+$$
+curtail = \sum_{t=1}^{T} (S_t - p_t^{ch}) \cdot \Delta t
+$$
+
+**关键参数化**：
+- 效率对称化：$\eta_c = \eta_d = \sqrt{\eta_{roundtrip}}$，默认 0.92 → 0.959
+- 功率上限：$P_{\max} = c\_rate \cdot E$，默认 $c\_rate = 0.5$（2 小时电池）
+- SOC 边界：$soc \in [0.1E,\ 1.0E]$
+- 初始 SOC：$soc_0 = 0.5E$
+
+**年度统计量**：仿真返回 $\sum G_t \cdot \Delta t$（年发电）、$\sum (D_t + p_t^{dis} \cdot \Delta t)$（年绿电消纳）、$\sum L_t \cdot \Delta t$（年用电）、$curtail$（年弃电）。
+
+##### 8.3.3 经济层：电价反推与 IRR 解算
+
+**核心假设**：业主综合用电价恒等于目标值 $P_{owner}$：
+
+$$
+P_{owner} \cdot L = P_{green} \cdot L_{green} + P_{grid} \cdot (L - L_{green})
+$$
+
+反推绿电结算价：
+
+$$
+P_{green} = \frac{P_{owner} \cdot L - P_{grid} \cdot (L - L_{green})}{L_{green}}
+$$
+
+剥离绿电附加价后得到 PPA 价：
+
+$$
+P_{ppa} = P_{green} - P_{adder}
+$$
+
+**总投资**（元）：
+
+$$
+CAPEX = 10^3 \left(w \cdot c_w + pv \cdot c_{pv} + b \cdot c_b\right)
+$$
+
+其中 $c_w, c_{pv}, c_b$ 为风电（元/kW）、光伏（元/kWp）、储能（元/kWh）单位投资。
+
+**年现金流**：
+
+$$
+CF_{annual} = P_{green} \cdot L_{green} - \alpha \cdot CAPEX
+$$
+
+其中 $\alpha$ 为年运维费率（默认 2%）。
+
+**IRR 求解**（15 年线性年金）：
+
+$$
+\sum_{t=0}^{N} \frac{CF_t}{(1+r)^t} = 0, \quad CF_0 = -CAPEX,\ CF_{t \ge 1} = CF_{annual}
+$$
+
+数值方法由 `ele_trading.evaluation.metrics.compute_irr` 提供（牛顿迭代 / 二分法）。
+
+##### 8.3.4 四道过滤
+
+| 层级 | 条件 | 不通过后果 |
+|---|---|---|
+| L1 物理存在 | $gen, used, load > 0$ | 直接丢弃（不进 diagnostics） |
+| L2 消纳约束 | 自用率 $\ge 60\%$ ∧ 覆盖率 $\ge 35\%$ | 直接丢弃（不进 diagnostics） |
+| L3 PPA 价格 | $P_{green} > 0$ ∧ $P_{ppa} > 0$ | 保留至 diagnostics（reason=`non_positive_ppa`） |
+| L4 IRR 约束 | $\lvert IRR - r_{target} \rvert \le 0.2\%$ | 保留至 diagnostics（reason=`irr_out_of_tolerance`） |
+
+**最优解选择**（两级排序）：
+
+$$
+\text{best} = \arg\min_{(w, pv, b)\ \text{passed}} \left(CAPEX,\ \lvert IRR - r_{target} \rvert \right)
+$$
+
+##### 8.3.5 算法复杂度
+
+- **时间复杂度**：$O(N_{cand} \times T)$，本次实跑 $39{,}200 \times 105{,}120 \approx 4.1 \times 10^9$ 步。Numba JIT 加速后实测约 18 秒；无 Numba 时 Python 解释器下耗时约 100× 上升。
+- **空间复杂度**：$O(T)$ 每候选（已展开为连续 numpy 数组，无副本复制）。
+- **结果规模**：物理/PPA/IRR 任一不通过时仅写 `diagnostics.csv`；本实跑产生 17,258 行诊断记录。
+
+#### 8.4 算法运行结果解读
+
+针对本次实跑（默认配置）：
+
+```
+status=no_solution
+message=未找到满足 PPA/IRR 约束的风光储组合
 ```
 
-**IRR 计算**：
-```python
-total_capex = wind_capex + pv_capex + bess_capex
-annual_revenue = green_price * annual_green_used_kwh
-annual_opex = total_capex * annual_opex_ratio
-annual_cashflow = annual_revenue - annual_opex
-irr = compute_irr([-total_capex] + [annual_cashflow] * life_years)
-```
+**最近候选**（IRR 差距最小）：
 
-**筛选逻辑**：
-1. 物理可行性：自用率、覆盖率约束
-2. 经济可行性：PPA 电价 > 0
-3. IRR 约束：|irr - target_irr| <= irr_tolerance
+| 指标 | 值 |
+|---|---|
+| 装机 | 风 125MW + 光 140MW + 储 5MWh |
+| 总投资 CAPEX | **11.225 亿元** |
+| 年绿电消纳 | 4.121 亿 kWh |
+| 年电网购电 | 7.540 亿 kWh |
+| 自用率 / 覆盖率 | 94.3% / 35.3% |
+| 反推绿电价 | 0.247 元/kWh |
+| 年收入 / 年运维 / 年净 CF | 1.017 / 0.225 / **0.793 亿元** |
+| **IRR** | **0.73%**（目标 8%，差距 7.27%） |
 
-**实现状态**：✅ 完整实现
+**为何无可行解**（数学推导）：
+
+1. **覆盖率锁定绿电价格**：覆盖率上限 35.3% 决定 $L_{green}/L = 0.353$，代入电价反推式：
+
+$$
+P_{green} = 0.36 - \frac{0.36 - 0.32}{0.353} \approx 0.247\ \text{元/kWh} \ll 0.32
+$$
+
+2. **投资回收能力不足**：年净 CF / CAPEX = 7.06%。对 15 年线性年金，达成 8% IRR 所需的最低回收率为：
+
+$$
+r_{req} = \frac{r(1+r)^N}{(1+r)^N - 1} = \frac{0.08 \times 1.08^{15}}{1.08^{15} - 1} \approx 11.7\%
+$$
+
+3. **根本性矛盾**：业主综合电价上限 0.32 元/kWh < 电网电价 0.36 元/kWh，绿电消纳越多反而需要把 $P_{green}$ 压得越低（对业主的"让利"），最终落在 0.247 元/kWh 附近，远不足以让 11.225 亿投资在 15 年内回收到 8% IRR。
+
+**调参建议**（如需找到可行解）：
+
+| 调整方向 | 参数 | 建议值 |
+|---|---|---|
+| 提高业主电价 | `target_owner_price_yuan_per_kwh` | 0.36 ~ 0.40 元/kWh |
+| 降低回报要求 | `target_irr` | 0.05（5%） |
+| 提高绿电占比 | `load_cover_ratio_min` | ≥ 0.50 |
+| 降低单位投资 | `wind/pv/bess_capex` | 跟随市场下行趋势调整 |
+
+**结果文件位置**：
+- `results/wind_pv_bess_irr/optimal_solution.csv` — 无解时**不生成**
+- `results/wind_pv_bess_irr/diagnostics.csv` — 17,258 行，按 `irr_gap` 升序排列
+
+#### 8.5 关键工程取舍
+
+| 维度 | 现状 | 边界 |
+|---|---|---|
+| 调度策略 | 贪心逐时步 | 非全局最优（无前瞻窗口、无分时电价套利） |
+| 搜索方式 | 三维等步长网格 | 步长 10 偏粗，无局部精修阶段 |
+| 加速手段 | Numba JIT | 依赖 numba，否则 Python 慢 ~100× |
+| 物理粒度 | 5min 步长 | 不模拟尾流、逆变器限功率、机型差异 |
+| 业务范围 | 单业主电价上限 | 不支持多业主分账、跨节点套利 |
+| 数据来源 | 缓存 + 真实 Open-Meteo 气象 | 风电仿真为统计模型，非真实机组 SCADA |
+
+**算法本质**：是「项目经济性边界扫描」工具，**不是**「调度最优」工具。它回答的是「在业主综合电价约束下，哪种配比能让项目 IRR 达到目标」，而非「给定配比后如何最优调度」。两者精度需求不同：经济性边界只需近似电量平衡，而调度最优需要分时电价、设备约束的全链路建模。
+
+#### 8.6 实现状态
+
+✅ **完整实现**：含三维网格扫描、BESS 贪心调度（Numba）、电价反推、IRR 数值解、四级过滤、诊断表导出。
 
 ---
 
