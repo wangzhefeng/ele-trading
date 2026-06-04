@@ -28,26 +28,26 @@ class WindPVBESSIRRPlanConfig:
 
     wind_max_mw: float = 280.0  # 绿电规模上限：风电：280MW
     pv_max_mw: float = 140.0  # 绿电规模上限：光伏：140MW
-    bess_max_mwh: float = 1000.0  # 储能规模上限：1000MWh
+    bess_max_mwh: float = 2000.0  # 储能规模上限：1000MWh
     wind_step_mw: float = 10.0  # 风光储容量步进：风电：10MW
     pv_step_mw: float = 10.0  # 风光储容量步进：光伏：10MW
-    bess_step_mwh: float = 20.0  # 储能容量步进：20MWh
+    bess_step_mwh: float = 10.0  # 储能容量步进：20MWh
 
     self_use_ratio_min: float = 0.60  # 绿电消纳最低要求：至少60%自用
     load_cover_ratio_min: float = 0.35  # 绿电消纳最低要求：占业主用电量最低35%
 
     wind_capex_yuan_per_kw: float = 5000.0  # 风电单位投资，元/kW
     pv_capex_yuan_per_kwp: float = 3500.0  # 光伏单位投资，元/kWp
-    bess_capex_yuan_per_kwh: float = 1500.0  # BESS 单位投资，元/kWh
+    bess_capex_yuan_per_kwh: float = 800.0  # BESS 单位投资，元/kWh
     annual_opex_ratio: float = 0.02  # 年运维费用占总投资比例
     life_years: int = 15  # IRR 现金流测算年限
 
     eta_roundtrip: float = 0.92  # BESS 往返效率
     c_rate: float = 0.5  # BESS 功率倍率，MW/MWh
-    soc_init_frac: float = 0.5  # 初始 SOC
+    soc_init_frac: float = 0.1  # 初始 SOC
     soc_min_frac: float = 0.1  # 最小 SOC
     soc_max_frac: float = 1.0  # 最大 SOC
-    switch_gap_hours: float = 0.0  # 充放电状态切换的最小间隔小时数
+    switch_gap_hours: float = 1.0  # 充放电状态切换的最小间隔小时数
     use_numba: bool = True  # 是否使用 numba 加速
 
 
