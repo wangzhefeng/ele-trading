@@ -39,6 +39,11 @@ from .wind_pv_bess_irr_planner import (
     WindPVBESSIRRPlanConfig, WindPVBESSIRRResult,
     plan_wind_pv_bess_for_target_irr,
 )
+from .wind_pv_bess_irr_tuning import (
+    WindPVBESSIRRTuningResult,
+    iter_resource_scenarios,
+    run_wind_pv_bess_irr_resource_tuning,
+)
 from .bess_capacity_sizer import CapacitySizingResult, solve_capacity_sizing
 from .dist_bess_dispatch import (
     BESSDistributionScheduler,
@@ -95,6 +100,8 @@ __all__ = [
     'evaluate_fixed_wind_pv_bess_capacity',
     'WindPVBESSIRRPlanConfig', 'WindPVBESSIRRResult',
     'plan_wind_pv_bess_for_target_irr',
+    'WindPVBESSIRRTuningResult', 'iter_resource_scenarios',
+    'run_wind_pv_bess_irr_resource_tuning',
     'CapacitySizingResult', 'solve_capacity_sizing',
     'BESSDistributionScheduler', 'SimulationResult',
     'SYSTEMS', 'PRESETS', 'TRANSFORMERS', 'TRANSFORMER_BY_NAME',

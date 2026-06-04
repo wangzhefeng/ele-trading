@@ -14,9 +14,9 @@ pv_simulation:
   capacity_kwp: 1.0
   tilt: null
   azimuth: 180.0
-  system_loss: 0.14
+  system_loss: 0.14  # 调参
   temp_coeff: -0.004
-  cloud_factor: 0.85
+  cloud_factor: 0.85  # 调参
   mode: clear_sky
 
 wind_simulation:
@@ -24,7 +24,7 @@ wind_simulation:
   freq: 5min
   farm_capacity_mw: 1.0
   mean_wind_speed_target: 7.0
-  target_full_load_hours: 2800.0
+  target_full_load_hours: 2500.0  # 调参
   meteo_height_m: 100.0
   met_mast_height_m: 140.0
   hub_height_m: 140.0
@@ -50,6 +50,7 @@ constraints:
 capacity:
   wind_max_mw: 280.0
   pv_max_mw: 140.0
+  bess_min_mwh: 0.0
   bess_max_mwh: 1000.0
 
 search:
@@ -71,3 +72,35 @@ cost:
   bess_capex_yuan_per_kwh: 800.0
   annual_opex_ratio: 0.02
   life_years: 15
+
+resource_tuning:
+  enabled: true
+  objective: min_resource_adjustment
+  wind_target_full_load_hours_min: 2500.0
+  wind_target_full_load_hours_max: 2500.0
+  wind_target_full_load_hours_step: 10.0
+  pv_cloud_factor_min: 0.70
+  pv_cloud_factor_max: 0.94
+  pv_cloud_factor_step: 0.03
+  pv_system_loss_min: 0.08
+  pv_system_loss_max: 0.14
+  pv_system_loss_step: 0.03
+  fine_scenario_limit: 12
+  coarse_search_bounds:
+    wind_min_mw: 100.0
+    wind_max_mw: 280.0
+    wind_step_mw: 10.0
+    pv_min_mw: 0.0
+    pv_max_mw: 140.0
+    pv_step_mw: 10.0
+    bess_min_mwh: 0.0
+    bess_max_mwh: 100.0
+    bess_step_mwh: 5.0
+  fine_search_window:
+    wind_mw: 15.0
+    pv_mw: 15.0
+    bess_mwh: 10.0
+  fine_search_step:
+    wind_mw: 1.0
+    pv_mw: 1.0
+    bess_mwh: 1.0

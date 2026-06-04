@@ -122,6 +122,29 @@ def test_best_solution_prefers_lowest_capex_within_irr_tolerance():
     assert result.status == "ok"
     assert result.wind_mw == pytest.approx(0.0)
     assert result.pv_mw == pytest.approx(1.0)
+    assert result.bess_mwh == pytest.approx(0.0)
+
+
+def test_zero_bess_capacity_is_scanned_when_max_is_zero():
+    """bess_max_mwh=0 时，0MWh 本身应作为合法候选进入扫描。"""
+    df_load, wind_unit, pv_unit = _flat_case()
+    cfg = WindPVBESSIRRPlanConfig(
+        wind_max_mw=1.0,
+        pv_max_mw=0.0,
+        bess_max_mwh=0.0,
+        wind_step_mw=1.0,
+        pv_step_mw=1.0,
+        bess_step_mwh=1.0,
+        target_irr=0.0,
+        irr_tolerance=10.0,
+        wind_capex_yuan_per_kw=1.0,
+        annual_opex_ratio=0.0,
+    )
+
+    result = plan_wind_pv_bess_for_target_irr(df_load, wind_unit, pv_unit, cfg=cfg)
+
+    assert result.status == "ok"
+    assert result.bess_mwh == pytest.approx(0.0)
 
 
 def test_no_solution_returns_nearest_irr_diagnostics():
@@ -148,3 +171,32 @@ def test_no_solution_returns_nearest_irr_diagnostics():
     assert result.diagnostics.iloc[0]["irr_gap"] == pytest.approx(
         abs(result.diagnostics.iloc[0]["irr"] - cfg.target_irr)
     )
+
+
+def test_no_solution_returns_diagnostic_summary_with_counts_and_gap_metrics():
+    """无解时应给出搜索失败分布、最大 IRR、最近 IRR 和达标缺口。"""
+    df_load, wind_unit, pv_unit = _flat_case()
+    cfg = WindPVBESSIRRPlanConfig(
+        wind_max_mw=1.0,
+        pv_max_mw=0.0,
+        bess_max_mwh=0.0,
+        wind_step_mw=1.0,
+        pv_step_mw=1.0,
+        bess_step_mwh=1.0,
+        target_irr=0.99,
+        irr_tolerance=0.0001,
+        wind_capex_yuan_per_kw=100.0,
+        annual_opex_ratio=0.0,
+    )
+
+    result = plan_wind_pv_bess_for_target_irr(df_load, wind_unit, pv_unit, cfg=cfg)
+
+    assert result.status == "no_solution"
+    assert result.diagnostic_summary is not None
+    summary = result.diagnostic_summary
+    assert summary["total_combinations"] == 2
+    assert summary["reason_counts"]["no_generation"] == 1
+    assert summary["reason_counts"]["irr_out_of_tolerance"] == 1
+    assert summary["max_irr_candidate"]["irr"] == pytest.approx(result.diagnostics.iloc[0]["irr"])
+    assert summary["nearest_irr_candidate"]["irr_gap"] == pytest.approx(result.diagnostics.iloc[0]["irr_gap"])
+    assert summary["target_gap_metrics"]["required_annual_cashflow_yuan"] > summary["target_gap_metrics"]["actual_annual_cashflow_yuan"]

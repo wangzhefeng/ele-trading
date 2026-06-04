@@ -26,6 +26,9 @@ class WindPVBESSIRRPlanConfig:
     target_irr: float = 0.08  # 测算IRR=8%的最佳风光储配比
     irr_tolerance: float = 0.002  # IRR 容差
 
+    wind_min_mw: float = 0.0  # 风电搜索下限 MW
+    pv_min_mw: float = 0.0  # 光伏搜索下限 MW
+    bess_min_mwh: float = 0.0  # BESS 搜索下限 MWh；设为正数时强制配置储能
     wind_max_mw: float = 280.0  # 绿电规模上限：风电：280MW
     pv_max_mw: float = 140.0  # 绿电规模上限：光伏：140MW
     bess_max_mwh: float = 2000.0  # 储能规模上限：1000MWh
@@ -74,6 +77,8 @@ class WindPVBESSIRRResult:
     load_cover_ratio: float = 0.0  # 负荷覆盖率
     curtail_kwh: float = 0.0  # 弃电量
     diagnostics: pd.DataFrame | None = None  # 候选诊断表；成功时是所有 ok 候选，失败时是 PPA/IRR 不满足的候选
+    diagnostic_summary: dict[str, Any] | None = None  # 搜索失败分布、最优诊断候选和 IRR 达标缺口
+    best_solution: dict[str, Any] | None = None  # 与对象字段一致的最优解摘要
     message: str | None = None  # 失败原因说明
 
 
@@ -209,16 +214,133 @@ def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[
         "irr": float(irr),
         "irr_gap": float(irr_gap),
     })
-    # 候选组合被标记为 irr_out_of_tolerance，不会作为可行解，但会进入 diagnostics
-    if irr_gap > cfg.irr_tolerance:
+    # 候选组合必须达到目标 IRR，且不超过上侧容差；不满足时进入 diagnostics。
+    if irr < cfg.target_irr or irr > cfg.target_irr + cfg.irr_tolerance:
         return {**row, "reason": "irr_out_of_tolerance"}
     # ------------------------------
-    # 物理约束满足、PPA 为正、IRR 在目标容差内
+    # 物理约束满足、PPA 为正、IRR 达到目标且在上侧容差内
     # ------------------------------
     return {**row, "reason": "ok"}
 
 
-def _result_from_row(status: str, row: dict[str, Any], diagnostics: pd.DataFrame | None) -> WindPVBESSIRRResult:
+def _capacity_candidates(min_value: float, max_value: float, step: float) -> list[float]:
+    """生成容量候选，默认将 0 容量纳入合法扫描点。"""
+    if step <= 0:
+        raise ValueError("capacity search step must be positive")
+    if min_value < 0 or max_value < 0:
+        raise ValueError("capacity search bounds must be non-negative")
+    if min_value > max_value:
+        raise ValueError("capacity search min must be <= max")
+    if max_value <= 1e-9:
+        return [0.0]
+    return [float(x) for x in inclusive_float_range(float(min_value), float(max_value), float(step))]
+
+
+def _required_level_cashflow(total_capex_yuan: float, target_irr: float, life_years: int) -> float:
+    """给定初始投资和目标 IRR，反推等额年度净现金流。"""
+    if total_capex_yuan <= 0 or life_years <= 0:
+        return 0.0
+    if abs(target_irr) <= 1e-12:
+        return total_capex_yuan / life_years
+    factor = target_irr / (1.0 - (1.0 + target_irr) ** (-life_years))
+    return total_capex_yuan * factor
+
+
+def _summary_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    keys = (
+        "wind_mw",
+        "pv_mw",
+        "bess_mwh",
+        "irr",
+        "irr_gap",
+        "green_price",
+        "ppa_price",
+        "owner_avg_price",
+        "annual_green_used_kwh",
+        "annual_grid_buy_kwh",
+        "self_use_ratio",
+        "load_cover_ratio",
+        "curtail_kwh",
+        "total_capex_yuan",
+        "annual_revenue_yuan",
+        "annual_opex_yuan",
+        "annual_cashflow_yuan",
+        "reason",
+    )
+    cleaned: dict[str, Any] = {}
+    for key in keys:
+        if key not in row:
+            continue
+        value = row[key]
+        if pd.isna(value):
+            cleaned[key] = None
+        elif isinstance(value, (np.floating, np.integer)):
+            cleaned[key] = float(value)
+        else:
+            cleaned[key] = value
+    return cleaned
+
+
+def _target_gap_metrics(row: dict[str, Any] | None, cfg: WindPVBESSIRRPlanConfig) -> dict[str, float] | None:
+    if row is None:
+        return None
+
+    total_capex = float(row.get("total_capex_yuan", 0.0) or 0.0)
+    annual_cf = float(row.get("annual_cashflow_yuan", 0.0) or 0.0)
+    annual_opex = float(row.get("annual_opex_yuan", 0.0) or 0.0)
+    used = float(row.get("annual_green_used_kwh", 0.0) or 0.0)
+    grid_buy = float(row.get("annual_grid_buy_kwh", 0.0) or 0.0)
+    load = used + grid_buy
+
+    required_cf = _required_level_cashflow(total_capex, cfg.target_irr, int(cfg.life_years))
+    required_green_price = (required_cf + annual_opex) / used if used > 1e-9 else np.nan
+    required_ppa_price = required_green_price - cfg.green_price_adder_yuan_per_kwh if used > 1e-9 else np.nan
+    required_owner_avg_price = (
+        (required_green_price * used + cfg.grid_buy_price_yuan_per_kwh * grid_buy) / load
+        if used > 1e-9 and load > 1e-9
+        else np.nan
+    )
+    max_capex_for_target = (
+        annual_cf / _required_level_cashflow(1.0, cfg.target_irr, int(cfg.life_years))
+        if annual_cf > 0
+        else 0.0
+    )
+    capex_reduction = max(total_capex - max_capex_for_target, 0.0)
+
+    return {
+        "target_irr": float(cfg.target_irr),
+        "required_annual_cashflow_yuan": float(required_cf),
+        "actual_annual_cashflow_yuan": float(annual_cf),
+        "annual_cashflow_gap_yuan": float(required_cf - annual_cf),
+        "required_green_price_yuan_per_kwh": float(required_green_price),
+        "required_ppa_price_yuan_per_kwh": float(required_ppa_price),
+        "required_owner_avg_price_yuan_per_kwh": float(required_owner_avg_price),
+        "owner_avg_price_delta_yuan_per_kwh": float(required_owner_avg_price - cfg.target_owner_price_yuan_per_kwh),
+        "max_capex_for_target_irr_yuan": float(max_capex_for_target),
+        "capex_reduction_needed_yuan": float(capex_reduction),
+        "capex_reduction_needed_ratio": float(capex_reduction / total_capex) if total_capex > 1e-9 else 0.0,
+    }
+
+
+def _build_diagnostic_summary(total_combinations: int, reason_counts: dict[str, int], evaluated_rows: list[dict[str, Any]], cfg: WindPVBESSIRRPlanConfig) -> dict[str, Any]:
+    finite_irr_rows = [
+        row for row in evaluated_rows
+        if row.get("irr") is not None and np.isfinite(float(row.get("irr", np.nan)))
+    ]
+    max_irr_row = max(finite_irr_rows, key=lambda row: row["irr"], default=None)
+    nearest_irr_row = min(finite_irr_rows, key=lambda row: row["irr_gap"], default=None)
+    return {
+        "total_combinations": int(total_combinations),
+        "reason_counts": {key: int(value) for key, value in reason_counts.items()},
+        "max_irr_candidate": _summary_row(max_irr_row),
+        "nearest_irr_candidate": _summary_row(nearest_irr_row),
+        "target_gap_metrics": _target_gap_metrics(max_irr_row, cfg),
+    }
+
+
+def _result_from_row(status: str, row: dict[str, Any], diagnostics: pd.DataFrame | None, diagnostic_summary: dict[str, Any] | None = None) -> WindPVBESSIRRResult:
     """
     从评估结果字典构造 WindPVBESSIRRResult 对象。
 
@@ -249,6 +371,8 @@ def _result_from_row(status: str, row: dict[str, Any], diagnostics: pd.DataFrame
         load_cover_ratio=float(row["load_cover_ratio"]),
         curtail_kwh=float(row["curtail_kwh"]),
         diagnostics=diagnostics,
+        diagnostic_summary=diagnostic_summary,
+        best_solution=_summary_row(row),
     )
 
 
@@ -269,6 +393,7 @@ def plan_wind_pv_bess_for_target_irr(
         df_load, wind_unit_kw, pv_unit_kw, load_col, time_col
     )
     logger.info(f"dt_hours: {dt_hours}")
+
     # 将充放切换间隔（小时）转换为时间步数
     switch_gap_steps = int(round(cfg.switch_gap_hours / dt_hours)) if cfg.switch_gap_hours > 0 else 0
     logger.info(f"switch_gap_steps: {switch_gap_steps}")
@@ -276,11 +401,25 @@ def plan_wind_pv_bess_for_target_irr(
     # 风光储容量组合搜索算法
     candidates: list[dict[str, Any]] = []
     diagnostics: list[dict[str, Any]] = []
-    for wind_mw in inclusive_float_range(cfg.wind_step_mw, cfg.wind_max_mw, cfg.wind_step_mw):
+    evaluated_rows: list[dict[str, Any]] = []
+    reason_counts: dict[str, int] = {
+        "ok": 0,
+        "no_generation": 0,
+        "physical_infeasible": 0,
+        "non_positive_ppa": 0,
+        "irr_out_of_tolerance": 0,
+    }
+    total_combinations = 0
+    
+    wind_candidates = _capacity_candidates(cfg.wind_min_mw, cfg.wind_max_mw, cfg.wind_step_mw)
+    pv_candidates = _capacity_candidates(cfg.pv_min_mw, cfg.pv_max_mw, cfg.pv_step_mw)
+    bess_candidates = _capacity_candidates(cfg.bess_min_mwh, cfg.bess_max_mwh, cfg.bess_step_mwh)
+    for wind_mw in wind_candidates:
         wind_kw_arr = wind_unit_arr * float(wind_mw)
-        for pv_mw in inclusive_float_range(cfg.pv_step_mw, cfg.pv_max_mw, cfg.pv_step_mw):
+        for pv_mw in pv_candidates:
             pv_kw_arr = pv_unit_arr * float(pv_mw) * 1000.0
-            for bess_mwh in inclusive_float_range(cfg.bess_step_mwh, cfg.bess_max_mwh, cfg.bess_step_mwh):
+            for bess_mwh in bess_candidates:
+                total_combinations += 1
                 # ------------------------------
                 # 年度调度模型
                 # ------------------------------
@@ -304,31 +443,46 @@ def plan_wind_pv_bess_for_target_irr(
                     st = st, 
                     cfg = cfg,
                 )
+                logger.info(f"evaluated: \n{evaluated}")
                 # ------------------------------
                 # 结果解析
                 # ------------------------------
                 reason = evaluated.pop("reason")
+                # 统计结果
+                reason_counts[reason] = reason_counts.get(reason, 0) + 1
                 # 物理约束满足、PPA 为正、IRR 在目标容差内
                 if reason == "ok":
-                    candidates.append(evaluated)
+                    row = {**evaluated, "reason": reason}
+                    candidates.append(row)
+                    evaluated_rows.append(row)
                 # 物理约束不满足, 不会作为可行解，但会进入 diagnostics
                 elif reason in {"non_positive_ppa", "irr_out_of_tolerance"}:
-                    diagnostics.append({**evaluated, "reason": reason})
+                    row = {**evaluated, "reason": reason}
+                    diagnostics.append(row)
+                    evaluated_rows.append(row)
+    diagnostic_summary = _build_diagnostic_summary(total_combinations, reason_counts, evaluated_rows, cfg)
     # 存在满足所有约束的候选组合，选取总投资最低且 IRR 偏差最小的方案
     if candidates:
         best = min(candidates, key=lambda row: (row["total_capex_yuan"], row["irr_gap"]))
-        return _result_from_row("ok", best, pd.DataFrame(candidates))
+        return _result_from_row(
+            status="ok", 
+            row=best, 
+            diagnostics=pd.DataFrame(candidates), 
+            diagnostic_summary=diagnostic_summary, 
+        )
     # 无满足所有约束的候选，返回 PPA/IRR 不满足的诊断信息供参考
     if diagnostics:
         diag_df = pd.DataFrame(diagnostics).sort_values("irr_gap", na_position="last").reset_index(drop=True)
         return WindPVBESSIRRResult(
             status="no_solution",
             diagnostics=diag_df,
+            diagnostic_summary=diagnostic_summary,
             message="未找到满足 PPA/IRR 约束的风光储组合。",
         )
     # 所有候选均不满足物理消纳约束，返回空诊断信息
     return WindPVBESSIRRResult(
         status="no_solution",
         diagnostics=pd.DataFrame(),
+        diagnostic_summary=diagnostic_summary,
         message="未找到满足物理消纳约束的风光储组合。",
     )

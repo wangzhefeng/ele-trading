@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -19,7 +20,11 @@ import pandas as pd
 
 from ele_trading.capacity_planning import (
     WindPVBESSIRRPlanConfig,
+    WindPVBESSIRRResult,
     plan_wind_pv_bess_for_target_irr,
+)
+from ele_trading.capacity_planning.wind_pv_bess_irr_tuning import (
+    run_wind_pv_bess_irr_resource_tuning,
 )
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
@@ -61,7 +66,8 @@ def _build_wind_unit_curve(config: dict, cache_path: Path) -> pd.Series:
     wind_cfg = WindProfileConfig(**wind_cfg_dict)
 
     # 气象数据缓存
-    weather_cache = cache_path.parent / "weather_cache.csv"
+    weather_cache_dir = cache_path.parent.parent if cache_path.parent.name == "curve_cache" else cache_path.parent
+    weather_cache = weather_cache_dir / "weather_cache.csv"
     if weather_cache.exists():
         weather_df = pd.read_csv(weather_cache, parse_dates=["timestamp"]).set_index("timestamp")
     else:
@@ -133,6 +139,9 @@ def _to_config(config: dict) -> WindPVBESSIRRPlanConfig:
         irr_tolerance=price["irr_tolerance"],
         self_use_ratio_min=constraints["self_use_ratio_min"],
         load_cover_ratio_min=constraints["load_cover_ratio_min"],
+        wind_min_mw=capacity.get("wind_min_mw", 0.0),
+        pv_min_mw=capacity.get("pv_min_mw", 0.0),
+        bess_min_mwh=capacity.get("bess_min_mwh", 0.0),
         wind_max_mw=capacity["wind_max_mw"],
         pv_max_mw=capacity["pv_max_mw"],
         bess_max_mwh=capacity["bess_max_mwh"],
@@ -152,65 +161,191 @@ def _to_config(config: dict) -> WindPVBESSIRRPlanConfig:
         life_years=cost["life_years"],
     )
 
+# ------------------------------
+# 构建新能源单位处理曲线数据路径
+# ------------------------------
+def _safe_float_token(value: Any) -> str:
+    """Convert a scalar config value into a filesystem-safe token."""
+    if value is None:
+        return "auto"
+    if isinstance(value, float):
+        text = f"{value:g}"
+    else:
+        text = str(value)
+    return text.replace(".", "p").replace("/", "_").replace(" ", "")
 
-def main() -> None: 
+
+def _curve_cache_filename(prefix: str, config_section: dict[str, Any]) -> str:
+    if prefix.startswith("wind"):
+        parts = [
+            f"flh-{_safe_float_token(config_section.get('target_full_load_hours'))}",
+        ]
+    elif prefix.startswith("pv"):
+        parts = [
+            f"cloud-{_safe_float_token(config_section.get('cloud_factor'))}",
+            f"loss-{_safe_float_token(config_section.get('system_loss'))}",
+        ]
+    else:
+        parts = []
+    return f"{prefix}__{'__'.join(parts)}.csv"
+
+
+def _curve_cache_path(data_dir: Path, prefix: str, config_section: dict[str, Any]) -> Path:
+    return data_dir / "curve_cache" / _curve_cache_filename(prefix, config_section)
+
+# ------------------------------
+# 构建最优解数据
+# ------------------------------
+def _build_optimal_solution_df(result: WindPVBESSIRRResult) -> pd.DataFrame:
+    columns = [
+        "solution_rank",
+        "is_best_solution",
+        "scenario_id",
+        "wind_target_full_load_hours",
+        "pv_cloud_factor",
+        "pv_system_loss",
+        "resource_adjustment_score",
+        "wind_curve_cache_path",
+        "pv_curve_cache_path",
+        # capacity
+        "wind_mw",
+        "pv_mw",
+        "bess_mwh",
+        # contraints
+        "self_use_ratio",
+        "load_cover_ratio",
+        "owner_avg_price",
+        "green_price",
+        "ppa_price",
+        # energy calc
+        "annual_green_used_kwh",
+        "annual_grid_buy_kwh",
+        "curtail_kwh",
+        # economics
+        "total_capex_yuan",
+        "annual_revenue_yuan",
+        "annual_opex_yuan",
+        "annual_cashflow_yuan",
+        "irr",
+        "irr_gap",
+        "reason",
+    ]
+    if result.status != "ok" or result.diagnostics is None or result.diagnostics.empty:
+        return pd.DataFrame(columns=columns)
+
+    df = result.diagnostics.copy()
+    if "reason" in df.columns:
+        df = df[df["reason"] == "ok"].copy()
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+
+    for column in columns:
+        if column not in df.columns:
+            df[column] = None
+    df.insert(0, "solution_rank_tmp", range(1, len(df) + 1))
+    df["solution_rank"] = df["solution_rank_tmp"]
+    df["is_best_solution"] = df["solution_rank"] == 1
+    df = df.drop(columns=["solution_rank_tmp"])
+    return df[columns]
+
+
+
+
+def main() -> None:
+    # 加载配置
     CONFIG_PATH = PROJECT_ROOT / 'configs' / 'wind_pv_bess_irr_planning.yaml'
     config = read_yaml(CONFIG_PATH)
-    
+    # 数据目录
     data_dir = PROJECT_ROOT / "data" / "profit_calc" / "wind_pv_bess" / "v1"
-
+    # ------------------------------
     # 1. 加载真实负荷数据
+    # ------------------------------
     df_load = _load_demand(csv_path=data_dir / "demand_load.csv")
-    logger.info("负荷数据加载完成: %d 行, 时间范围 %s ~ %s", len(df_load), df_load["Time"].iloc[0], df_load["Time"].iloc[-1])
-
     idx = pd.DatetimeIndex(df_load["Time"])
-
-    # 2. 风电单位出力曲线（已有缓存则直接读取，否则仿真并保存）
-    wind_curve_path = data_dir / "wind_unit_curve.csv"
-    logger.info("风电单位出力曲线 (1MW)...")
-    wind_unit = _build_wind_unit_curve(config, cache_path=wind_curve_path)
-    logger.info("风电单位出力曲线就绪 (行数=%d, 均值=%.2f kW/MW)", len(wind_unit), wind_unit.mean())
-
-    # 3. 光伏单位出力曲线（已有缓存则直接读取，否则仿真并保存）
-    pv_curve_path = data_dir / "pv_unit_curve.csv"
-    logger.info("光伏单位出力曲线 (1kWp)...")
-    pv_unit = _build_pv_unit_curve(config, idx, pv_curve_path)
-    logger.info("光伏单位出力曲线就绪 (行数=%d, 均值=%.4f kW/kWp)", len(pv_unit), pv_unit.mean())
-
-    # 4. 运行容量规划
+    logger.info("负荷数据加载完成: %d 行, 时间范围 %s ~ %s", len(df_load), df_load["Time"].iloc[0], df_load["Time"].iloc[-1])
+    # ------------------------------
+    # 2. 运行容量规划
+    # ------------------------------
     cfg = _to_config(config)
-    logger.info("开始容量规划遍历...")
-    result = plan_wind_pv_bess_for_target_irr(df_load, wind_unit, pv_unit, cfg=cfg)
 
+    tuning_enabled = bool(config.get("resource_tuning", {}).get("enabled", False))
+    parameter_search_df: pd.DataFrame | None = None
+    parameter_search_best: dict[str, Any] | None = None
+    if tuning_enabled:
+        logger.info("开始资源调参 + 容量规划遍历...")
+        tuning_result = run_wind_pv_bess_irr_resource_tuning(
+            config,
+            df_load,
+            idx,
+            data_dir,
+            cfg,
+            build_wind_unit_curve=_build_wind_unit_curve,
+            build_pv_unit_curve=_build_pv_unit_curve,
+            curve_cache_path=_curve_cache_path,
+        )
+        result = tuning_result.result
+        parameter_search_df = tuning_result.parameter_search_summary
+        parameter_search_best = tuning_result.best_summary
+        
+        if result is None:
+            logger.info("资源调参未找到 IRR 命中解，输出参数搜索摘要和空可行解表。")
+            if parameter_search_df is not None and not parameter_search_df.empty:
+                parameter_search_best = (
+                    parameter_search_df
+                    .sort_values("irr", ascending=False, na_position="last")
+                    .head(1)
+                    .to_dict("records")[0]
+                )
+            result = WindPVBESSIRRResult(
+                status="no_solution",
+                diagnostics=pd.DataFrame(),
+                message="资源调参未找到满足 IRR 目标的风光储组合。",
+            )
+    else:
+        # 风电单位出力曲线（已有缓存则直接读取，否则仿真并保存）
+        wind_curve_path = _curve_cache_path(data_dir, "wind_unit_curve", config["wind_simulation"])
+        logger.info("风电单位出力曲线 (1MW)...")
+        wind_unit = _build_wind_unit_curve(config, cache_path=wind_curve_path)
+        logger.info("风电单位出力曲线就绪 (行数=%d, 均值=%.2f kW/MW)", len(wind_unit), wind_unit.mean())
+        
+        # 光伏单位出力曲线（已有缓存则直接读取，否则仿真并保存）
+        pv_curve_path = _curve_cache_path(data_dir, "pv_unit_curve", config["pv_simulation"])
+        logger.info("光伏单位出力曲线 (1kWp)...")
+        pv_unit = _build_pv_unit_curve(config, idx, pv_curve_path)
+        logger.info("光伏单位出力曲线就绪 (行数=%d, 均值=%.4f kW/kWp)", len(pv_unit), pv_unit.mean())
+        
+        # 运行容量规划
+        logger.info("开始容量规划遍历...")
+        result = plan_wind_pv_bess_for_target_irr(df_load, wind_unit, pv_unit, cfg=cfg)
+    # ------------------------------
     # 5. 保存结果
+    # ------------------------------
+    # 结果保存路径
     results_dir = PROJECT_ROOT / "results" / "wind_pv_bess_irr"
     results_dir.mkdir(parents=True, exist_ok=True)
+    
+    # diagnostics.csv save
+    diagnostics_path = results_dir / "diagnostics.csv"
 
-    if result.status == "ok":
-        summary = pd.DataFrame([{
-            "wind_mw": result.wind_mw,
-            "pv_mw": result.pv_mw,
-            "bess_mwh": result.bess_mwh,
-            "irr": result.irr,
-            "ppa_price": result.ppa_price,
-            "green_price": result.green_price,
-            "owner_avg_price": result.owner_avg_price,
-            "total_capex_yuan": result.total_capex_yuan,
-            "annual_revenue_yuan": result.annual_revenue_yuan,
-            "annual_opex_yuan": result.annual_opex_yuan,
-            "annual_cashflow_yuan": result.annual_cashflow_yuan,
-            "self_use_ratio": result.self_use_ratio,
-            "load_cover_ratio": result.load_cover_ratio,
-            "curtail_kwh": result.curtail_kwh,
-        }])
-        summary.to_csv(results_dir / "optimal_solution.csv", index=False)
-        logger.info("最优方案已保存: %s", results_dir / "optimal_solution.csv")
-
-    if result.diagnostics is not None and not result.diagnostics.empty:
-        result.diagnostics.to_csv(results_dir / "diagnostics.csv", index=False)
-        logger.info("诊断表已保存: %s (%d 行)", results_dir / "diagnostics.csv", len(result.diagnostics))
-
+    # optimal_solution.csv save
+    optimal_path = results_dir / "optimal_solution.csv"
+    optimal_df = _build_optimal_solution_df(result)
+    optimal_df.to_csv(optimal_path, index=False)
+    if optimal_df.empty:
+        logger.info("未找到可行解，空可行解表已保存: %s", optimal_path)
+    else:
+        logger.info("可行解表已保存: %s (%d 行)", optimal_path, len(optimal_df))
+    
+    # parameter_search_summary.csv save
+    if parameter_search_df is not None:
+        parameter_search_path = results_dir / "parameter_search_summary.csv"
+        parameter_search_df.to_csv(parameter_search_path, index=False)
+        logger.info("参数搜索摘要已保存: %s", parameter_search_path)
+        if parameter_search_best:
+            logger.info("parameter_search_best=%s", parameter_search_best)
+    # ------------------------------
     # 6. 日志输出
+    # ------------------------------
     logger.info("=== IRR 目标型 Wind+PV+BESS 容量规划 ===")
     logger.info("status=%s", result.status)
     if result.status == "ok":
@@ -236,6 +371,15 @@ def main() -> None:
         logger.info("message=%s", result.message)
         if result.diagnostics is not None and not result.diagnostics.empty:
             logger.info("nearest_candidate=%s", result.diagnostics.head(1).to_dict("records")[0])
+        if result.diagnostic_summary is not None:
+            reason_counts = result.diagnostic_summary.get("reason_counts")
+            max_irr_candidate = result.diagnostic_summary.get("max_irr_candidate")
+            nearest_irr_candidate = result.diagnostic_summary.get("nearest_irr_candidate")
+            target_gap_metrics = result.diagnostic_summary.get("target_gap_metrics")
+            logger.info("reason_counts=%s", reason_counts)
+            logger.info("max_irr_candidate=%s", max_irr_candidate)
+            logger.info("nearest_irr_candidate=%s", nearest_irr_candidate)
+            logger.info("target_gap_metrics=%s", target_gap_metrics)
 
 
 if __name__ == "__main__":
