@@ -1,8 +1,8 @@
 market_name: guangdong_spot_market
 settlement_mode: day_ahead_plus_realtime
 currency: CNY
-granularity_minutes: 15
-periods_per_day: 96
+granularity_minutes: 15   # 对应优化模块 dt=0.25（小时）
+periods_per_day: 96        # 24h * 4 = 96 个 15 分钟时段
 
 price_limits:
   cap_cny_per_mwh: 1500.0

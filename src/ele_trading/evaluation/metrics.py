@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import numpy as np
 import pandas as pd
+import rainflow
 
 
 def compute_irr(
@@ -138,4 +139,46 @@ def compute_extended_metrics(
         'revenue_per_efc': round(revenue_per_efc, 4),
         'rte': round(rte, 6),
         'utilization': round(utilization, 6),
+    }
+
+
+def compute_rainflow_degradation(
+    soc_series: np.ndarray | list[float],
+    e_cap: float,
+    deg_cost_per_cycle: float = 0.0,
+) -> dict[str, float]:
+    """基于雨流计数法的离线退化核算。
+
+    对完整 SOC 序列执行雨流计数，统计等效循环次数和退化成本。
+    与线性吞吐量退化模型并列使用，可对比两种退化口径。
+
+    参数
+    ----
+    soc_series        : SOC 时序（0~1 归一化或实际 MWh 均可，仅影响 DoD 绝对值）
+    e_cap             : 储能系统额定容量（MWh）
+    deg_cost_per_cycle: 单次完整循环退化成本（CNY/cycle），默认 0.0 仅返回循环次数
+
+    返回字段
+    --------
+    rainflow_efc      : 雨流等效完整循环次数（Equivalent Full Cycles）
+    total_throughput  : 总吞吐量（MWh），= Σ(count × range × e_cap)
+    degradation_cost  : 退化成本（CNY），= rainflow_efc × deg_cost_per_cycle
+    cycle_count       : 雨流识别的半/全循环总数
+    """
+    soc = np.asarray(soc_series, dtype=float)
+
+    # rainflow.extract_cycles 返回 (range, mean, count, i_start, i_end)
+    cycles = list(rainflow.extract_cycles(soc))
+
+    # 等效完整循环：每个循环的等效次数 = count × range / 2
+    # range 是 SOC 摆幅（如 0.8 表示 80% DoD），count 是 1.0（全循环）或 0.5（半循环）
+    total_efc = sum(c[2] * c[0] / 2.0 for c in cycles)
+    total_throughput = sum(c[2] * c[0] * e_cap for c in cycles)
+    deg_cost = total_efc * deg_cost_per_cycle
+
+    return {
+        'rainflow_efc': round(total_efc, 6),
+        'total_throughput': round(total_throughput, 6),
+        'degradation_cost': round(deg_cost, 4),
+        'cycle_count': len(cycles),
     }

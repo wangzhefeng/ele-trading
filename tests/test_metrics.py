@@ -2,7 +2,11 @@
 
 import numpy as np
 import pandas as pd
-from ele_trading.evaluation.metrics import summarize_bess_metrics, compute_extended_metrics
+from ele_trading.evaluation.metrics import (
+    summarize_bess_metrics,
+    compute_extended_metrics,
+    compute_rainflow_degradation,
+)
 
 
 def _make_dispatch_df(n=24):
@@ -74,5 +78,51 @@ def test_utilization_in_range():
     df = _make_dispatch_df()
     result = compute_extended_metrics(df, e_cap=10.0)
     assert 0.0 <= result['utilization'] <= 1.0
+
+
+# --- 雨流退化核算测试 ---
+
+
+def test_rainflow_single_full_cycle():
+    """V 形 SOC（1→0→1）由雨流识别为两个半循环，等效约 0.5 个完整循环。"""
+    soc = [1.0, 0.0, 1.0]
+    result = compute_rainflow_degradation(soc, e_cap=10.0)
+    # rainflow 将 V 形拆为两个 count=0.5 的半循环，efc = 0.5
+    assert abs(result['rainflow_efc'] - 0.5) < 0.01
+    assert result['cycle_count'] == 2
+
+
+def test_rainflow_multiple_cycles():
+    """多次循环应累积等效循环次数。"""
+    # 1.0 → 0.2 → 0.9 → 0.1 → 0.8 → 0.3 → 1.0
+    soc = [1.0, 0.2, 0.9, 0.1, 0.8, 0.3, 1.0]
+    result = compute_rainflow_degradation(soc, e_cap=10.0)
+    assert result['rainflow_efc'] > 0.5
+    assert result['cycle_count'] >= 3
+
+
+def test_rainflow_degradation_cost():
+    """退化成本 = rainflow_efc × deg_cost_per_cycle。"""
+    soc = [1.0, 0.2, 0.9, 0.1, 0.8, 0.3, 1.0]
+    cost_per_cycle = 50.0
+    result = compute_rainflow_degradation(soc, e_cap=10.0, deg_cost_per_cycle=cost_per_cycle)
+    expected_cost = result['rainflow_efc'] * cost_per_cycle
+    assert abs(result['degradation_cost'] - expected_cost) < 0.01
+
+
+def test_rainflow_fields():
+    """应返回四个字段。"""
+    soc = [1.0, 0.5, 0.8, 0.2, 1.0]
+    result = compute_rainflow_degradation(soc, e_cap=10.0)
+    for field in ('rainflow_efc', 'total_throughput', 'degradation_cost', 'cycle_count'):
+        assert field in result
+
+
+def test_rainflow_constant_soc():
+    """恒定 SOC 应无有效循环（range=0）。"""
+    soc = [0.5] * 24
+    result = compute_rainflow_degradation(soc, e_cap=10.0)
+    assert result['rainflow_efc'] == 0.0
+    assert result['total_throughput'] == 0.0
 
 

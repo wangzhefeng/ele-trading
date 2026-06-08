@@ -3,12 +3,14 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = PROJECT_ROOT / 'app'
 
 
-def _run_script(script_name: str) -> subprocess.CompletedProcess:
+def _run_script(script_name: str, timeout: int = 120) -> subprocess.CompletedProcess:
     """使用项目 .venv 运行入口脚本，返回 subprocess 结果。"""
     python = str(PROJECT_ROOT / '.venv' / 'bin' / 'python')
     script = str(APP_DIR / script_name)
@@ -16,7 +18,7 @@ def _run_script(script_name: str) -> subprocess.CompletedProcess:
         [python, script],
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=timeout,
         cwd=str(PROJECT_ROOT),
     )
 
@@ -99,3 +101,78 @@ def test_run_wind_pv_bess_irr_planning():
     combined = result.stdout + result.stderr
     assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
     assert 'IRR 目标型 Wind+PV+BESS' in combined or 'wind_mw' in combined
+
+
+# --- 以下为补充的入口脚本冒烟测试 ---
+
+
+def test_run_pv_simulation_v1():
+    """run_pv_simulation_v1.py 应退出码为 0 且输出光伏仿真结果。"""
+    result = _run_script('run_pv_simulation_v1.py')
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
+    assert 'pv simulation' in combined.lower() or 'pv_kw' in combined.lower()
+
+
+def test_run_cvxp_bess_dispatch():
+    """run_cvxp_bess_dispatch.py 应退出码为 0 且输出 CVXPY 调度结果。"""
+    result = _run_script('run_cvxp_bess_dispatch.py')
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
+    assert 'CVXPY' in combined or 'objective_value' in combined
+
+
+def test_run_bess_capacity_planning():
+    """run_bess_capacity_planning.py 应退出码为 0（合成数据，无需外部依赖）。"""
+    result = _run_script('run_bess_capacity_planning.py', timeout=180)
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
+
+
+def test_run_wind_bess_capacity_planning():
+    """run_wind_bess_capacity_planning.py 应退出码为 0（合成数据，无需外部依赖）。"""
+    result = _run_script('run_wind_bess_capacity_planning.py', timeout=180)
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
+
+
+@pytest.mark.skip(reason="需要 Open-Meteo 网络 API 访问，CI 环境可能不可用")
+def test_run_pv_simulation_v2():
+    """run_pv_simulation_v2.py 需要 Open-Meteo API，仅手动验收。"""
+    result = _run_script('run_pv_simulation_v2.py')
+    assert result.returncode == 0
+
+
+@pytest.mark.skip(reason="需要 Open-Meteo 网络 API 访问，CI 环境可能不可用")
+def test_run_wind_simulation_v1():
+    """run_wind_simulation_v1.py 需要 Open-Meteo API，仅手动验收。"""
+    result = _run_script('run_wind_simulation_v1.py')
+    assert result.returncode == 0
+
+
+@pytest.mark.skip(reason="需要 Open-Meteo 网络 API 访问，CI 环境可能不可用")
+def test_run_wind_simulation_v2():
+    """run_wind_simulation_v2.py 需要 Open-Meteo API，仅手动验收。"""
+    result = _run_script('run_wind_simulation_v2.py')
+    assert result.returncode == 0
+
+
+@pytest.mark.skip(reason="运行时间 >30s，仅手动验收")
+def test_run_wind_pv_bess_capacity_planning_1():
+    """run_wind_pv_bess_capacity_planning_1.py 二维搜索较重，仅手动验收。"""
+    result = _run_script('run_wind_pv_bess_capacity_planning_1.py', timeout=300)
+    assert result.returncode == 0
+
+
+@pytest.mark.skip(reason="运行时间 >30s，仅手动验收")
+def test_run_wind_pv_bess_capacity_planning_2():
+    """run_wind_pv_bess_capacity_planning_2.py 三场景演示较重，仅手动验收。"""
+    result = _run_script('run_wind_pv_bess_capacity_planning_2.py', timeout=300)
+    assert result.returncode == 0
+
+
+@pytest.mark.skip(reason="需要 data/profit_calc/dist_es/ 外部数据文件，仅手动验收")
+def test_run_dist_ess_dispatch():
+    """run_dist_ess_dispatch.py 需要外部 CSV 数据，仅手动验收。"""
+    result = _run_script('run_dist_ess_dispatch.py', timeout=300)
+    assert result.returncode == 0

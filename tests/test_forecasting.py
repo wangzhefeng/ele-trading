@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 import pytest
-from ele_trading.forecasting.price_forecast import SimplePriceForecaster
+from ele_trading.forecasting.price_forecast import SimplePriceForecaster, ARIMAForecaster
 from ele_trading.forecasting.pv_forecast import PVPowerForecaster
 from ele_trading.forecasting.wind_forecast import WindPowerForecaster
 
@@ -112,3 +112,57 @@ class TestWindPowerForecaster:
         cap = fc._capacity_mw
         for p in result.point_forecast:
             assert 0.0 <= p <= cap + 1e-10
+
+
+class TestARIMAForecaster:
+    def test_basic_fit_predict(self):
+        """ARIMA fit + predict 基本流程。"""
+        fc = ARIMAForecaster(order=(2, 0, 1))
+        history = [300.0, 320.0, 280.0, 310.0, 350.0, 340.0, 360.0, 330.0, 310.0, 290.0]
+        fc.fit(history)
+        result = fc.predict(horizon=6)
+        assert result.horizon == 6
+        assert len(result.point_forecast) == 6
+        assert len(result.lower_quantile) == 6
+        assert len(result.upper_quantile) == 6
+
+    def test_empty_history_raises(self):
+        fc = ARIMAForecaster()
+        with pytest.raises(ValueError, match='不能为空'):
+            fc.fit([])
+
+    def test_predict_before_fit_raises(self):
+        fc = ARIMAForecaster()
+        with pytest.raises(RuntimeError, match='Call fit'):
+            fc.predict(horizon=5)
+
+    def test_upper_ge_point_ge_lower(self):
+        """上分位 >= 点预测 >= 下分位。"""
+        fc = ARIMAForecaster(order=(1, 0, 0))
+        history = [300 + 20 * np.sin(i * 0.3) for i in range(30)]
+        fc.fit(history)
+        result = fc.predict(horizon=6)
+        for lo, p, hi in zip(result.lower_quantile, result.point_forecast, result.upper_quantile):
+            assert hi >= p - 1e-10
+            assert p >= lo - 1e-10
+
+    def test_point_forecast_non_negative(self):
+        """点预测应非负（已做 max(0, ...) 截断）。"""
+        fc = ARIMAForecaster(order=(1, 0, 0))
+        history = [300.0, 320.0, 280.0, 310.0, 350.0, 340.0, 360.0, 330.0, 310.0, 290.0]
+        fc.fit(history)
+        result = fc.predict(horizon=6)
+        for p in result.point_forecast:
+            assert p >= 0.0
+
+    def test_output_matches_simple_interface(self):
+        """ARIMAForecaster 与 SimplePriceForecaster 返回相同 ForecastOutput 结构。"""
+        history = [300.0, 320.0, 280.0, 310.0, 350.0]
+        simple = SimplePriceForecaster().predict(history, horizon=4)
+        arima = ARIMAForecaster(order=(1, 0, 0))
+        arima.fit(history)
+        arima_result = arima.predict(horizon=4)
+        assert simple.horizon == arima_result.horizon
+        assert len(simple.point_forecast) == len(arima_result.point_forecast)
+        assert len(simple.lower_quantile) == len(arima_result.lower_quantile)
+        assert len(simple.upper_quantile) == len(arima_result.upper_quantile)

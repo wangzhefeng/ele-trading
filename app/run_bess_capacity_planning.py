@@ -111,7 +111,7 @@ def main():
     config = read_yaml(CONFIG_PATH)
     sc = config['scenario']
     cst = config['constraints']
-    bess = config["bess"]]
+    bess = config["bess"]
     cost = config['cost']
     search = config['search']
     cap = config['capacity']
