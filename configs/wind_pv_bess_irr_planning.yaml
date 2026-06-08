@@ -40,7 +40,7 @@ price:
   target_owner_price_yuan_per_kwh: 0.32
   grid_buy_price_yuan_per_kwh: 0.36
   green_price_adder_yuan_per_kwh: 0.074
-  target_irr: 0.06
+  target_irr: 0.05
   irr_tolerance: 0.002
   irr_constraint_mode: minimum
 

@@ -160,6 +160,7 @@ def _bounded_cfg(
 
 def _result_summary_row(result: WindPVBESSIRRResult, metadata: dict[str, Any], stage: str) -> dict[str, Any]:
     best_reason = "ok" if result.status == "ok" else None
+    annual_green_generation_kwh = result.annual_green_used_kwh + result.curtail_kwh
     row = {
         **metadata,
         "stage": stage,
@@ -176,6 +177,9 @@ def _result_summary_row(result: WindPVBESSIRRResult, metadata: dict[str, Any], s
         "owner_avg_price": result.owner_avg_price,
         "total_capex_yuan": result.total_capex_yuan,
         "annual_cashflow_yuan": result.annual_cashflow_yuan,
+        "annual_green_generation_kwh": annual_green_generation_kwh,
+        "annual_green_used_kwh": result.annual_green_used_kwh,
+        "annual_grid_buy_kwh": result.annual_grid_buy_kwh,
         "self_use_ratio": result.self_use_ratio,
         "load_cover_ratio": result.load_cover_ratio,
         "curtail_kwh": result.curtail_kwh,
@@ -195,6 +199,12 @@ def _result_summary_row(result: WindPVBESSIRRResult, metadata: dict[str, Any], s
             "owner_avg_price": best.get("owner_avg_price"),
             "total_capex_yuan": best.get("total_capex_yuan"),
             "annual_cashflow_yuan": best.get("annual_cashflow_yuan"),
+            "annual_green_generation_kwh": (
+                float(best.get("annual_green_used_kwh", 0.0) or 0.0)
+                + float(best.get("curtail_kwh", 0.0) or 0.0)
+            ),
+            "annual_green_used_kwh": best.get("annual_green_used_kwh"),
+            "annual_grid_buy_kwh": best.get("annual_grid_buy_kwh"),
             "self_use_ratio": best.get("self_use_ratio"),
             "load_cover_ratio": best.get("load_cover_ratio"),
             "curtail_kwh": best.get("curtail_kwh"),

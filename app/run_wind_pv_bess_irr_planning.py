@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import csv
 import sys
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,56 @@ from ele_trading.capacity_planning.wind_pv_bess_irr_tuning import (
 )
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
+
+
+RESULT_COLUMN_CN: dict[str, str] = {
+    "solution_rank": "方案排序",
+    "is_best_solution": "是否最优方案",
+    "scenario_id": "场景编号",
+    "target_irr": "目标IRR",
+    "wind_target_full_load_hours": "风电目标等效满发小时数",
+    "pv_cloud_factor": "光伏云量因子",
+    "pv_system_loss": "光伏系统损耗",
+    "wind_unit_flh": "风电单位曲线等效满发小时数",
+    "pv_unit_flh": "光伏单位曲线等效满发小时数",
+    "base_wind_unit_flh": "基准风电单位曲线等效满发小时数",
+    "base_pv_unit_flh": "基准光伏单位曲线等效满发小时数",
+    "resource_adjustment_score": "资源调整评分",
+    "wind_curve_cache_path": "风电曲线缓存路径",
+    "pv_curve_cache_path": "光伏曲线缓存路径",
+    "stage": "搜索阶段",
+    "status": "状态",
+    "has_feasible_solution": "是否存在可行解",
+    "best_reason": "最佳候选原因",
+    "wind_mw": "风电容量(MW)",
+    "pv_mw": "光伏容量(MW)",
+    "bess_mwh": "储能容量(MWh)",
+    "self_use_ratio": "绿电自用率",
+    "load_cover_ratio": "负荷覆盖率",
+    "owner_avg_price": "业主综合电价(元/kWh)",
+    "green_price": "绿电价格(元/kWh)",
+    "ppa_price": "PPA价格(元/kWh)",
+    "annual_green_generation_kwh": "年度绿电发电量(kWh)",
+    "annual_green_used_kwh": "年度绿电消纳量(kWh)",
+    "annual_grid_buy_kwh": "年度电网购电量(kWh)",
+    "curtail_kwh": "弃电量(kWh)",
+    "total_capex_yuan": "总投资(元)",
+    "annual_revenue_yuan": "年度收入(元)",
+    "annual_opex_yuan": "年度运维成本(元)",
+    "annual_cashflow_yuan": "年度现金流(元)",
+    "irr": "内部收益率",
+    "irr_gap": "IRR差距",
+    "reason": "原因",
+}
+
+
+def _write_result_csv_with_cn_header(df: pd.DataFrame, path: Path) -> None:
+    """Write a CSV with Chinese labels above the stable English columns."""
+    with path.open("w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        writer.writerow([RESULT_COLUMN_CN.get(column, column) for column in df.columns])
+        writer.writerow(list(df.columns))
+        df.to_csv(f, index=False, header=False)
 
 
 def _load_demand(csv_path: Path) -> pd.DataFrame:
@@ -219,6 +270,7 @@ def _build_optimal_solution_df(result: WindPVBESSIRRResult) -> pd.DataFrame:
         "green_price",
         "ppa_price",
         # energy calc
+        "annual_green_generation_kwh",
         "annual_green_used_kwh",
         "annual_grid_buy_kwh",
         "curtail_kwh",
@@ -243,6 +295,11 @@ def _build_optimal_solution_df(result: WindPVBESSIRRResult) -> pd.DataFrame:
     for column in columns:
         if column not in df.columns:
             df[column] = None
+    if "annual_green_generation_kwh" in df.columns:
+        df["annual_green_generation_kwh"] = (
+            pd.to_numeric(df["annual_green_used_kwh"], errors="coerce").fillna(0.0)
+            + pd.to_numeric(df["curtail_kwh"], errors="coerce").fillna(0.0)
+        )
     df.insert(0, "solution_rank_tmp", range(1, len(df) + 1))
     df["solution_rank"] = df["solution_rank_tmp"]
     df["is_best_solution"] = df["solution_rank"] == 1
@@ -331,7 +388,7 @@ def main() -> None:
     # optimal_solution.csv save
     optimal_path = results_dir / "optimal_solution.csv"
     optimal_df = _build_optimal_solution_df(result)
-    optimal_df.to_csv(optimal_path, index=False)
+    _write_result_csv_with_cn_header(optimal_df, optimal_path)
     if optimal_df.empty:
         logger.info("未找到可行解，空可行解表已保存: %s", optimal_path)
     else:
@@ -340,7 +397,7 @@ def main() -> None:
     # parameter_search_summary.csv save
     if parameter_search_df is not None:
         parameter_search_path = results_dir / "parameter_search_summary.csv"
-        parameter_search_df.to_csv(parameter_search_path, index=False)
+        _write_result_csv_with_cn_header(parameter_search_df, parameter_search_path)
         logger.info("参数搜索摘要已保存: %s", parameter_search_path)
         if parameter_search_best:
             logger.info("parameter_search_best=%s", parameter_search_best)
