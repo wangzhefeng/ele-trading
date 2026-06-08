@@ -137,6 +137,7 @@ def _to_config(config: dict) -> WindPVBESSIRRPlanConfig:
         green_price_adder_yuan_per_kwh=price["green_price_adder_yuan_per_kwh"],
         target_irr=price["target_irr"],
         irr_tolerance=price["irr_tolerance"],
+        irr_constraint_mode=price.get("irr_constraint_mode", "range"),
         self_use_ratio_min=constraints["self_use_ratio_min"],
         load_cover_ratio_min=constraints["load_cover_ratio_min"],
         wind_min_mw=capacity.get("wind_min_mw", 0.0),

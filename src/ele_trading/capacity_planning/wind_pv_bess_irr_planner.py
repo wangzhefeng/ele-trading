@@ -25,6 +25,7 @@ class WindPVBESSIRRPlanConfig:
     green_price_adder_yuan_per_kwh: float = 0.074  # 绿电电价=PPA价格+0.074元
     target_irr: float = 0.08  # 测算IRR=8%的最佳风光储配比
     irr_tolerance: float = 0.002  # IRR 容差
+    irr_constraint_mode: str = "range"  # IRR 约束模式：range 或 minimum
 
     wind_min_mw: float = 0.0  # 风电搜索下限 MW
     pv_min_mw: float = 0.0  # 光伏搜索下限 MW
@@ -197,7 +198,7 @@ def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[
         + bess_mwh * 1000.0 * cfg.bess_capex_yuan_per_kwh
     )
     # 年收入
-    annual_revenue = green_price * used
+    annual_revenue = ppa_price * used
     # 年运维
     annual_opex = total_capex * cfg.annual_opex_ratio
     # 年现金流
@@ -214,8 +215,16 @@ def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[
         "irr": float(irr),
         "irr_gap": float(irr_gap),
     })
-    # 候选组合必须达到目标 IRR，且不超过上侧容差；不满足时进入 diagnostics。
-    if irr < cfg.target_irr or irr > cfg.target_irr + cfg.irr_tolerance:
+    if cfg.irr_constraint_mode not in {"range", "minimum"}:
+        raise ValueError("irr_constraint_mode must be 'range' or 'minimum'")
+
+    if cfg.irr_constraint_mode == "minimum":
+        irr_out_of_bounds = irr < cfg.target_irr
+    else:
+        irr_out_of_bounds = irr < cfg.target_irr or irr > cfg.target_irr + cfg.irr_tolerance
+
+    # 候选组合不满足 IRR 约束时进入 diagnostics。
+    if irr_out_of_bounds:
         return {**row, "reason": "irr_out_of_tolerance"}
     # ------------------------------
     # 物理约束满足、PPA 为正、IRR 达到目标且在上侧容差内
@@ -443,7 +452,7 @@ def plan_wind_pv_bess_for_target_irr(
                     st = st, 
                     cfg = cfg,
                 )
-                logger.info(f"evaluated: \n{evaluated}")
+                logger.debug("evaluated=%s", evaluated)
                 # ------------------------------
                 # 结果解析
                 # ------------------------------
