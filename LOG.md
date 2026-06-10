@@ -33,16 +33,26 @@
 - `TODO 002` 中“LOG append-only 机制”已成为项目约定，不再作为工程实现待办保留。
 - 2026-05-23 记录中的“tests 目录缺失”已经过期；当前真实问题不是 tests 缺失，而是 legacy import 兼容路径缺失。
 
-### 当前待完成项
+### 当前状态（截至 2026-06-11）
 
-- [x] **TODO-001 legacy import 兼容修复（P0）**：修复 `tests/test_utils_energy_price.py` 和 `tests/test_utils_time_index.py` collection 阶段导入失败。已完成：移除对 `src.es_rolling_schedule.Utils.*` 的导入，测试只验证根目录 `utils` 当前稳定入口。
-- [x] **TODO-002 测试说明文档（P1）**：新增 `tests/README.md`，覆盖 32 个测试文件清单、入口脚本冒烟边界（14 个已覆盖 + 6 个 skip）、依赖说明和运行命令。
-- [x] **TODO-003 重型入口验收策略（P1）**：新增 4 个 smoke 测试（`run_pv_simulation_v1`、`run_cvxp_bess_dispatch`、`run_bess_capacity_planning`、`run_wind_bess_capacity_planning`），6 个注册为 `@pytest.mark.skip`（网络 API / 重运行 / 外部数据），tests/README.md 已更新。修复 `run_bess_capacity_planning.py` 语法错误（line 114 多余括号）。
-- [x] **TODO-004 15 分钟样例数据与市场配置说明（P2）**：生成 `data/raw/sample_day_ahead_prices_96.csv`（96 行，三次样条插值）；`configs/market_guangdong.yaml` 已补充 `dt=0.25` 传参注释。
-- [x] **TODO-005 离线雨流退化核算（P2）**：`metrics.py` 新增 `compute_rainflow_degradation()`（基于 `rainflow` 库），`tests/test_metrics.py` 新增 5 个雨流测试，`run_backtest.py` 已集成雨流与线性退化并列输出。
-- [x] **TODO-006 价格预测升级（P2）**：`price_forecast.py` 新增 `ARIMAForecaster` 类（默认阶数 (2,0,1)，`ForecastOutput` 统一接口），`pyproject.toml` 已添加 `statsmodels>=0.14.0`，`tests/test_forecasting.py` 新增 6 个 ARIMA 测试。
-- [x] **TODO-007 项目级 AGENTS/CLAUDE 规则补齐（P2）**：`.agents/AGENTS.md` 新增第 5 节「电力交易项目特有约束」，覆盖求解器要求、场景模块兼容、e_cap 要求、偏差考核参数、配置与数据一致性。
-- [x] **TODO-008 fresh 环境验收（P3）**：当前环境已安装 `statsmodels>=0.14.0`，`uv run python -m pytest` 全量运行通过（244 passed, 6 failed 均为 pre-existing legacy bridge 问题, 6 skipped）。核心依赖（pvlib、windpowerlib、scipy、rainflow、cvxpy、statsmodels）均可正常导入和运行。
+所有已追踪待办项（TODO-001 ~ TODO-008）均已完成。最新一次对齐（条目 021）完成了 `docs/research/` 清理与文档对齐。当前无未关闭的 P0~P3 待办项。
+
+测试状态：244 passed, 6 failed（均为 pre-existing legacy bridge 问题），6 skipped。
+
+#### 已完成的待办项（历史记录）
+
+- [x] **TODO-001 legacy import 兼容修复（P0）**
+- [x] **TODO-002 测试说明文档（P1）**
+- [x] **TODO-003 重型入口验收策略（P1）**
+- [x] **TODO-004 15 分钟样例数据与市场配置说明（P2）**
+- [x] **TODO-005 离线雨流退化核算（P2）**
+- [x] **TODO-006 价格预测升级（P2）**
+- [x] **TODO-007 项目级 AGENTS/CLAUDE 规则补齐（P2）**
+- [x] **TODO-008 fresh 环境验收（P3）**
+
+#### 低优先级观察
+
+- `.gitignore` 已覆盖 `.DS_Store`，但 4 个 `.DS_Store` 文件仍在 git 跟踪中（提交于规则添加之前）：`.DS_Store`、`docs/.DS_Store`、`src/.DS_Store`、`src/ele_trading/.DS_Store`。`docs/research/.DS_Store` 将在 `docs/research/` 删除提交后自动清除。其余 4 个可通过 `git rm --cached` 移除跟踪，不影响本地文件。
 
 ## 2026-04-17
 
@@ -298,3 +308,38 @@
 - `data/raw/`：3 个样例数据文件（含新增 96 点 15 分钟价格）
 - `pyproject.toml`：18 个核心依赖（新增 `statsmodels`），2 个可选依赖组
 - `.agents/AGENTS.md`：通用规范 + 电力交易项目特有约束 ✅
+
+## 2026-06-11
+
+### 状态对齐 021 — docs/ 目录清理与文档对齐
+
+#### 背景
+
+`docs/research/` 目录包含早期调研文档（2026-04-16 风光储测算方案 v1/v2、2026-04-17 电力市场交易调研文档 v1/v2、power-market-trading 图片、电力市场交易 PPT），这些调研文档的内容已沉淀到项目代码和工程文档中，不再需要独立维护。
+
+#### 变更清单
+
+- 删除 `docs/research/` 整个目录（含 5 个 markdown 调研文档、6 张 png 图片、1 个 pptx 文件）
+- 更新 `docs/README.md`：移除调研文档引用，描述改为「工程化说明与算法笔记」
+- 更新 `docs/architecture_notes.md`：与当前 9 个 src 子包对齐（补充 capacity_planning、resource_simulation、demand，修正 data→data_provider），更新主链路为 7 步闭环
+- 更新 `docs/two_stage_notes.md`：补充实现文件路径引用
+- 更新根 `README.md`：`docs/` 描述从「架构说明、算法笔记、调研文档」改为「架构说明与算法笔记」
+
+#### 当前 docs/ 结构
+
+```
+docs/
+├── README.md                   # 文档索引
+├── architecture_notes.md       # 系统架构与模块职责
+└── two_stage_notes.md          # Two-stage + CVaR 算法说明
+```
+
+#### 当前项目规模快照（更新）
+
+- `src/ele_trading/`：9 个子包，约 73 个 Python 模块
+- `tests/`：34 个 Python 文件（33 个 test_*.py + 1 个 __init__.py）+ `README.md`
+- `app/`：20 个入口脚本 + README
+- `configs/`：20 个 YAML 配置 + README
+- `data/raw/`：4 个样例数据文件（24 点日前价格、96 点 15 分钟价格、日内价格、BESS 配置）
+- `pyproject.toml`：18 个核心依赖，2 个可选依赖组
+- `docs/`：3 个文档文件（原 research/ 已删除）

@@ -41,7 +41,7 @@ ele-trading/
 ├── app/                          # 可直接运行的 demo/流程入口
 ├── configs/                      # YAML 配置样例
 ├── data/                         # 最小样例数据、legacy 兼容数据、研究数据
-├── docs/                         # 架构说明、算法笔记、调研文档
+├── docs/                         # 架构说明与算法笔记
 ├── tests/                        # 单元测试和入口脚本冒烟测试
 ├── LOG.md                        # append-only 状态、限制和待办记录
 ├── pyproject.toml                # 项目依赖与测试配置
