@@ -179,8 +179,8 @@ src/ba_eva/dataset/output.json
 
 # custom
 .cache/
-.agents/
-.claude/
+# .agents/
+# .claude/
 .hermes/
 .venv/
 data/
