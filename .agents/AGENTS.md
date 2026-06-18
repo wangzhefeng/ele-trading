@@ -50,7 +50,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ### 求解器要求
 
 - Two-stage + CVaR 模型需系统安装 `glpk`（`brew install glpk`）或 `cbc`。
-- 新优化模块必须通过 `pyomo` 建模，禁止直接调用底层求解 C API。
+- 调度/优化模型统一通过建模框架构建（PuLP+CBC 为调度类默认，Pyomo+SCIP 用于容量 sizing 类，CVXPY 用于凸规划变体），禁止直接调用底层求解器 C API。
+- `cvxpy` 是可选依赖：CVXPY 路径通过 `__getattr__` 延迟导入，缺失时 PuLP/Pyomo 路径正常可用，不阻塞项目主链路。
 - 入口脚本需使用 `app/` 目录下的 `run_*.py`，不得在测试或 notebook 中直接调用求解器。
 
 ### 场景模块兼容

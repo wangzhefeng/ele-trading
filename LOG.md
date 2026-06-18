@@ -343,3 +343,67 @@ docs/
 - `data/raw/`：4 个样例数据文件（24 点日前价格、96 点 15 分钟价格、日内价格、BESS 配置）
 - `pyproject.toml`：18 个核心依赖，2 个可选依赖组
 - `docs/`：3 个文档文件（原 research/ 已删除）
+
+## 2026-06-18
+
+### 状态对齐 022 — .venv 同步、架构解耦、文档对齐
+
+#### 背景
+
+实际验证发现 `.venv` 与 `uv.lock` 不同步（cvxpy、statsmodels 缺失），导致 19 个测试文件 collection error。同时 `optimization/__init__.py` 在包顶层硬导入依赖 cvxpy 的模块（`user_side_bess_dispatch_cvxpy`），使 cvxpy 成为整个 optimization/evaluation/control/capacity_planning 链的强依赖。文档层存在 4 处不一致。
+
+#### 变更清单
+
+**T1 — 恢复 .venv（`uv sync --extra dev`）**
+- 安装了 cvxpy 1.9.0、statsmodels 0.14.6 及 cvxpy 依赖链（clarabel/osqp/scs/qdldl/highspy）
+- 恢复了 pytest 9.0.3（dev 可选依赖组）
+
+**T2 — 解耦 optimization 对 cvxpy 的硬导入（`src/ele_trading/optimization/__init__.py`）**
+- 删除 line 46 的直接导入 `from .user_side_bess_dispatch_cvxpy import ...`
+- 新增 `__getattr__` 延迟导入：仅在首次访问 `CVXP_PROFILES`/`get_cvxp_profile`/`run_cvxp_bess_dispatch` 时才 import cvxpy 模块
+- 效果：cvxpy 缺失时，PuLP/Pyomo/evaluation/capacity_planning 路径全部可用，不受阻塞
+
+**T4 — 修正 `.agents/AGENTS.md` 求解器规则**
+- 将「新优化模块必须通过 pyomo 建模」修正为三种建模框架并存的现状描述（PuLP+CBC / Pyomo+SCIP / CVXPY）
+- 新增 cvxpy 延迟导入规则
+
+**T5 — 对齐 `app/README.md` 入口表**
+- `storage.yaml` → 默认样例数据（`data/raw/`）（run_bess_arbitrage/run_mpc_demo 实际用 `load_default_bess_config`）
+- `run_dist_bess_dispatch.py` → `run_dist_ess_dispatch.py`（实际文件名）
+- 删除不存在的 `run_wind_pv_bess.py` / `run_legacy_data_preparation.py` 行
+- 补充 `run_wind_pv_bess_capacity_planning_1/_2` 和 `run_pv/wind_simulation_v1/v2` 共 4 个缺失入口
+- 现在表中 20 个入口与 `app/` 实际文件一一对应
+
+**T6 — 清理 `.DS_Store` git 跟踪（`git rm --cached`）**
+- 移除 git 索引中的 4 个 `.DS_Store` 跟踪（本地文件保留）
+
+#### 当前测试状态（实测）
+
+```text
+环境：核心依赖已装，weather 可选依赖（xarray/netCDF4/pymongo/pykrige）未装
+201 passed, 18 failed, 31 errors, 6 skipped  (256 collected)
+
+18 failed 构成：
+  - legacy 链路 4（test_run_wind_pv_legacy_*/test_legacy_data_bridge，pre-existing）
+  - weather 可选依赖缺失 12（test_weather.py，需装 [weather] 组恢复）
+  - IRR 断言值变化 1（test_wind_pv_bess_irr_planner，pre-existing）
+  - yaml 检查 1（test_yaml_config_loading，pre-existing）
+
+31 errors 构成：
+  - 全部为 weather 测试的 ImportError（xarray/netCDF4 等 [weather] 可选依赖缺失）
+```
+
+**核心链路验证通过：** optimization（PuLP/Pyomo/CVXPY 全部）、evaluation（backtest/metrics/settlement）、forecasting（含 ARIMA）、scenario、data_provider、user_side 系列、entry_scripts（非 legacy 14 个）均正常。
+
+**对比修复前：** 从 19 collection errors（全因 cvxpy 缺失级联）恢复到 201 passed，无修复引入的新失败。
+
+#### 当前项目规模快照（更新）
+
+- `src/ele_trading/`：9 个子包，约 88 个 Python 模块
+- `tests/`：33 个 test_*.py + README（256 collected）
+- `app/`：20 个入口脚本 + README
+- `configs/`：20 个 YAML 配置 + README
+- `data/raw/`：4 个样例数据文件
+- `pyproject.toml`：18 个核心依赖，2 个可选依赖组（dev、weather）
+- `.agents/AGENTS.md`：通用规范 + 电力交易约束（已修正）
+- `docs/`：3 个文档文件

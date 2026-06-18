@@ -43,7 +43,6 @@ from .interfaces import (
     UserSideWindPVBESSDispatchResult,
 )
 from .bess_arbitrage import solve_bess_arbitrage
-from .user_side_bess_dispatch_cvxpy import CVXP_PROFILES, get_cvxp_profile, run_cvxp_bess_dispatch
 from .mpc_bess import run_bess_mpc, solve_one_mpc_window
 from .two_stage_cvar import build_two_stage_cvar_model
 from .user_side_bess_dispatch import run_user_side_bess_dispatch
@@ -54,3 +53,15 @@ from .user_side_renewable_dispatch import run_user_side_renewable_dispatch
 from .user_side_wind_bess_dispatch import run_user_side_wind_bess_dispatch
 from .user_side_wind_dispatch import run_user_side_wind_dispatch
 from .user_side_wind_pv_bess_dispatch import run_user_side_wind_pv_bess_dispatch
+
+
+# 延迟导入：cvxpy 是重型可选依赖，缺失时不应阻塞优化包的其他路径（PuLP / Pyomo）
+def __getattr__(name):
+    _DELAYED = {"CVXP_PROFILES", "get_cvxp_profile", "run_cvxp_bess_dispatch"}
+    if name in _DELAYED:
+        from . import user_side_bess_dispatch_cvxpy as _cvxp
+        attr = getattr(_cvxp, name)
+        # 缓存到模块命名空间，下次直接命中
+        globals()[name] = attr
+        return attr
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
