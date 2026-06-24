@@ -1,14 +1,14 @@
 # optimization — 优化调度模块
 
-本模块承接价格、负荷、光伏、风电、储能参数和场景输入，输出申报、调度、容量搜索或成本收益结果。当前覆盖市场储能、用户侧、CVXPY、分布式储能和 Two-stage 风险优化多条链路。
+本模块承接价格、负荷、光伏、风电、储能参数和场景输入，输出申报、调度、容量搜索或成本收益结果。当前覆盖市场储能、用户侧、CVXPY 和 Two-stage 风险优化多条链路（分布式储能的算法与 dataclass 均在 `capacity_planning/`）。
 
 ## 当前文件
 
 | 文件 | 职责 |
 |------|------|
-| `interfaces.py` | 统一 dataclass 和枚举，包括储能、用户侧、CVXPY、分布式储能输入输出 |
+| `interfaces.py` | 统一 dataclass 和枚举，包括储能、用户侧、CVXPY 输入输出 |
 | `bess_arbitrage.py` | 单市场储能套利和容量 sizing |
-| `mpc_storage.py` | 单窗口 MPC 和滚动 MPC |
+| `mpc_bess.py` | 单窗口 MPC 和滚动 MPC |
 | `two_stage_cvar.py` | Two-stage + CVaR 场景优化模型 |
 | `user_side_bess_dispatch.py` | 用户侧储能调度，最小化购电、需量和循环成本 |
 | `user_side_renewable_dispatch.py` | 用户侧通用可再生能源无储能调度内核 |
@@ -19,7 +19,6 @@
 | `user_side_wind_bess_dispatch.py` | 用户侧 Wind+BESS 场景适配入口 |
 | `user_side_wind_pv_bess_dispatch.py` | 用户侧 Wind+PV+BESS 场景适配入口 |
 | `user_side_bess_dispatch_cvxpy.py` | 用户侧 BESS 调度的 CVXPY 版本 profile |
-| `dist_ess_dispatch.py` | 分布式储能多柜容量搜索、调度模拟和结果输出 |
 
 ## 市场储能套利
 
@@ -64,17 +63,4 @@
 
 ## 分布式储能调度
 
-`dist_ess_dispatch.py` 面向多变压器、多储能柜组合的容量搜索和运行模拟。当前支持：
-
-- preset 配置和系统选择。
-- 坐标搜索、全网格搜索、最大容量组合。
-- 组合可行性检查、调度优化、收益评估。
-- `combo_key`、schedule、summary 输出之间的映射。
-
-入口为 `app/run_dist_bess_dispatch.py`，配置为 `configs/dist_ess_dispatch.yaml`。
-
-## 与 legacy 的关系
-
-当前主线没有原样搬迁历史 `es_rolling_schedule` 的所有站点策略和数据预处理逻辑。已迁入的是稳定的优化核心、输入输出 dataclass、用户侧调度和项目级兼容工具；未迁入内容包括多设备实时策略后处理、平台数据预处理细节、特定站点规则和部分 legacy import 路径。
-
-如需补齐 legacy 兼容，应单独做接口和数据契约设计，不要直接把历史脚本复制进本目录。
+分布式储能（多变压器、多储能柜容量搜索 + 调度模拟 + 收益评估）属于容量规划范畴，算法实现见 `capacity_planning/dist_bess_dispatch.py`；入口为 `app/run_dist_bess_dispatch.py`，配置为 `configs/dist_bess_dispatch.yaml`。其输入输出 dataclass（`DistBESSConfig`、`DistBESSSchedulerConfig`、`DistBESSDispatchInput` 等）定义在 `capacity_planning/interfaces.py`。
