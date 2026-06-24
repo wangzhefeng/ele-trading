@@ -51,8 +51,8 @@ def test_fixed_capacity_helper_matches_dispatch_engine():
     assert result["curtail_kwh"] == pytest.approx(expected["curtail_kwh"])
 
 
-def test_owner_price_and_ppa_are_back_solved_from_green_usage():
-    """业主综合电价应由绿电价格和电网购电共同回算到目标 0.32。"""
+def test_owner_price_and_ppa_revenue_are_back_solved_from_green_usage():
+    """业主综合电价按绿电价回算，项目收入按 PPA 价格计算。"""
     df_load, wind_unit, pv_unit = _flat_case()
     cfg = WindPVBESSIRRPlanConfig(
         wind_max_mw=1.0,
@@ -73,7 +73,7 @@ def test_owner_price_and_ppa_are_back_solved_from_green_usage():
     assert result.green_price == pytest.approx(0.32)
     assert result.ppa_price == pytest.approx(0.246)
     assert result.owner_avg_price == pytest.approx(0.32)
-    assert result.annual_revenue_yuan == pytest.approx(result.green_price * result.annual_green_used_kwh)
+    assert result.annual_revenue_yuan == pytest.approx(result.ppa_price * result.annual_green_used_kwh)
 
 
 def test_negative_ppa_candidates_are_filtered():

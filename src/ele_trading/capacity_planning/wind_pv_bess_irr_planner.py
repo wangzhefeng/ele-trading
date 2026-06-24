@@ -69,7 +69,7 @@ class WindPVBESSIRRResult:
     owner_avg_price: float = 0.0  # 业主综合电价，理论上应回到 target_owner_price_yuan_per_kwh
     irr: float | None = None  # 项目 IRR
     total_capex_yuan: float = 0.0  # 总投资
-    annual_revenue_yuan: float = 0.0  # 年收入
+    annual_revenue_yuan: float = 0.0  # PPA 口径年收入
     annual_opex_yuan: float = 0.0  # 年运维
     annual_cashflow_yuan: float = 0.0  # 年净现金流
     annual_green_used_kwh: float = 0.0  # 年度绿电消纳量
@@ -197,7 +197,7 @@ def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[
         + pv_mw * 1000.0 * cfg.pv_capex_yuan_per_kwp
         + bess_mwh * 1000.0 * cfg.bess_capex_yuan_per_kwh
     )
-    # 年收入
+    # PPA 口径年收入
     annual_revenue = ppa_price * used
     # 年运维
     annual_opex = total_capex * cfg.annual_opex_ratio
