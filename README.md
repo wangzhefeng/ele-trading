@@ -118,7 +118,7 @@ ele-trading/
 本项目使用项目根目录 `.venv` 和 `uv`：
 
 ```bash
-uv sync
+uv sync --extra dev
 ```
 
 常用入口：
@@ -131,7 +131,7 @@ uv run python app/run_backtest.py
 uv run python app/run_user_side_bess_dispatch.py
 uv run python app/run_user_side_pv_dispatch.py
 uv run python app/run_user_side_pv_bess_dispatch.py
-uv run python app/run_wind_pv_bess.py
+uv run python app/run_wind_pv_bess_capacity_planning_1.py
 ```
 
 更完整的入口清单见 `app/README.md`。

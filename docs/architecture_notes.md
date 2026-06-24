@@ -9,7 +9,7 @@
 | `data_provider` | 加载样例数据、配置、负荷曲线、气象数据，提供统一输入接口 |
 | `forecasting` | 价格预测、PV/风电功率预测、天气特征工程 |
 | `scenario` | 价格场景采样（LHS/MC）与缩减（Kantorovich 后向缩减） |
-| `optimization` | 储能套利、MPC、Two-stage+CVaR、用户侧调度、分布式储能等优化建模 |
+| `optimization` | 储能套利、MPC、Two-stage+CVaR、用户侧调度、分布式储能等优化建模（CVXPY 路径为延迟导入可选依赖，缺失时不影响 PuLP/Pyomo 主链路） |
 | `capacity_planning` | PV/风电/BESS/风光储容量规划、可行性分析、IRR 测算、多节点扫描 |
 | `resource_simulation` | 风光资源物理仿真与 profile 构造 |
 | `control` | 基于 MPC 的滚动调度封装 |
@@ -33,3 +33,4 @@
 - 先支持单资产储能，再扩展风光储联合调度。
 - 先用统一接口，避免 app 脚本直接依赖底层求解细节。
 - 新算法实现放入 `src/ele_trading/`，入口脚本只负责组装配置、数据和日志输出。
+- 重型可选依赖（cvxpy）通过延迟导入（`__getattr__`）降低耦合，缺失时主链路不受阻。
