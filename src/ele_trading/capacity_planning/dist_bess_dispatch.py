@@ -28,7 +28,7 @@ from cvxpy.error import SolverError
 from ..utils.data_alignment import read_time_value_csv
 from ..utils.demand_charge import monthly_peak_demand_cost
 from ..utils.time_splitting import generate_month_ranges
-from ..optimization.interfaces import (
+from .interfaces import (
     DIST_BESS_CABINET_CAPACITY_KWH,
     DIST_BESS_CABINET_POWER_KW,
     DIST_BESS_CONSTRAINT_TOLERANCE_KW,
@@ -123,7 +123,7 @@ class BESSDistributionScheduler:
         current_soc_list: List[float],
         max_demand_price: float,
         freq_minutes: int,
-        config: DistESSSchedulerConfig,
+        config: DistBESSSchedulerConfig,
         park_transform_capacity: float | None = None,
         cross_flow_penalty: float = 1e-6,
     ):
@@ -519,7 +519,7 @@ def load_series(path: Path, start_time: datetime, end_time: datetime) -> pd.Seri
 
 
 def load_inputs(base_dir: Path, start_time: datetime, end_time: datetime,
-                system_config: DistESSConfig, load_mode: str = "park_file"):
+                system_config: DistBESSConfig, load_mode: str = "park_file"):
     local_loads = {cfg.name: load_series(base_dir / cfg.load_file, start_time, end_time)
                    for cfg in system_config.transformers}
     ele_price = pd.read_csv(base_dir / "ele_price.csv")
@@ -574,7 +574,7 @@ def calculate_system_max_cabinets(system_load: pd.Series) -> tuple[float, int]:
     return kw, max(int(kw // _CABINET_POWER_KW), 0)
 
 
-def cabinet_groups(system_config: DistESSConfig) -> tuple[tuple[str, ...], ...]:
+def cabinet_groups(system_config: DistBESSConfig) -> tuple[tuple[str, ...], ...]:
     if system_config.cabinet_groups:
         return system_config.cabinet_groups
     groups: dict[str, list[str]] = {}
@@ -583,26 +583,26 @@ def cabinet_groups(system_config: DistESSConfig) -> tuple[tuple[str, ...], ...]:
     return tuple(tuple(names) for names in groups.values())
 
 
-def cabinet_count_by_name(cabinet_counts: tuple[int, ...], system_config: DistESSConfig) -> dict[str, int]:
+def cabinet_count_by_name(cabinet_counts: tuple[int, ...], system_config: DistBESSConfig) -> dict[str, int]:
     return {cfg.name: cabinet_counts[idx] for idx, cfg in enumerate(system_config.transformers)}
 
 
-def group_equal_cabinet_violation_count(cabinet_counts: tuple[int, ...], system_config: DistESSConfig) -> int:
+def group_equal_cabinet_violation_count(cabinet_counts: tuple[int, ...], system_config: DistBESSConfig) -> int:
     counts = cabinet_count_by_name(cabinet_counts, system_config)
     return sum(int(len({counts[name] for name in group}) != 1) for group in cabinet_groups(system_config))
 
 
-def group_cabinet_count(cabinet_counts: tuple[int, ...], system_config: DistESSConfig, group_prefix: str) -> int:
+def group_cabinet_count(cabinet_counts: tuple[int, ...], system_config: DistBESSConfig, group_prefix: str) -> int:
     counts = cabinet_count_by_name(cabinet_counts, system_config)
     group = next(g for g in cabinet_groups(system_config) if g[0].startswith(group_prefix))
     return counts[group[0]]
 
 
-def min_required_total_cabinets(system_config: DistESSConfig, min_cpt: int) -> int:
+def min_required_total_cabinets(system_config: DistBESSConfig, min_cpt: int) -> int:
     return len(system_config.transformers) * min_cpt
 
 
-def is_combo_feasible(cabinet_counts: tuple[int, ...], system_config: DistESSConfig,
+def is_combo_feasible(cabinet_counts: tuple[int, ...], system_config: DistBESSConfig,
                       equality_mode: CabinetEqualityMode, min_cpt: int = 0,
                       system_max_cabinets: int | None = None) -> bool:
     if len(cabinet_counts) != len(system_config.transformers):
@@ -623,7 +623,7 @@ def is_combo_feasible(cabinet_counts: tuple[int, ...], system_config: DistESSCon
     return True
 
 
-def full_grid_candidates(system_config: DistESSConfig, equality_mode: CabinetEqualityMode,
+def full_grid_candidates(system_config: DistBESSConfig, equality_mode: CabinetEqualityMode,
                          max_cabinets_override: int | None = None,
                          system_max_cabinets: int | None = None,
                          min_cpt: int = 0) -> Iterable[tuple[int, ...]]:
@@ -657,7 +657,7 @@ def full_grid_candidates(system_config: DistESSConfig, equality_mode: CabinetEqu
             yield tuple(cn[cfg.name] for cfg in system_config.transformers)
 
 
-def candidate_neighbors(cabinet_counts: tuple[int, ...], system_config: DistESSConfig,
+def candidate_neighbors(cabinet_counts: tuple[int, ...], system_config: DistBESSConfig,
                         equality_mode: CabinetEqualityMode, min_cpt: int = 0,
                         system_max_cabinets: int | None = None) -> Iterable[tuple[int, ...]]:
     if not cabinet_counts:
@@ -687,7 +687,7 @@ def candidate_neighbors(cabinet_counts: tuple[int, ...], system_config: DistESSC
                 yield ct
 
 
-def capped_max_capacity_combo(system_config: DistESSConfig, equality_mode: CabinetEqualityMode,
+def capped_max_capacity_combo(system_config: DistBESSConfig, equality_mode: CabinetEqualityMode,
                               system_max_cabinets: int | None = None, min_cpt: int = 0) -> tuple[int, ...]:
     for cfg in system_config.transformers:
         if cfg.max_cabinets < min_cpt:
@@ -711,7 +711,7 @@ def capped_max_capacity_combo(system_config: DistESSConfig, equality_mode: Cabin
     return tuple(counts[cfg.name] for cfg in system_config.transformers)
 
 
-def zero_schedule(index: pd.DatetimeIndex, system_config: DistESSConfig, cabinet_counts: tuple[int, ...]) -> pd.DataFrame:
+def zero_schedule(index: pd.DatetimeIndex, system_config: DistBESSConfig, cabinet_counts: tuple[int, ...]) -> pd.DataFrame:
     data: dict[str, Any] = {"time": index}
     for cfg in system_config.transformers:
         data[f"power_{cfg.name}"] = 0.0; data[f"soc_{cfg.name}"] = 0.0
@@ -722,7 +722,7 @@ def zero_schedule(index: pd.DatetimeIndex, system_config: DistESSConfig, cabinet
 
 
 def _fill_zero_schedule_load_columns(schedule_df: pd.DataFrame, local_loads: dict[str, pd.Series],
-                                     system_config: DistESSConfig) -> pd.DataFrame:
+                                     system_config: DistBESSConfig) -> pd.DataFrame:
     schedule = schedule_df.copy()
     schedule["time"] = pd.to_datetime(schedule["time"])
     indexed = schedule.set_index("time")
@@ -733,11 +733,11 @@ def _fill_zero_schedule_load_columns(schedule_df: pd.DataFrame, local_loads: dic
     return indexed.reset_index()
 
 
-def optimize_combo(cabinet_counts: tuple[int, ...], system_config: DistESSConfig,
+def optimize_combo(cabinet_counts: tuple[int, ...], system_config: DistBESSConfig,
                    system_load: pd.Series, local_loads: dict[str, pd.Series],
                    ele_price: pd.DataFrame, max_demand_price: float,
                    start_time: datetime, end_time: datetime, freq_minutes: int,
-                   scheduler_config: DistESSSchedulerConfig) -> tuple[pd.DataFrame, float]:
+                   scheduler_config: DistBESSSchedulerConfig) -> tuple[pd.DataFrame, float]:
     if sum(cabinet_counts) == 0:
         schedule = zero_schedule(system_load.index, system_config, cabinet_counts)
         return _fill_zero_schedule_load_columns(schedule, local_loads, system_config), 0.0
@@ -747,7 +747,7 @@ def optimize_combo(cabinet_counts: tuple[int, ...], system_config: DistESSConfig
     objective_value = 0.0
     for vs, ve in generate_month_ranges(start_time, end_time):
         mi = system_load[(system_load.index >= vs) & (system_load.index < ve)].index
-        scheduler = EsDistributionScheduler(
+        scheduler = BESSDistributionScheduler(
             mi.to_list(), system_load.loc[mi].to_list(),
             [local_loads[cfg.name].loc[mi].to_list() for cfg in system_config.transformers],
             ele_price.loc[mi, "value"].to_list(), ele_price.loc[mi, "type"].to_list(),
@@ -778,7 +778,7 @@ def optimize_combo(cabinet_counts: tuple[int, ...], system_config: DistESSConfig
     return pd.concat(monthly_frames, ignore_index=True), objective_value
 
 
-def evaluate_schedule(cabinet_counts: tuple[int, ...], system_config: DistESSConfig,
+def evaluate_schedule(cabinet_counts: tuple[int, ...], system_config: DistBESSConfig,
                       schedule_df: pd.DataFrame, objective_value: float,
                       system_load: pd.Series, ele_price: pd.DataFrame,
                       max_demand_price: float, system_power_limit_kw: float,
@@ -839,7 +839,7 @@ def evaluate_schedule(cabinet_counts: tuple[int, ...], system_config: DistESSCon
 
 
 def write_schedule(output_dir: Path, schedule_df: pd.DataFrame,
-                   cabinet_counts: tuple[int, ...], system_config: DistESSConfig) -> None:
+                   cabinet_counts: tuple[int, ...], system_config: DistBESSConfig) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     schedule_df.to_csv(output_dir / f"schedule_result_combo_{combo_key(cabinet_counts, system_config.transformers)}.csv", index=False)
 
@@ -900,7 +900,7 @@ def _mark_best_full_grid_result(evaluated: dict) -> None:
 
 def run_capacity_search(base_dir: Path, output_dir: Path, start_time: datetime, end_time: datetime,
                         max_demand_price: float, freq_minutes: int, system_name: str,
-                        scheduler_config: DistESSSchedulerConfig, equality_mode: CabinetEqualityMode,
+                        scheduler_config: DistBESSSchedulerConfig, equality_mode: CabinetEqualityMode,
                         load_mode: str = "park_file", search_mode: str = "coordinate",
                         workers: int = 1, min_cpt: int = 1) -> pd.DataFrame:
     if system_name not in SYSTEMS:
@@ -1084,7 +1084,7 @@ def parse_cabinet_counts_from_schedule(schedule_df: pd.DataFrame, schedule_path:
     raise ValueError("schedule file must contain combo_key or use schedule_result_combo_<combo>.csv naming.")
 
 
-def load_base_data(base_dir: Path, system_config: DistESSConfig, start_time: datetime,
+def load_base_data(base_dir: Path, system_config: DistBESSConfig, start_time: datetime,
                    end_time: datetime, load_mode: str = "park_file"):
     local_load_dfs = {cfg.name: pd.DataFrame({"value": load_series(base_dir / cfg.load_file, start_time, end_time)})
                       for cfg in system_config.transformers}
@@ -1110,7 +1110,7 @@ def load_base_data(base_dir: Path, system_config: DistESSConfig, start_time: dat
     return system_load, local_load_dfs, ele_price_df
 
 
-def simulate_schedule(schedule_path: Path, base_dir: Path, system_config: DistESSConfig,
+def simulate_schedule(schedule_path: Path, base_dir: Path, system_config: DistBESSConfig,
                       max_demand_price: float, start_time: datetime, end_time: datetime,
                       equality_mode: CabinetEqualityMode = CabinetEqualityMode.GROUP,
                       load_mode: str = "park_file", min_cpt: int = 1) -> SimulationResult:
@@ -1216,7 +1216,7 @@ def _select_combo_key(strategy_path: Path, combo_key_value: str | None) -> str:
     return str(sdf.iloc[0][cc])
 
 
-def simulate_all(base_dir: Path, strategy_dir: str, system_config: DistESSConfig,
+def simulate_all(base_dir: Path, strategy_dir: str, system_config: DistBESSConfig,
                  max_demand_price: float, start_time: datetime, end_time: datetime,
                  equality_mode: CabinetEqualityMode = CabinetEqualityMode.GROUP,
                  load_mode: str = "park_file", min_cpt: int = 1) -> pd.DataFrame:

@@ -45,6 +45,20 @@ from .wind_pv_bess_irr_tuning import (
     run_wind_pv_bess_irr_resource_tuning,
 )
 from .bess_capacity_sizer import CapacitySizingResult, solve_capacity_sizing
+from .interfaces import (
+    DIST_BESS_CABINET_CAPACITY_KWH,
+    DIST_BESS_CABINET_POWER_KW,
+    DIST_BESS_CONSTRAINT_TOLERANCE_KW,
+    SolverType,
+    CabinetEqualityMode,
+    GridImportFormula,
+    TransformerConfig,
+    DistBESSConfig,
+    DistBESSSchedulerConfig,
+    DistBESSPipelineParams,
+    DistBESSDispatchInput,
+    DistBESSDispatchResult,
+)
 from .dist_bess_dispatch import (
     BESSDistributionScheduler,
     SimulationResult,
@@ -103,6 +117,11 @@ __all__ = [
     'WindPVBESSIRRTuningResult', 'iter_resource_scenarios',
     'run_wind_pv_bess_irr_resource_tuning',
     'CapacitySizingResult', 'solve_capacity_sizing',
+    'DIST_BESS_CABINET_CAPACITY_KWH', 'DIST_BESS_CABINET_POWER_KW',
+    'DIST_BESS_CONSTRAINT_TOLERANCE_KW',
+    'SolverType', 'CabinetEqualityMode', 'GridImportFormula',
+    'TransformerConfig', 'DistBESSConfig', 'DistBESSSchedulerConfig',
+    'DistBESSPipelineParams', 'DistBESSDispatchInput', 'DistBESSDispatchResult',
     'BESSDistributionScheduler', 'SimulationResult',
     'SYSTEMS', 'PRESETS', 'TRANSFORMERS', 'TRANSFORMER_BY_NAME',
     'V1_PRESET', 'V2_PRESET', 'V3_PRESET', 'V4_PRESET', 'V5_PRESET',

@@ -1,10 +1,10 @@
 """分布式储能容量搜索运行脚本
 
-从 configs/dist_ess_dispatch.yaml 加载参数，
+从 configs/dist_bess_dispatch.yaml 加载参数，
 运行分布式储能容量搜索算法。
 
 用法:
-    python app/run_dist_ess_dispatch.py
+    python app/run_dist_bess_dispatch.py
 """
 from __future__ import annotations
 
@@ -17,12 +17,12 @@ SRC_ROOT = PROJECT_ROOT / 'src'
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from ele_trading.optimization.interfaces import DistESSDispatchInput
-from ele_trading.capacity_planning import run_dist_ess_dispatch
+from ele_trading.capacity_planning import DistBESSDispatchInput
+from ele_trading.capacity_planning import run_dist_bess_dispatch
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 
-CONFIG_PATH = PROJECT_ROOT / 'configs' / 'dist_ess_dispatch.yaml'
+CONFIG_PATH = PROJECT_ROOT / 'configs' / 'dist_bess_dispatch.yaml'
 
 
 def main() -> None:
@@ -34,7 +34,7 @@ def main() -> None:
     dispatch = cfg['dispatch']
     search = cfg['search']
 
-    input_data = DistESSDispatchInput(
+    input_data = DistBESSDispatchInput(
         base_dir=str(base_dir),
         start_time=start_time,
         end_time=end_time,
@@ -51,7 +51,7 @@ def main() -> None:
         f"开始分布式储能容量搜索: preset={input_data.preset} "
         f"system={input_data.system_name} search_mode={input_data.search_mode}"
     )
-    result = run_dist_ess_dispatch(input_data)
+    result = run_dist_bess_dispatch(input_data)
 
     logger.info(f"搜索完成: 最优组合={result.best_combo_key}")
     logger.info(f"  收益={result.best_revenue:.2f} 元")

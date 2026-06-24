@@ -840,6 +840,8 @@ annualized_capex = capex_per_kwh * Cap_rated * crf
 
 **功能**：多变压器公共母线下的分布式储能调度优化。
 
+**数据类型**：输入输出与调度配置 dataclass 定义于本目录 `interfaces.py`（`DistBESSDispatchInput`、`DistBESSDispatchResult`、`DistBESSSchedulerConfig` 等），不再反向依赖 `optimization/interfaces.py`。
+
 **拓扑结构**：
 ```
         ┌─────────────────────────────────────┐
@@ -960,10 +962,8 @@ capacity_planning/
 │   ├── num_utils.py           # 数值工具
 │   ├── demand_charge.py       # 需量电费计算
 │   └── time_splitting.py      # 时间分割
-├── evaluation/
-│   └── metrics.py             # IRR 计算等指标
-└── optimization/
-    └── interfaces.py          # 分布式储能配置接口
+└── evaluation/
+    └── metrics.py             # IRR 计算等指标
 ```
 
 ## 外部依赖
