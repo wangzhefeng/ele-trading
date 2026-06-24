@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import numpy as np
 from pulp import LpBinary, LpMaximize, LpProblem, LpVariable, PULP_CBC_CMD, lpSum, value
 
 from ele_trading.utils import check_pulp_status

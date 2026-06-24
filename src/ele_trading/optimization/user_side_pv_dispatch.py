@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 from .interfaces import (
+    UserSideRenewableDispatchInput,
     UserSidePVDispatchInput,
     UserSidePVDispatchResult,
     UserSidePVExportParams,
-    UserSideRenewableDispatchInput,
 )
 from .user_side_renewable_dispatch import run_user_side_renewable_dispatch
 
 
-def run_user_side_pv_dispatch(
-    dispatch_input: UserSidePVDispatchInput,
-) -> UserSidePVDispatchResult:
-    """Run deterministic user-side PV dispatch without storage."""
+def run_user_side_pv_dispatch(dispatch_input: UserSidePVDispatchInput) -> UserSidePVDispatchResult:
+    """
+    Run deterministic user-side PV dispatch without storage.
+    """
+    # TODO 补充注释
     _validate_input(dispatch_input)
+    # TODO 补充注释
     renewable_result = run_user_side_renewable_dispatch(
         UserSideRenewableDispatchInput(
             timestamps=dispatch_input.timestamps,
@@ -26,6 +28,7 @@ def run_user_side_pv_dispatch(
             step_hours=dispatch_input.step_hours,
         )
     )
+
     return UserSidePVDispatchResult(
         pv_to_load=renewable_result.renewable_to_load,
         pv_to_grid=renewable_result.renewable_to_grid,

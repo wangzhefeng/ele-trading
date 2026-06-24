@@ -8,10 +8,10 @@ from .interfaces import (
 from .user_side_renewable_dispatch import run_user_side_renewable_dispatch
 
 
-def run_user_side_wind_dispatch(
-    dispatch_input: UserSideWindDispatchInput,
-) -> UserSideWindDispatchResult:
-    """Run deterministic user-side wind dispatch without storage."""
+def run_user_side_wind_dispatch(dispatch_input: UserSideWindDispatchInput) -> UserSideWindDispatchResult:
+    """
+    Run deterministic user-side wind dispatch without storage.
+    """
     renewable_result = run_user_side_renewable_dispatch(
         UserSideRenewableDispatchInput(
             timestamps=dispatch_input.timestamps,
@@ -24,6 +24,7 @@ def run_user_side_wind_dispatch(
             step_hours=dispatch_input.step_hours,
         )
     )
+    
     return UserSideWindDispatchResult(
         wind_to_load=renewable_result.renewable_to_load,
         wind_to_grid=renewable_result.renewable_to_grid,

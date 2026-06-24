@@ -8,10 +8,10 @@ from .interfaces import (
 from .user_side_renewable_bess_dispatch import run_user_side_renewable_bess_dispatch
 
 
-def run_user_side_wind_bess_dispatch(
-    dispatch_input: UserSideWindBESSDispatchInput,
-) -> UserSideWindBESSDispatchResult:
-    """Run user-side wind + BESS dispatch as a MILP."""
+def run_user_side_wind_bess_dispatch(dispatch_input: UserSideWindBESSDispatchInput) -> UserSideWindBESSDispatchResult:
+    """
+    Run user-side wind + BESS dispatch as a MILP.
+    """
     renewable_result = run_user_side_renewable_bess_dispatch(
         UserSideRenewableBESSDispatchInput(
             timestamps=dispatch_input.timestamps,
@@ -29,6 +29,7 @@ def run_user_side_wind_bess_dispatch(
             policy=dispatch_input.policy,
         )
     )
+    
     return UserSideWindBESSDispatchResult(
         wind_to_load=renewable_result.renewable_to_load,
         wind_to_bess=renewable_result.renewable_to_bess,

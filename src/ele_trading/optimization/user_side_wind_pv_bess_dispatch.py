@@ -1,24 +1,47 @@
 from __future__ import annotations
 
-from ele_trading.utils import clean_value
-
 from .interfaces import (
     UserSideRenewableBESSDispatchInput,
     UserSideWindPVBESSDispatchInput,
     UserSideWindPVBESSDispatchResult,
 )
 from .user_side_renewable_bess_dispatch import run_user_side_renewable_bess_dispatch
+from ele_trading.utils import clean_value
 
 
-def run_user_side_wind_pv_bess_dispatch(
-    dispatch_input: UserSideWindPVBESSDispatchInput,
-) -> UserSideWindPVBESSDispatchResult:
-    """Run user-side wind + PV + BESS dispatch as a MILP."""
+def _validate_input(dispatch_input: UserSideWindPVBESSDispatchInput) -> None:
+    """
+    TODO 补充注释
+
+    Args:
+        dispatch_input (UserSideWindPVBESSDispatchInput): _description_
+
+    Raises:
+        ValueError: _description_
+        ValueError: _description_
+        ValueError: _description_
+    """
+    length = len(dispatch_input.timestamps)
+    if not (len(dispatch_input.pv_forecast) == len(dispatch_input.wind_forecast) == length):
+        raise ValueError("timestamps, pv_forecast, and wind_forecast must have the same length")
+    if any(pv < 0 for pv in dispatch_input.pv_forecast):
+        raise ValueError("pv_forecast must be non-negative")
+    if any(wind < 0 for wind in dispatch_input.wind_forecast):
+        raise ValueError("wind_forecast must be non-negative")
+
+
+def run_user_side_wind_pv_bess_dispatch(dispatch_input: UserSideWindPVBESSDispatchInput) -> UserSideWindPVBESSDispatchResult:
+    """
+    Run user-side wind + PV + BESS dispatch as a MILP.
+    """
+    # TODO 补充注释
     _validate_input(dispatch_input)
+    # TODO 补充注释
     renewable_forecast = [
         clean_value(pv + wind)
         for pv, wind in zip(dispatch_input.pv_forecast, dispatch_input.wind_forecast)
     ]
+    # TODO 补充注释
     renewable_result = run_user_side_renewable_bess_dispatch(
         UserSideRenewableBESSDispatchInput(
             timestamps=dispatch_input.timestamps,
@@ -36,6 +59,7 @@ def run_user_side_wind_pv_bess_dispatch(
             policy=dispatch_input.policy,
         )
     )
+    
     return UserSideWindPVBESSDispatchResult(
         pv_forecast=dispatch_input.pv_forecast,
         wind_forecast=dispatch_input.wind_forecast,
@@ -60,17 +84,3 @@ def run_user_side_wind_pv_bess_dispatch(
         total_cost=renewable_result.total_cost,
         constraint_violations=renewable_result.constraint_violations,
     )
-
-
-def _validate_input(dispatch_input: UserSideWindPVBESSDispatchInput) -> None:
-    length = len(dispatch_input.timestamps)
-    if not (
-        len(dispatch_input.pv_forecast)
-        == len(dispatch_input.wind_forecast)
-        == length
-    ):
-        raise ValueError("timestamps, pv_forecast, and wind_forecast must have the same length")
-    if any(pv < 0 for pv in dispatch_input.pv_forecast):
-        raise ValueError("pv_forecast must be non-negative")
-    if any(wind < 0 for wind in dispatch_input.wind_forecast):
-        raise ValueError("wind_forecast must be non-negative")

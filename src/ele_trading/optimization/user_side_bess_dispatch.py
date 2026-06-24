@@ -12,15 +12,83 @@ from pulp import (
 
 from ele_trading.utils import check_pulp_status, clean_value
 from .interfaces import (
+    UserSideBESSParams,
     UserSideBESSDispatchInput,
     UserSideBESSDispatchResult,
-    UserSideBESSParams,
 )
 
 
-def run_user_side_bess_dispatch(
+def _validate_input(dispatch_input: UserSideBESSDispatchInput) -> None:
+    length = len(dispatch_input.timestamps)
+    if length == 0:
+        raise ValueError("dispatch horizon must not be empty")
+    if not (
+        len(dispatch_input.load_forecast)
+        == len(dispatch_input.buy_price)
+        == len(dispatch_input.price_type)
+        == length
+    ):
+        raise ValueError(
+            "timestamps, load_forecast, buy_price, and price_type "
+            "must have the same length"
+        )
+    if dispatch_input.step_hours <= 0:
+        raise ValueError("step_hours must be positive")
+    if dispatch_input.demand_charge_rate < 0:
+        raise ValueError("demand_charge_rate must be non-negative")
+    if dispatch_input.cycle_cost_rate < 0:
+        raise ValueError("cycle_cost_rate must be non-negative")
+    if any(load < 0 for load in dispatch_input.load_forecast):
+        raise ValueError("load_forecast must be non-negative")
+    if any(price < 0 for price in dispatch_input.buy_price):
+        raise ValueError("buy_price must be non-negative")
+
+    bess = dispatch_input.bess
+    if bess.capacity <= 0:
+        raise ValueError("bess.capacity must be positive")
+    if bess.soc_min < 0 or bess.soc_max > bess.capacity:
+        raise ValueError("bess SOC bounds must be within bess capacity")
+    if bess.soc_min > bess.soc_max:
+        raise ValueError("bess.soc_min must be less than or equal to bess.soc_max")
+    if not bess.soc_min <= dispatch_input.initial_soc <= bess.soc_max:
+        raise ValueError("initial_soc must be within bess SOC bounds")
+    if dispatch_input.terminal_soc_target is not None and not (
+        bess.soc_min <= dispatch_input.terminal_soc_target <= bess.soc_max
+    ):
+        raise ValueError("terminal_soc_target must be within bess SOC bounds")
+    if bess.p_ch_max < 0 or bess.p_dis_max < 0:
+        raise ValueError("bess power limits must be non-negative")
+    if bess.eta_ch <= 0 or bess.eta_dis <= 0:
+        raise ValueError("bess efficiencies must be positive")
+
+
+def _constraint_violations(
     dispatch_input: UserSideBESSDispatchInput,
-) -> UserSideBESSDispatchResult:
+    charge_values: list[float],
+    discharge_values: list[float],
+    soc_values: list[float],
+    grid_import_values: list[float],
+    max_grid_import: float,
+) -> dict[str, float]:
+    tolerance = 1e-6
+    bess = dispatch_input.bess
+    violations = {
+        "soc_min": max(bess.soc_min - min(soc_values), 0.0),
+        "soc_max": max(max(soc_values) - bess.soc_max, 0.0),
+        "charge_max": max(max(charge_values) - bess.p_ch_max, 0.0),
+        "discharge_max": max(max(discharge_values) - bess.p_dis_max, 0.0),
+        "grid_import_min": max(-min(grid_import_values), 0.0),
+        "max_grid_import": max(max(grid_import_values) - max_grid_import, 0.0),
+        "discharge_load": max(max(discharge - load for discharge, load in zip(discharge_values, dispatch_input.load_forecast)), 0.0),
+    }
+    return {
+        name: amount 
+        for name, amount in violations.items() 
+        if amount > tolerance
+    }
+
+
+def run_user_side_bess_dispatch(dispatch_input: UserSideBESSDispatchInput) -> UserSideBESSDispatchResult:
     """求解用户侧储能调度问题。
 
     模型只考虑负荷预测、购电价格、需量电费和储能物理约束，不考虑风光出力、
@@ -132,79 +200,3 @@ def run_user_side_bess_dispatch(
             max_grid_value,
         ),
     )
-
-
-def _validate_input(dispatch_input: UserSideBESSDispatchInput) -> None:
-    length = len(dispatch_input.timestamps)
-    if length == 0:
-        raise ValueError("dispatch horizon must not be empty")
-    if not (
-        len(dispatch_input.load_forecast)
-        == len(dispatch_input.buy_price)
-        == len(dispatch_input.price_type)
-        == length
-    ):
-        raise ValueError(
-            "timestamps, load_forecast, buy_price, and price_type "
-            "must have the same length"
-        )
-    if dispatch_input.step_hours <= 0:
-        raise ValueError("step_hours must be positive")
-    if dispatch_input.demand_charge_rate < 0:
-        raise ValueError("demand_charge_rate must be non-negative")
-    if dispatch_input.cycle_cost_rate < 0:
-        raise ValueError("cycle_cost_rate must be non-negative")
-    if any(load < 0 for load in dispatch_input.load_forecast):
-        raise ValueError("load_forecast must be non-negative")
-    if any(price < 0 for price in dispatch_input.buy_price):
-        raise ValueError("buy_price must be non-negative")
-
-    bess = dispatch_input.bess
-    if bess.capacity <= 0:
-        raise ValueError("bess.capacity must be positive")
-    if bess.soc_min < 0 or bess.soc_max > bess.capacity:
-        raise ValueError("bess SOC bounds must be within bess capacity")
-    if bess.soc_min > bess.soc_max:
-        raise ValueError("bess.soc_min must be less than or equal to bess.soc_max")
-    if not bess.soc_min <= dispatch_input.initial_soc <= bess.soc_max:
-        raise ValueError("initial_soc must be within bess SOC bounds")
-    if dispatch_input.terminal_soc_target is not None and not (
-        bess.soc_min <= dispatch_input.terminal_soc_target <= bess.soc_max
-    ):
-        raise ValueError("terminal_soc_target must be within bess SOC bounds")
-    if bess.p_ch_max < 0 or bess.p_dis_max < 0:
-        raise ValueError("bess power limits must be non-negative")
-    if bess.eta_ch <= 0 or bess.eta_dis <= 0:
-        raise ValueError("bess efficiencies must be positive")
-
-
-def _constraint_violations(
-    dispatch_input: UserSideBESSDispatchInput,
-    charge_values: list[float],
-    discharge_values: list[float],
-    soc_values: list[float],
-    grid_import_values: list[float],
-    max_grid_import: float,
-) -> dict[str, float]:
-    tolerance = 1e-6
-    bess = dispatch_input.bess
-    violations = {
-        "soc_min": max(bess.soc_min - min(soc_values), 0.0),
-        "soc_max": max(max(soc_values) - bess.soc_max, 0.0),
-        "charge_max": max(max(charge_values) - bess.p_ch_max, 0.0),
-        "discharge_max": max(max(discharge_values) - bess.p_dis_max, 0.0),
-        "grid_import_min": max(-min(grid_import_values), 0.0),
-        "max_grid_import": max(max(grid_import_values) - max_grid_import, 0.0),
-        "discharge_load": max(
-            max(
-                discharge - load
-                for discharge, load in zip(
-                    discharge_values, dispatch_input.load_forecast
-                )
-            ),
-            0.0,
-        ),
-    }
-    return {
-        name: amount for name, amount in violations.items() if amount > tolerance
-    }

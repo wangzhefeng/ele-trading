@@ -11,9 +11,7 @@ from .interfaces import (
 from .user_side_renewable_bess_dispatch import run_user_side_renewable_bess_dispatch
 
 
-def run_user_side_pv_bess_dispatch(
-    dispatch_input: UserSidePVBESSDispatchInput,
-) -> UserSidePVBESSDispatchResult:
+def run_user_side_pv_bess_dispatch(dispatch_input: UserSidePVBESSDispatchInput) -> UserSidePVBESSDispatchResult:
     """Run user-side PV + bess dispatch as a MILP."""
     _validate_input(dispatch_input)
     renewable_result = run_user_side_renewable_bess_dispatch(
