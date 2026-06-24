@@ -32,7 +32,7 @@ ele-trading/
 │   ├── data_provider/            # 配置、样例数据、负荷、气象、时间序列处理
 │   ├── forecasting/              # 价格、风光功率和天气特征工程
 │   ├── scenario/                 # 价格场景采样与缩减
-│   ├── optimization/             # 储能、用户侧、CVXPY、分布式储能、Two-stage 优化
+│   ├── optimization/             # 储能、用户侧、CVXPY、Two-stage 优化
 │   ├── control/                  # 滚动调度封装
 │   ├── evaluation/               # 结算、偏差考核、指标、回测、仿真
 │   ├── capacity_planning/        # PV/风电/BESS/风光储容量规划
@@ -81,7 +81,7 @@ ele-trading/
 当前优化主线包括：
 
 - `bess_arbitrage.py`：单市场储能套利和容量 sizing。
-- `mpc_storage.py`：单窗口 MPC 与滚动 MPC。
+- `mpc_bess.py`：单窗口 MPC 与滚动 MPC。
 - `two_stage_cvar.py`：Two-stage + CVaR 可求解模型。
 - `user_side_bess_dispatch.py`：用户侧储能成本优化。
 - `user_side_renewable_dispatch.py`：用户侧通用可再生能源无储能调度内核。
@@ -89,7 +89,6 @@ ele-trading/
 - `user_side_pv_dispatch.py`、`user_side_pv_bess_dispatch.py`：用户侧 PV 场景适配入口。
 - `user_side_wind_dispatch.py`、`user_side_wind_bess_dispatch.py`、`user_side_wind_pv_bess_dispatch.py`：用户侧 Wind / Wind+BESS / Wind+PV+BESS 场景适配入口。
 - `user_side_bess_dispatch_cvxpy.py`：用户侧 BESS 调度的 CVXPY 版本 profile。
-- `dist_bess_dispatch.py`：分布式储能多柜容量搜索和调度模拟。
 
 ### `capacity_planning`
 
@@ -98,6 +97,7 @@ ele-trading/
 - 联合容量优化：`capacity_optimizer.py`。
 - BESS / Wind+BESS / Wind+PV+BESS：`bess_capacity_planner.py`、`wind_bess_planner.py`、`wind_pv_bess_planner.py`。
 - 可行性、IRR 和多节点扫描：`feasibility_analyzer.py`、`pv_bess_irr_planner.py`、`multi_node_scanner.py`。
+- 分布式储能多柜容量搜索：`dist_bess_dispatch.py`（输入输出类型定义于同目录 `interfaces.py`）。
 
 ### `resource_simulation`
 
