@@ -19,7 +19,7 @@
 | `user_side_pv_dispatch.yaml` | `run_user_side_pv_dispatch.py` | 用户侧 PV-only 调度、上网/弃光规则、合成负荷/PV/电价 |
 | `user_side_pv_bess_dispatch.yaml` | `run_user_side_pv_bess_dispatch.py` | 用户侧 PV+storage 联合调度、储能、上网、策略偏好 |
 | `cvxp_bess_dispatch.yaml` | `run_cvxp_bess_dispatch.py` | CVXPY 储能调度 profile、需量价格、合成负荷/电价 |
-| `dist_ess_dispatch.yaml` | `run_dist_bess_dispatch.py` | 分布式储能数据目录、时间范围、preset、系统、搜索模式 |
+| `dist_bess_dispatch.yaml` | `run_dist_bess_dispatch.py` | 分布式储能数据目录、时间范围、preset、系统、搜索模式 |
 | `wind_pv_es_calc_data_bridge.yaml` | `run_legacy_data_preparation.py` | legacy 风光储数据桥接，生成 `df_2025`、PV、风电和总表 |
 | `wind_pv_legacy_profit_eval.yaml` | `run_wind_pv_legacy_profit_eval.py` | legacy 风光数据年度收益测算、成本年化和结果输出 |
 | `wind_pv_legacy_market_trading.yaml` | `run_wind_pv_legacy_market_trading.py` | legacy 风光数据交易调度窗口、储能、上网、价格和输出 |

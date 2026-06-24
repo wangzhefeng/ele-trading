@@ -172,7 +172,7 @@ def test_run_wind_pv_bess_capacity_planning_2():
 
 
 @pytest.mark.skip(reason="需要 data/profit_calc/dist_es/ 外部数据文件，仅手动验收")
-def test_run_dist_ess_dispatch():
-    """run_dist_ess_dispatch.py 需要外部 CSV 数据，仅手动验收。"""
-    result = _run_script('run_dist_ess_dispatch.py', timeout=300)
+def test_run_dist_bess_dispatch():
+    """run_dist_bess_dispatch.py 需要外部 CSV 数据，仅手动验收。"""
+    result = _run_script('run_dist_bess_dispatch.py', timeout=300)
     assert result.returncode == 0

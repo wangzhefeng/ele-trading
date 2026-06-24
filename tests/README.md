@@ -108,7 +108,7 @@ uv run python -m pytest tests/test_metrics.py::test_sharpe_finite -v
 | `run_wind_simulation_v2.py` | `uv run python app/run_wind_simulation_v2.py` | 需要 Open-Meteo 网络 API |
 | `run_wind_pv_bess_capacity_planning_1.py` | `uv run python app/run_wind_pv_bess_capacity_planning_1.py` | 运行时间 >30s |
 | `run_wind_pv_bess_capacity_planning_2.py` | `uv run python app/run_wind_pv_bess_capacity_planning_2.py` | 运行时间 >30s |
-| `run_dist_ess_dispatch.py` | `uv run python app/run_dist_ess_dispatch.py` | 需要外部 CSV 数据文件 |
+| `run_dist_bess_dispatch.py` | `uv run python app/run_dist_bess_dispatch.py` | 需要外部 CSV 数据文件 |
 
 ## 依赖说明
 

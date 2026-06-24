@@ -89,7 +89,7 @@ ele-trading/
 - `user_side_pv_dispatch.py`、`user_side_pv_bess_dispatch.py`：用户侧 PV 场景适配入口。
 - `user_side_wind_dispatch.py`、`user_side_wind_bess_dispatch.py`、`user_side_wind_pv_bess_dispatch.py`：用户侧 Wind / Wind+BESS / Wind+PV+BESS 场景适配入口。
 - `user_side_bess_dispatch_cvxpy.py`：用户侧 BESS 调度的 CVXPY 版本 profile。
-- `dist_ess_dispatch.py`：分布式储能多柜容量搜索和调度模拟。
+- `dist_bess_dispatch.py`：分布式储能多柜容量搜索和调度模拟。
 
 ### `capacity_planning`
 
