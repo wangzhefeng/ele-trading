@@ -71,6 +71,8 @@ class UserSideBESSDispatchResult:
 class UserSidePVExportParams:
     allow_export: bool = True
     sell_price: float = 0.0
+    # 现货逐时段售电价；提供（非 None）则优先于 sell_price，否则回退到 sell_price 标量。
+    sell_price_list: list[float] | None = None
     export_limit: float | None = None
     curtailment_cost_rate: float = 0.0
 

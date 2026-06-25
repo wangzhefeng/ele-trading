@@ -81,12 +81,7 @@ def _validate_input(dispatch_input: UserSidePVBESSDispatchInput) -> None:
         raise ValueError("load_forecast must be non-negative")
     if any(pv < 0 for pv in dispatch_input.pv_forecast):
         raise ValueError("pv_forecast must be non-negative")
-    if any(price < 0 for price in dispatch_input.buy_price):
-        raise ValueError("buy_price must be non-negative")
-
     export = dispatch_input.export
-    if export.sell_price < 0:
-        raise ValueError("export.sell_price must be non-negative")
     if export.curtailment_cost_rate < 0:
         raise ValueError("export.curtailment_cost_rate must be non-negative")
     if export.export_limit is not None and export.export_limit < 0:

@@ -48,9 +48,15 @@ class UserSideRenewableDispatcher:
         )
         # 需量（基本）电费：按最大需量计收
         demand_cost = dispatch_input.demand_charge_rate * max_grid_import
-        # 售电收入：上网电量 × 单一售电价格 × 时长（sell_price 不随时段变化）
+        # 售电价统一为等长列表：sell_price_list 提供则逐时段，否则广播标量 sell_price（支持现货逐时段）。
+        _export = dispatch_input.export
+        _sell_price_per_step = (
+            list(_export.sell_price_list) if _export.sell_price_list is not None
+            else [_export.sell_price] * len(dispatch_input.timestamps)
+        )
+        # 售电收入：上网电量 × 逐时段售电价 × 时长
         sell_revenue = sum(
-            dispatch_input.export.sell_price * renewable_to_grid[t] * dispatch_input.step_hours
+            _sell_price_per_step[t] * renewable_to_grid[t] * dispatch_input.step_hours
             for t in range(len(dispatch_input.timestamps))
         )
         # 弃电机会成本：弃电量 × 弃电惩罚单价 × 时长
@@ -107,11 +113,10 @@ class UserSideRenewableDispatcher:
             raise ValueError("load_forecast must be non-negative")
         if any(renewable < 0 for renewable in dispatch_input.renewable_forecast):
             raise ValueError("renewable_forecast must be non-negative")
-        if any(price < 0 for price in dispatch_input.buy_price):
-            raise ValueError("buy_price must be non-negative")
         export = dispatch_input.export
-        if export.sell_price < 0:
-            raise ValueError("export.sell_price must be non-negative")
+        # sell_price_list 提供时须与时段等长；buy_price / sell_price / sell_price_list 均允许负（现货市场可出现负电价）。
+        if export.sell_price_list is not None and len(export.sell_price_list) != length:
+            raise ValueError("export.sell_price_list length must match timestamps")
         if export.curtailment_cost_rate < 0:
             raise ValueError("export.curtailment_cost_rate must be non-negative")
         if export.export_limit is not None and export.export_limit < 0:
@@ -246,3 +251,19 @@ if __name__ == "__main__":
     print(f"  renewable_curtailment = {result.renewable_curtailment}")
     print(f"  grid_import           = {result.grid_import}")
     print(f"  total_cost            = {result.total_cost}")
+
+    # --- 现货逐时段售电价场景：验证 sell_price_list per-step 生效 ---
+    spot = UserSideRenewableDispatchInput(
+        timestamps=[0, 1],
+        load_forecast=[0.0, 0.0],
+        renewable_forecast=[2.0, 2.0],
+        buy_price=[1.0, 1.0],
+        price_type=["spot", "spot"],
+        export=UserSidePVExportParams(allow_export=True, sell_price_list=[0.5, 0.2]),
+        demand_charge_rate=0.0,
+        step_hours=1.0,
+    )
+    spot_result = run_user_side_renewable_dispatch(spot)
+    assert spot_result.renewable_to_grid == [2.0, 2.0]
+    assert spot_result.sell_revenue == 1.4  # 0.5*2 + 0.2*2，逐时段而非标量
+    print("现货逐时段售电价场景自检通过")

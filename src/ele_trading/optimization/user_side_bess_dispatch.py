@@ -40,9 +40,6 @@ def _validate_input(dispatch_input: UserSideBESSDispatchInput) -> None:
         raise ValueError("cycle_cost_rate must be non-negative")
     if any(load < 0 for load in dispatch_input.load_forecast):
         raise ValueError("load_forecast must be non-negative")
-    if any(price < 0 for price in dispatch_input.buy_price):
-        raise ValueError("buy_price must be non-negative")
-
     bess = dispatch_input.bess
     if bess.capacity <= 0:
         raise ValueError("bess.capacity must be positive")

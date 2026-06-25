@@ -84,12 +84,10 @@ class UserSideRenewableBESSDispatcher:
             raise ValueError("load_forecast must be non-negative")
         if any(renewable < 0 for renewable in dispatch_input.renewable_forecast):
             raise ValueError("renewable_forecast must be non-negative")
-        if any(price < 0 for price in dispatch_input.buy_price):
-            raise ValueError("buy_price must be non-negative")
-
         export = dispatch_input.export
-        if export.sell_price < 0:
-            raise ValueError("export.sell_price must be non-negative")
+        # sell_price_list 提供时须与时段等长；buy_price / sell_price / sell_price_list 均允许负（现货市场可出现负电价）。
+        if export.sell_price_list is not None and len(export.sell_price_list) != length:
+            raise ValueError("export.sell_price_list length must match timestamps")
         if export.curtailment_cost_rate < 0:
             raise ValueError("export.curtailment_cost_rate must be non-negative")
         if export.export_limit is not None and export.export_limit < 0:
@@ -136,6 +134,12 @@ class UserSideRenewableBESSDispatcher:
         self.bess = self.dispatch_input.bess
         self.T = range(len(self.dispatch_input.timestamps))
         self.model = LpProblem("user_side_renewable_bess_dispatch", LpMinimize)
+        # 售电价统一为等长列表：sell_price_list 提供则用它，否则广播标量 sell_price（支持现货逐时段 + 标量回退）。
+        export = self.dispatch_input.export
+        if export.sell_price_list is not None:
+            self._sell_price_per_step = list(export.sell_price_list)
+        else:
+            self._sell_price_per_step = [export.sell_price] * len(self.T)
 
     def _create_variables(self) -> None:
         bess = self.bess
@@ -277,9 +281,9 @@ class UserSideRenewableBESSDispatcher:
         )
         # 需量电费（基本电费）：按全周期电网峰值取电量计费。
         demand_cost_expr = dispatch_input.demand_charge_rate * self.max_grid_import
-        # 上网收益：新能源上网电量 × 上网电价（成本项中作减项）。
+        # 上网收益：新能源上网电量 × 逐时段上网电价（成本项中作减项）。
         sell_revenue_expr = lpSum(
-            dispatch_input.export.sell_price
+            self._sell_price_per_step[t]
             * self.renewable_to_grid[t]
             * dispatch_input.step_hours
             for t in self.T
@@ -360,7 +364,7 @@ class UserSideRenewableBESSDispatcher:
         )
         values["demand_cost"] = dispatch_input.demand_charge_rate * values["max_grid_import"]
         values["sell_revenue"] = sum(
-            dispatch_input.export.sell_price
+            self._sell_price_per_step[t]
             * values["renewable_to_grid"][t]
             * dispatch_input.step_hours
             for t in self.T
@@ -525,3 +529,56 @@ if __name__ == "__main__":
     print(f"  soc               = {result.soc}")
     print(f"  grid_import       = {result.grid_import}")
     print(f"  total_cost        = {result.total_cost}")
+
+    # --- 现货 + 负电价场景：验证 sell_price_list 逐时段生效、负电价行为正确 ---
+    # 场景 A：p_ch_max=0 使盈余只能上网，sell_price_list 逐时段不同 → 精确验证 per-step 售电收入。
+    spot_a = UserSideRenewableBESSDispatchInput(
+        timestamps=[0, 1],
+        load_forecast=[0.0, 0.0],
+        renewable_forecast=[2.0, 2.0],
+        buy_price=[1.0, 1.0],
+        price_type=["spot", "spot"],
+        export=UserSidePVExportParams(allow_export=True, sell_price_list=[0.5, 0.2]),
+        demand_charge_rate=0.0,
+        step_hours=1.0,
+        bess=UserSideBESSParams(
+            capacity=10.0, soc_min=0.0, soc_max=10.0,
+            p_ch_max=0.0, p_dis_max=0.0, eta_ch=1.0, eta_dis=1.0,
+        ),
+        initial_soc=0.0,
+        terminal_soc_target=0.0,
+    )
+    res_a = run_user_side_renewable_bess_dispatch(spot_a)
+    assert res_a.renewable_to_grid == [2.0, 2.0]
+    assert res_a.sell_revenue == 1.4  # 0.5*2 + 0.2*2，证明按逐时段而非标量计
+
+    # 场景 B：负购电价（t=0）+ 负售电价（t=1），验证负电价不上网且不发散。
+    spot_b = UserSideRenewableBESSDispatchInput(
+        timestamps=[0, 1],
+        load_forecast=[1.0, 1.0],
+        renewable_forecast=[2.0, 2.0],
+        buy_price=[-0.1, 1.0],
+        price_type=["spot", "spot"],
+        export=UserSidePVExportParams(allow_export=True, sell_price_list=[0.5, -0.1]),
+        demand_charge_rate=0.0,
+        step_hours=1.0,
+        bess=UserSideBESSParams(
+            capacity=10.0, soc_min=0.0, soc_max=10.0,
+            p_ch_max=5.0, p_dis_max=5.0, eta_ch=1.0, eta_dis=1.0,
+        ),
+        initial_soc=0.0,
+        terminal_soc_target=0.0,
+    )
+    res_b = run_user_side_renewable_bess_dispatch(spot_b)
+    # 负售电价时段（t=1）有盈余却不上网（理性弃电/充储能，因上网会倒贴）。
+    assert res_b.renewable_to_grid[1] == 0.0
+    # 售电收入按逐时段 sell_price_list 精确计算（验证 per-step 而非标量 sell_price=0）。
+    expected_sell = sum(
+        spot_b.export.sell_price_list[t] * res_b.renewable_to_grid[t] for t in range(2)
+    )
+    assert abs(res_b.sell_revenue - expected_sell) < 1e-9
+    # 负购电价不发散：SOC 在界、无约束违背（求解成功即说明 well-posed）。
+    assert all(0.0 <= s <= 10.0 for s in res_b.soc)
+    assert res_b.constraint_violations == {}
+
+    print("现货 + 负电价场景自检通过")
