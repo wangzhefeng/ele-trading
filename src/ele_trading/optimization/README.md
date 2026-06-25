@@ -11,8 +11,8 @@
 | `mpc_bess.py` | 单窗口 MPC 和滚动 MPC |
 | `two_stage_cvar.py` | Two-stage + CVaR 场景优化模型 |
 | `user_side_bess_dispatch.py` | 用户侧储能调度，最小化购电、需量和循环成本 |
-| `user_side_renewable_dispatch.py` | 用户侧通用可再生能源无储能调度内核 |
-| `user_side_renewable_bess_dispatch.py` | 用户侧通用可再生能源+BESS 调度内核 |
+| `user_side_renewable_dispatch_class.py` | 用户侧通用可再生能源无储能调度共享内核 |
+| `user_side_renewable_bess_dispatch_class.py` | 用户侧通用可再生能源+BESS 调度共享内核 |
 | `user_side_pv_dispatch.py` | 用户侧 PV-only 场景适配入口 |
 | `user_side_pv_bess_dispatch.py` | 用户侧 PV+BESS 场景适配入口 |
 | `user_side_wind_dispatch.py` | 用户侧 Wind-only 场景适配入口 |
@@ -55,7 +55,7 @@
 - `run_user_side_wind_bess_dispatch()`：负荷 + Wind + 储能，联合决定风电分流、储能动作、购电和上网。
 - `run_user_side_wind_pv_bess_dispatch()`：负荷 + Wind + PV + 储能，把风光总出力作为 renewable 统一调度，并保留 PV/Wind 原始预测。
 
-`user_side_renewable_dispatch.py` 和 `user_side_renewable_bess_dispatch.py` 是共享内核；PV/Wind 场景入口只负责字段映射和兼容输出。PV/BESS 链路的样例输入由 `data_provider/*_sample.py` 和 `configs/user_side_*.yaml` 提供；Wind 相关链路当前先提供算法层 API。
+`user_side_renewable_dispatch_class.py` 和 `user_side_renewable_bess_dispatch_class.py` 是共享内核；PV/Wind 场景入口只负责字段映射和兼容输出。PV/BESS 链路的样例输入由 `data_provider/*_sample.py` 和 `configs/user_side_*.yaml` 提供；Wind 相关链路当前先提供算法层 API。
 
 ## CVXPY 储能调度
 

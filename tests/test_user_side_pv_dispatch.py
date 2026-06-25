@@ -8,7 +8,7 @@ from ele_trading.optimization.user_side_pv_dispatch import (
     UserSidePVExportParams,
     run_user_side_pv_dispatch,
 )
-from ele_trading.optimization.user_side_renewable_dispatch import (
+from ele_trading.optimization.user_side_renewable_dispatch_class import (
     UserSideRenewableDispatchInput,
     run_user_side_renewable_dispatch,
 )

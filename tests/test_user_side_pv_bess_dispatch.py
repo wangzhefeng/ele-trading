@@ -11,7 +11,7 @@ from ele_trading.optimization.user_side_pv_bess_dispatch import (
     UserSideBESSParams,
     run_user_side_pv_bess_dispatch,
 )
-from ele_trading.optimization.user_side_renewable_bess_dispatch import (
+from ele_trading.optimization.user_side_renewable_bess_dispatch_class import (
     UserSideRenewableBESSDispatchInput,
     run_user_side_renewable_bess_dispatch,
 )

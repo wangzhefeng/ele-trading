@@ -5,7 +5,7 @@ from .interfaces import (
     UserSideWindPVBESSDispatchInput,
     UserSideWindPVBESSDispatchResult,
 )
-from .user_side_renewable_bess_dispatch import run_user_side_renewable_bess_dispatch
+from .user_side_renewable_bess_dispatch_class import run_user_side_renewable_bess_dispatch
 from ele_trading.utils import clean_value
 
 

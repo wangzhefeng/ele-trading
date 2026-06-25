@@ -8,7 +8,7 @@ from .interfaces import (
     UserSidePVExportParams,
     UserSideRenewableBESSDispatchInput,
 )
-from .user_side_renewable_bess_dispatch import run_user_side_renewable_bess_dispatch
+from .user_side_renewable_bess_dispatch_class import run_user_side_renewable_bess_dispatch
 
 
 def run_user_side_pv_bess_dispatch(dispatch_input: UserSidePVBESSDispatchInput) -> UserSidePVBESSDispatchResult:

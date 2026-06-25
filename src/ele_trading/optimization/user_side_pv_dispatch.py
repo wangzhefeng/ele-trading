@@ -6,7 +6,7 @@ from .interfaces import (
     UserSidePVDispatchResult,
     UserSidePVExportParams,
 )
-from .user_side_renewable_dispatch import run_user_side_renewable_dispatch
+from .user_side_renewable_dispatch_class import run_user_side_renewable_dispatch
 
 
 def run_user_side_pv_dispatch(dispatch_input: UserSidePVDispatchInput) -> UserSidePVDispatchResult:

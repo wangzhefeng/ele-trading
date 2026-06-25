@@ -5,7 +5,7 @@ from .interfaces import (
     UserSideWindDispatchInput,
     UserSideWindDispatchResult,
 )
-from .user_side_renewable_dispatch import run_user_side_renewable_dispatch
+from .user_side_renewable_dispatch_class import run_user_side_renewable_dispatch
 
 
 def run_user_side_wind_dispatch(dispatch_input: UserSideWindDispatchInput) -> UserSideWindDispatchResult:

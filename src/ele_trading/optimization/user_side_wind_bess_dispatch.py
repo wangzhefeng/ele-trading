@@ -5,7 +5,7 @@ from .interfaces import (
     UserSideWindBESSDispatchInput,
     UserSideWindBESSDispatchResult,
 )
-from .user_side_renewable_bess_dispatch import run_user_side_renewable_bess_dispatch
+from .user_side_renewable_bess_dispatch_class import run_user_side_renewable_bess_dispatch
 
 
 def run_user_side_wind_bess_dispatch(dispatch_input: UserSideWindBESSDispatchInput) -> UserSideWindBESSDispatchResult:

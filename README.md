@@ -84,8 +84,8 @@ ele-trading/
 - `mpc_bess.py`：单窗口 MPC 与滚动 MPC。
 - `two_stage_cvar.py`：Two-stage + CVaR 可求解模型。
 - `user_side_bess_dispatch.py`：用户侧储能成本优化。
-- `user_side_renewable_dispatch.py`：用户侧通用可再生能源无储能调度内核。
-- `user_side_renewable_bess_dispatch.py`：用户侧通用可再生能源+BESS 调度内核。
+- `user_side_renewable_dispatch_class.py`：用户侧通用可再生能源无储能调度共享内核。
+- `user_side_renewable_bess_dispatch_class.py`：用户侧通用可再生能源+BESS 调度共享内核。
 - `user_side_pv_dispatch.py`、`user_side_pv_bess_dispatch.py`：用户侧 PV 场景适配入口。
 - `user_side_wind_dispatch.py`、`user_side_wind_bess_dispatch.py`、`user_side_wind_pv_bess_dispatch.py`：用户侧 Wind / Wind+BESS / Wind+PV+BESS 场景适配入口。
 - `user_side_bess_dispatch_cvxpy.py`：用户侧 BESS 调度的 CVXPY 版本 profile。

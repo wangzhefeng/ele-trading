@@ -10,7 +10,7 @@ from ele_trading.optimization import (
     UserSideWindPVBESSDispatchInput,
     run_user_side_renewable_bess_dispatch,
 )
-from ele_trading.optimization.user_side_renewable_dispatch import (
+from ele_trading.optimization.user_side_renewable_dispatch_class import (
     run_user_side_renewable_dispatch,
 )
 from ele_trading.optimization.user_side_wind_bess_dispatch import (
