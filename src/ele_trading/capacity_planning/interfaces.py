@@ -54,6 +54,8 @@ class DistBESSSchedulerConfig:
     grid_import_formula: GridImportFormula = GridImportFormula.PARK_BASELINE
     grid_import_nonneg: bool = False
     discharge_mask_mode: str = "price_type"
+    demand_charge_mode: str = "point_max"
+    demand_charge_window_minutes: int = 15
     smooth_penalty_weight: float = 0.0
     ramp_rate_fraction_per_step: float | None = None
     charge_target_penalty_weight: float = 0.0

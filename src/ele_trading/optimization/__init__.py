@@ -9,6 +9,11 @@ from .interfaces import (
     CvxpBESSDispatchInput,
     CvxpBESSDispatchResult,
     CvxpBESSProfile,
+    DistributedBESSDemandChargeConfig,
+    DistributedBESSDispatchInput,
+    DistributedBESSDispatchPolicy,
+    DistributedBESSDispatchResult,
+    DistributedBESSNodeParams,
     MPCStepResult,
     UserSideBESSDispatchInput,
     UserSideBESSDispatchResult,
@@ -31,6 +36,10 @@ from .interfaces import (
     UserSideWindPVBESSDispatchResult,
 )
 from .bess_arbitrage import solve_bess_arbitrage
+from .distributed_bess_dispatch_class import (
+    DistributedBESSDispatcher,
+    run_distributed_bess_dispatch,
+)
 from .mpc_bess import run_bess_mpc, solve_one_mpc_window
 from .two_stage_cvar import build_two_stage_cvar_model
 from .user_side_bess_dispatch import run_user_side_bess_dispatch

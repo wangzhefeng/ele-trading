@@ -60,7 +60,6 @@ from .interfaces import (
     DistBESSDispatchResult,
 )
 from .dist_bess_dispatch import (
-    BESSDistributionScheduler,
     SimulationResult,
     SYSTEMS,
     PRESETS,
@@ -122,7 +121,7 @@ __all__ = [
     'SolverType', 'CabinetEqualityMode', 'GridImportFormula',
     'TransformerConfig', 'DistBESSConfig', 'DistBESSSchedulerConfig',
     'DistBESSPipelineParams', 'DistBESSDispatchInput', 'DistBESSDispatchResult',
-    'BESSDistributionScheduler', 'SimulationResult',
+    'SimulationResult',
     'SYSTEMS', 'PRESETS', 'TRANSFORMERS', 'TRANSFORMER_BY_NAME',
     'V1_PRESET', 'V2_PRESET', 'V3_PRESET', 'V4_PRESET', 'V5_PRESET',
     'get_preset', 'run_dist_bess_dispatch', 'run_systems',
