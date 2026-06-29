@@ -43,7 +43,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
-## 5. 电力交易项目特有约束
+## 电力交易项目特有约束
 
 以下为本项目的硬边界规则，违反会导致不可运行或错误结果。
 
@@ -75,7 +75,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `dt` 参数在 15 分钟颗粒度场景下必须设为 0.25，并在配置中明确注释。
 - 新增环境变量或配置字段必须同步更新 `configs/README.md`。
 - 可复用求解/调度内核归属 `src/ele_trading/optimization/`；容量扫描、场景编排、收益测算和 CSV 导出归属 `src/ele_trading/capacity_planning/`。
-- 项目级 agent 规则只维护在 `.agents/AGENTS.md` 和 `.claude/CLAUDE.md`；不要恢复或新建根目录 `AGENTS.md` / `CLAUDE.md`。
+- 项目级 agent 规则的唯一权威是根目录 `AGENTS.md`；`CLAUDE.md` 为指针，不在此文件之外另立内容副本。
 
 ### 数据边界
 
