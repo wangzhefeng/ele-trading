@@ -1,7 +1,7 @@
 """储能容量+调度联合优化 MILP。
 
 在给定电价曲线、负荷曲线和变压器约束下，同时优化储能容量、功率和充放电计划，
-最大化净套利收益（扣除年化 CAPEX 和循环 OPEX）。
+最大化净套利收益(扣除年化 CAPEX 和循环 OPEX)。
 """
 from __future__ import annotations
 
@@ -9,7 +9,16 @@ from dataclasses import dataclass, field
 from typing import List
 
 import numpy as np
-from pulp import LpBinary, LpMaximize, LpProblem, LpVariable, LpStatus, PULP_CBC_CMD, lpSum, value
+from pulp import (
+    LpBinary, 
+    LpMaximize, 
+    LpProblem, 
+    LpVariable, 
+    LpStatus, 
+    PULP_CBC_CMD, 
+    lpSum, 
+    value
+)
 
 from ele_trading.utils import check_pulp_status
 
@@ -58,7 +67,7 @@ def solve_capacity_sizing(
     """MILP 联合优化储能容量与调度策略。
 
     在 solve_bess_arbitrage 基础上，将额定容量 Cap_rated 也作为决策变量，
-    同时优化容量、功率和充放电计划，最大化净套利收益（扣除年化 CAPEX 和循环 OPEX）。
+    同时优化容量、功率和充放电计划，最大化净套利收益(扣除年化 CAPEX 和循环 OPEX)。
 
     Parameters
     ----------
@@ -69,25 +78,25 @@ def solve_capacity_sizing(
     transformer_rating : float
         变压器额定容量，单位 kW 或 kVA。
     time_interval_hours : float
-        时间步长（小时），默认 0.25（15 分钟）。
+        时间步长(小时)，默认 0.25(15 分钟)。
     charge_efficiency / discharge_efficiency : float
         充放电效率。
     min_depth_of_discharge : float
-        最小放电深度（SOC 下限比例）。
+        最小放电深度(SOC 下限比例)。
     c_rate : float
-        倍率（功率/容量比）。
+        倍率(功率/容量比)。
     max_cycles_per_year : int
         年最大循环次数。
     min_utilization : float
         最小利用率约束。
     min_power_ratio : float
-        最小功率比例（>0 时启用 McCormick 包络松弛）。
+        最小功率比例(>0 时启用 McCormick 包络松弛)。
     capex_per_kwh : float
-        单位容量投资成本（元/kWh）。
+        单位容量投资成本(元/kWh)。
     opex_per_cycle_kwh : float
-        单次循环运维成本（元/kWh）。
+        单次循环运维成本(元/kWh)。
     battery_life_years : int
-        电池寿命（年）。
+        电池寿命(年)。
     discount_rate : float
         折现率。
     periodic_soc : bool
@@ -95,13 +104,13 @@ def solve_capacity_sizing(
     periodic_soc_frac : float
         周期性 SOC 目标比例。
     switch_gap_periods : int
-        充放电切换最小间隔（时段数）。
+        充放电切换最小间隔(时段数)。
     min_continuity_periods : int
         最小连续充放电时段数。
     solver_time_limit : int
-        求解器时间限制（秒）。
+        求解器时间限制(秒)。
     capacity_upper_bound : float
-        容量上界（0 = 自动设为负荷峰值的 24 倍）。
+        容量上界(0 = 自动设为负荷峰值的 24 倍)。
 
     Returns
     -------

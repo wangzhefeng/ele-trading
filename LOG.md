@@ -407,3 +407,45 @@ docs/
 - `pyproject.toml`：18 个核心依赖，2 个可选依赖组（dev、weather）
 - `.agents/AGENTS.md`：通用规范 + 电力交易约束（已修正）
 - `docs/`：3 个文档文件
+
+## 2026-06-29
+
+### 状态对齐 023 — agent 指令文件合并、capacity_planning 算法补全与文档重写
+
+#### 变更清单
+
+**T1 — agent 指令文件合并到项目根目录**
+- `.agents/AGENTS.md` → 根目录 `AGENTS.md`（完整内容，含第 5 节项目硬约束）
+- `.claude/CLAUDE.md` → 根目录 `CLAUDE.md`（缩为 4 行指针，指向 AGENTS.md）
+- 删除 `.hermes/AGENTS.md`（死文件，Hermes coding posture 不识别子目录路径）
+- 更新 `AGENTS.md:78` 规则：唯一权威是根目录 AGENTS.md，禁止在子目录重建副本
+- PR #1 已合并：https://github.com/wangzhefeng/ele-trading/pull/1
+
+**T2 — capacity_planning/README.md 全面重写**
+- 从 1079 行重度数学文档重构为 563 行结构化架构文档
+- 新增算法架构总览图、调度引擎层对比、按四组的详细对比、跨组选型指南
+- 保留 wind_pv_bess_irr_planner 的完整数学推导（§8.3）
+
+**T3 — wind_bess_irr_planner.py 实现（原空文件）**
+- 两段式收益模型（风电直供 → 储能平移弃风补缺），与光储三段式对称
+- 新增 `scan_wind_bess_irr()`、`WindBESSIRRConfig`、`WindBESSIRRResult` 等 API
+- `__init__.py` 已导出新 API
+
+**T4 — 提取共享调度内核 models/resource_bess_planner_core.py（329 行）**
+- 消除 pv_bess_planner.py 和 wind_bess_planner.py 的约 400 行重复代码
+- 两个 planner 重构为薄包装（各 ~100 行资源特定代码），向后兼容
+- 内核提供资源无关的 `simulate_dispatch()`、`find_min_capacity_bisect()`、`ResourceBESSConfig`
+
+#### 当前测试状态
+
+- `test_capacity_optimizer.py` + `test_bess_capacity_planner.py`：29 passed
+- `test_wind_pv_bess_irr_planner.py`：7 passed
+- 全部 `__all__` 导出名（100 个）可访问
+- 重构后的 pv_bess_planner / wind_bess_planner 端到端功能验证通过
+
+#### 当前项目规模快照（更新）
+
+- `src/ele_trading/capacity_planning/`：10 个 planner + 3 个引擎模块（dispatch_algo / resource_bess_planner_core / simulation_model）
+- `tests/`：33 个 test_*.py + README
+- `app/`：20 个入口脚本 + README
+- `docs/`：3 个文档文件

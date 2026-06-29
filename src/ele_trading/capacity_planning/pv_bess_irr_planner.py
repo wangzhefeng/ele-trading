@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """光储项目 IRR 扫描模块。
 
-三段式收益模型（PV 自用 → 储能平移弃电 → 余电上网≤20%），
-轮巡储能容量 × 购电电价，计算光储整体 IRR。
+三段式收益模型(PV 自用 → 储能平移弃电 → 余电上网≤20%）, 
+轮巡储能容量 × 购电电价, 计算光储整体 IRR。
 """
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def simulate_annual_gain(
     curtail_col: str = "Curtail",
     cfg: PVBESSIRRConfig = PVBESSIRRConfig(),
 ) -> tuple[float, float]:
-    """三段式收益模型（优先级：PV 自用 → 储能平移弃电 → 余电上网）。
+    """三段式收益模型(优先级: PV 自用 → 储能平移弃电 → 余电上网）。
 
     Parameters
     ----------
@@ -74,7 +74,7 @@ def simulate_annual_gain(
     buy_price_per_kwh : float
         购电/自用电价 (元/kWh)。
     df : DataFrame
-        月度或时段数据，包含 PV、Load、Curtail 列，单位 MWh。
+        月度或时段数据, 包含 PV、Load、Curtail 列, 单位 MWh。
     pv_col, load_col, curtail_col : str
         列名。
     cfg : PVBESSIRRConfig
@@ -83,8 +83,8 @@ def simulate_annual_gain(
     Returns
     -------
     (annual_gain, annual_energy)
-        annual_gain: 年度总收益（元）
-        annual_energy: 年度总售出/使用电量（MWh，用于 O&M 计算）
+        annual_gain: 年度总收益(元）
+        annual_energy: 年度总售出/使用电量(MWh, 用于 O&M 计算）
     """
     export_price = cfg.export_price_per_kwh
     max_export = cfg.max_export_ratio
@@ -159,12 +159,12 @@ def scan_pv_bess_irr(
     curtail_col: str = "Curtail",
     cfg: PVBESSIRRConfig = PVBESSIRRConfig(),
 ) -> PVBESSIRRResult:
-    """光储 IRR 扫描：轮巡储能容量 × 购电电价。
+    """光储 IRR 扫描: 轮巡储能容量 × 购电电价。
 
     Parameters
     ----------
     df : DataFrame
-        月度或时段数据，包含 PV、Load、Curtail 列，单位 MWh。
+        月度或时段数据, 包含 PV、Load、Curtail 列, 单位 MWh。
     bess_range : array-like
         储能容量扫描范围 (MWh)。
     buy_price_range : array-like

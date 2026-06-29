@@ -1,343 +1,423 @@
 # Capacity Planning 容量规划模块
 
-## 模块概述
+## 目录
 
-本模块提供新能源+储能系统的容量规划与优化算法，支持风电、光伏、储能（BESS）的多种组合场景。主要功能包括：
+- [模块定位](#模块定位)
+- [算法架构总览](#算法架构总览)
+- [调度引擎层（共享）](#调度引擎层共享)
+- [第一组：BESS 容量规划（用户侧 / 工商业储能）](#第一组bess-容量规划用户侧--工商业储能)
+- [第二组：PV+BESS 容量规划](#第二组pvbess-容量规划)
+- [第三组：Wind+BESS 容量规划](#第三组windbess-容量规划)
+- [第四组：Wind+PV+BESS 三要素联合规划](#第四组windpvbess-三要素联合规划)
+- [辅助模块](#辅助模块)
+- [跨组对比与选型指南](#跨组对比与选型指南)
 
-- **可行性评估**：前置筛选，评估项目是否值得投资
-- **容量搜索**：寻找满足约束的最优容量组合
-- **调度优化**：基于 MILP/CVXPY 的最优充放电策略
-- **经济评估**：IRR、全寿命收益等财务指标计算
+---
 
-## 算法架构
+## 模块定位
+
+本模块提供新能源 + 储能系统的容量规划与优化算法，覆盖三大决策场景：
+
+| 决策类型 | 回答的问题 | 涉及模块组 |
+|----------|-----------|-----------|
+| **纯储能 sizing** | 给定负荷/电价，建多大储能最赚？ | 第一组 |
+| **源-储联合 sizing** | 给定新能源装机，配多少储能满足消纳约束？ | 第二、三组 |
+| **三要素联合优化** | 风、光、储各建多少？ | 第四组 |
+
+模块遵循 **AGENTS.md 第 5 节** 的硬边界：入口脚本在 `app/capacity_planning/run_*.py`，可复用调度内核在 `models/` 下，禁止在 notebook 中直接调用求解器。
+
+---
+
+## 算法架构总览
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          容量规划模块架构                                  │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐              │
-│  │ 可行性分析    │    │  容量搜索     │    │  经济评估     │              │
-│  │              │    │              │    │              │              │
-│  │ • 电价分析   │    │ • 网格搜索   │    │ • IRR 计算   │              │
-│  │ • 负荷分析   │    │ • 二分搜索   │    │ • 全寿命收益  │              │
-│  │ • 匹配评分   │    │ • 粗扫+细扫  │    │ • CAPEX/OPEX │              │
-│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘              │
-│         │                   │                   │                      │
-│         └───────────────────┼───────────────────┘                      │
-│                             │                                          │
-│                    ┌────────▼────────┐                                 │
-│                    │   调度仿真引擎   │                                 │
-│                    │                 │                                 │
-│                    │ • 贪心调度      │                                 │
-│                    │ • Numba JIT     │                                 │
-│                    │ • MILP 优化     │                                 │
-│                    │ • CVXPY 求解    │                                 │
-│                    └─────────────────┘                                 │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                        容量规划模块架构                                │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │              业务规划层（10 个 planner 脚本）                  │   │
+│  │                                                             │   │
+│  │  第一组 BESS sizing     第二组 PV+BESS    第三组 Wind+BESS   │   │
+│  │  · distributed          · pv_bess         · wind_bess       │   │
+│  │  · economic (MILP)      · pv_bess_irr     · wind_bess_irr   │   │
+│  │  · operating (CVXPY)                                       │   │
+│  │                                                             │   │
+│  │           第四组 Wind+PV+BESS 联合规划                       │   │
+│  │           · capacity_optimizer  · capacity_planner          │   │
+│  │           · irr_planner                                     │   │
+│  └──────────────────────────┬──────────────────────────────────┘   │
+│                             │                                       │
+│             ┌───────────────┼───────────────┐                      │
+│             ▼               ▼               ▼                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │ 贪心调度引擎  │  │ MILP/LP 引擎 │  │ 仿真回放引擎  │              │
+│  │ (Numba JIT)  │  │ (PuLP/CVXPY) │  │ ( EssSim )   │              │
+│  │              │  │              │  │              │              │
+│  │ dispatch_   │  │ distributed  │  │ EssSimulation│              │
+│  │ annual()    │  │ _planner     │  │ Model        │              │
+│  │ resource_   │  │              │  │              │              │
+│  │ bess_core() │  │              │  │              │              │
+│  └──────────────┘  └──────────────┘  └──────────────┘              │
+│         models/dispatch_algo.py   models/simulation_model.py        │
+│         models/resource_bess_planner_core.py                       │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-## 子模块详解
+**核心设计原则**：调度引擎与业务规划解耦。业务层负责"搜索什么容量组合"，引擎层负责"给定容量算出物理产出/经济收益"。三类引擎的区别：
 
-### 1. feasibility_analyzer.py - 储能可行性评估
+| 引擎 | 决策方式 | 典型消费者 | 加速 |
+|------|---------|-----------|------|
+| `dispatch_annual`（贪心） | 规则：直供→充电→放电→弃电 | 第四组 `_planner` / `irr_planner` | Numba JIT |
+| `resource_bess_planner_core`（单源贪心） | 规则：surplus→充电，deficit→放电 | 第二、三组 `pv_bess_planner` / `wind_bess_planner` | numpy 向量化 |
+| MILP/LP（PuLP/CVXPY） | 数学规划求最优解 | 第一组 economic/distributed | CBC 求解器 |
+| `EssSimulationModel`（仿真） | 回放外部给定的策略 | 第一组 operating | 纯 Python |
 
-**功能**：在 MILP 优化之前运行，作为前置筛选步骤。
+---
+
+## 调度引擎层（共享）
+
+### `models/dispatch_algo.py` — 贪心年度调度引擎
+
+**定位**：给定容量配置，用规则生成充放电动作并累计全年电量。是第二/三/四组所有 planner 的公共物理层。
+
+**核心函数**：`dispatch_annual()` → 内部调用 `_dispatch_annual_numba()`（Numba JIT 版）或 numpy 简化回退。
+
+**每时步决策顺序**：
+
+```
+1. 直供：direct = min(L, G)         # 新能源直接供负荷
+2. 充电：p_ch = min(surplus, Pmax, SOC上限反推功率)   # 盈余优先充电
+3. 放电：p_dis = min(deficit, Pmax, SOC下限反推功率)  # 缺口由电池补
+4. 弃电：curtail = surplus - p_ch   # 仍剩余则丢弃
+```
+
+**效率模型**：对称开方 `η_c = η_d = √η_roundtrip`（默认 0.92 → 0.959）。
+
+**特色**：`switch_gap_steps` 参数限制充放电频繁切换，保护电池。
+
+**返回**：6 个年度电量指标 `dict`（`ren_gen_kwh`, `ren_used_kwh`, `load_kwh`, `direct_used_kwh`, `bess_discharge_kwh`, `curtail_kwh`）。
+
+详见 [§8.3.2 物理层](#832-物理层bess-贪心调度逐时步仿真)（现有 README 下方完整数学推导）。
+
+### `models/simulation_model.py` — 策略回放仿真器
+
+**定位**：被动仿真器。不决定充多少，只把外部指令按真实物理约束落地，输出逐时步曲线和收益。
+
+**与 `dispatch_annual` 的区别**：
+
+| 维度 | `EssSimulationModel` | `dispatch_annual` |
+|------|---------------------|-------------------|
+| 角色 | 策略执行器 | 策略生成器 |
+| 决策来源 | 外部 `es_strategy` 输入 | 内部贪心规则 |
+| 输入 | 单负荷 + 策略 + 电价 | 多源新能源 + 负荷 |
+| 输出 | 逐时步曲线 + 原始/优化收益对比 | 年度电量聚合 |
+| 效率 | 充放分离（可不对称） | 对称开方 |
+| 约束 | 变压器容量、SOC floor/ceiling | SOC 上下限、C-rate、切换间隔 |
+
+被第一组 `operating_planner` 消费：CVXPY 求解最优策略 → `EssSimulationModel` 回放验证。
+
+---
+
+## 第一组：BESS 容量规划（用户侧 / 工商业储能）
+
+**共同场景**：已有负荷曲线 + 分时电价，需要确定储能的容量和充放电策略。**不含新能源发电**，纯靠电价差套利 + 需量管理盈利。
+
+### `bess_capacity_distributed_planner.py` — 分布式多节点储能
+
+**功能**：工业园区多变压器场景下，搜索各节点储能机柜数的最优组合。
 
 **算法特点**：
-- 电价-负荷-变压器匹配性评分（0~1）
-- 基于统计特征的策略推荐
-- 支持电价、负荷、变压器容量敏感性分析
+- **拓扑建模**：`SYSTEMS` 字典定义多变压器分组（如 338/342/park 三种系统配置），每个变压器挂载若干标准化储能机柜（`DIST_BESS_CABINET_CAPACITY_KWH` / `DIST_BESS_CABINET_POWER_KW`）
+- **组合枚举**：`full_grid_candidates()` 按 `CabinetEqualityMode`（NONE/GLOBAL/GROUP）生成机柜数候选组合
+- **调度引擎**：调用 `optimization/user_side_bess_distributed_dispatch_class.py` 的 `DistributedBESSDispatcher`，按月分段求解 LP
+- **V1-V5 预设**：5 种调度策略预设（LP/rule-based、不同 `grid_import_formula`、`smooth_penalty`、`ramp_rate` 组合）
 
-**核心指标**：
-- `PriceAnalysis`：电价均值、标准差、峰谷价差、偏度、峰度
-- `LoadAnalysis`：负荷峰值、峰谷比、偏度、峰度
-- `TransformerAnalysis`：剩余容量、充电窗口时长
-- `MatchingAnalysis`：高/低电价负荷相关性、策略可执行性
+**核心输出**：每个机柜组合的 `revenue`、`transformer_violation_count`、各节点 power/soc 时序。
 
-**匹配性评分公式**：
+**与同组的区别**：
+
+| 维度 | distributed | economic | operating |
+|------|------------|----------|-----------|
+| 拓扑 | 多变压器多节点 | 单节点 | 单节点 |
+| 调度引擎 | LP（按月分段） | MILP（全年） | CVXPY（按月/日分段） |
+| 决策变量 | 各节点机柜数 | 容量 + 充放电策略 | 充放电策略（容量给定搜索） |
+| 变压器约束 | 显式建模（5 台） | 单台 `transformer_rating` | 单台 |
+
+### `bess_capacity_economic_planner.py` — MILP 联合优化
+
+**功能**：单节点场景下，把额定容量 `Cap_rated` 作为决策变量，与充放电策略联合优化，最大化净套利收益（扣除年化 CAPEX 和循环 OPEX）。
+
+**MILP 模型**：
+
 ```
-score = max(0, corr_high) * 0.4
-      + max(0, -corr_low) * 0.2
-      + charge_feasibility * 0.2
-      + strategy_executability * 0.2
-```
+决策变量：P_ch[t], P_dis[t]（功率）, E[t]（SOC）, u_ch[t]/u_dis[t]（0-1 状态）, Cap_rated（容量）
 
-**策略推荐逻辑**：
-| 评分区间 | 推荐策略 |
-|---------|---------|
-| ≥ 0.75 | 中大容量（削峰+套利） |
-| 0.55-0.75 | 中等容量，需优化策略 |
-| 0.35-0.55 | 小容量高功率（削峰型） |
-| < 0.35 | 不建议建设储能 |
+目标：max Σ(price[t]·P_dis[t]·η_dis - price[t]·P_ch[t]/η_ch)·dt
+        - annualized_capex(Cap_rated) - opex(ΣP_dis[t]·dt)
 
-**实现状态**：✅ 完整实现
-
----
-
-### 2. multi_node_scanner.py - 多节点容量扫描
-
-**功能**：对多个电价节点进行容量轮巡扫描，计算 IRR 和全寿命经济指标。
-
-**算法特点**：
-- 基于 PuLP MILP 求解最优套利调度
-- 容量衰减模型（线性衰减至 `capacity_end_ratio`）
-- 支持最大循环次数约束
-- 支持负电价处理
-
-**配置参数**：
-```python
-BESSSizingConfig:
-    life_years: int = 10           # 项目寿命
-    life_cycles: int = 4000        # 设计循环次数
-    dod: float = 0.9               # 放电深度
-    capex_per_kwh: float = 1500    # 单位容量投资（元/kWh）
-    cap_min_mwh: float = 50        # 最小扫描容量
-    cap_max_mwh: float = 200       # 最大扫描容量
-    cap_step_mwh: float = 10       # 扫描步长
+关键约束：
+  · P_ch[t] ≤ c_rate · Cap_rated              # 功率受容量限制
+  · u_ch[t] + u_dis[t] ≤ 1                    # 充放电互斥
+  · E[t] = E[t-1] + P_ch[t]·η_c·dt - P_dis[t]·dt/η_d   # SOC 动态
+  · Cap_rated·min_dod ≤ E[t] ≤ Cap_rated      # SOC 边界
+  · ΣP_dis[t]·dt ≥ max_cycles·Cap_rated·min_utilization  # 利用率下限
+  · P_dis[t] ≤ load_curve[t]                   # 禁止向电网倒送
+  · load[t] + P_ch[t] ≤ transformer_rating     # 变压器容量
 ```
 
-**MILP 目标函数**：
-```
-max Σ(price[t] * discharge[t] * η_dis - (price[t] + grid_fee) * charge[t] / η_ch) * dt
-```
+**特色**：`min_power_ratio > 0` 时启用 McCormick 包络松弛，建模"P_ch ≥ mpr·c_rate·Cap_rated·u_ch"的非线性关系。
 
-**约束条件**：
-- SOC 动态约束
-- 充放电功率约束
-- 放电价格阈值约束
-- 循环次数约束
-- 负电价禁止充电约束
+**输出**：`CapacitySizingResult`（最优容量、功率、充放电/SOC 时序、往返效率、实际利用率）。
 
-**实现状态**：✅ 完整实现
+### `bess_capacity_operating_planner.py` — CVXPY 运营优化
 
----
-
-### 3. pv_bess_irr_planner.py - 光储 IRR 扫描
-
-**功能**：三段式收益模型，轮巡储能容量×购电电价，计算光储整体 IRR。
-
-**三段式收益模型**：
-1. **PV 自用**：`min(PV, Load) * buy_price`
-2. **储能平移弃电**：`min(BESS, Curtail, load_after_PV) * buy_price`
-3. **余电上网**：`min(PV_left, PV * max_export_ratio) * export_price`
-
-**配置参数**：
-```python
-PVBESSIRRConfig:
-    pv_capex_yuan: float = 2.3e9      # PV 总投资
-    bess_capex_per_kwh: float = 800   # 储能单位投资（元/kWh）
-    export_price_per_kwh: float = 0.285  # 上网电价
-    max_export_ratio: float = 0.20    # 最大上网比例
-    life_years: int = 20              # 项目寿命
-```
-
-**输出指标**：
-- `PVBESSIRRRow`：储能容量、购电价、年收益、年电量、O&M、现金流、IRR
-- `DeltaIRRRow`：相邻容量的 IRR 变化（边际效益分析）
-
-**实现状态**：✅ 完整实现
-
----
-
-### 4. wind_pv_bess_capacity_optimizer.py - 风光储容量优化
-
-**功能**：网格搜索+细扫两阶段优化，寻找最低成本的风光储容量组合。
+**功能**：给定容量候选，用 CVXPY 求解最优充放电策略，再用 `EssSimulationModel` 回放验证，线性搜索收益最大的容量。
 
 **算法流程**：
-1. **粗扫**：大步长网格搜索，快速定位可行区域
-2. **细扫**：在粗扫最优解附近小步长精细搜索
-3. **快速剪枝**：检查绿电比例约束的必要条件
 
-**约束条件**：
-- `green_ratio >= green_ratio_min`：绿电比例
-- `self_use_ratio >= self_use_ratio_min`：自用率
-
-**成本计算**：
-```python
-cost = wind_mw * 1000 * wind_yuan_per_kw / 10000  # 万元
-     + pv_mw * 1000 * pv_yuan_per_kw / 10000
-     + ess_mwh * 1000 * ess_yuan_per_kwh / 10000
+```
+for bess_kwh in linspace(0, batt_hi_max, search_points):
+    1. CVXPY 分段求解充放电策略（按 day/month 切分，profile 由 version 决定）
+    2. EssSimulationModel.simulation_process() 回放策略 → 实际 SOC/充放电曲线
+    3. revenue_calculation() 算原始 vs 优化收益（含需量电费）
+    4. 选 revenue 最大的容量
 ```
 
-**辅助函数**：
-- `simple_energy_sanity_check()`：用固定年利用小时估算 PV 需求下界
-- `curve_based_energy_check()`：用实际 PV 曲线估算 PV 需求
-
-**实现状态**：✅ 完整实现
+**与 economic 的关键区别**：
+- economic 把容量和策略**联合**放进一个 MILP 同时优化；operating 把容量搜索放在外层，内层对每个固定容量分别求最优策略
+- economic 返回全局最优（但 MILP 规模大、求解慢）；operating 线性扫描 + 分段求解，更快但容量点是离散的
+- operating 多了 `EssSimulationModel` 回放环节，能输出物理可行的逐时步曲线（CVXPY 解可能因效率建模差异与物理回放不闭合）
 
 ---
 
-### 5. wind_pv_bess_capacity_planner.py - BESS 容量规划
+## 第二组：PV+BESS 容量规划
 
-**功能**：离网风光储容量规划，搜索满足约束的最小储能容量。
+**共同场景**：给定光伏装机（或光伏出力曲线），搜索满足消纳约束的储能容量。**无电价套利**，目标是在离网/自发自用场景下最大化绿电消纳。
 
-**算法特点**：
-- 线性搜索（可配置搜索点数）
-- 支持 Numba JIT 加速
-- 自动检测时间步长
+### `pv_bess_planner.py`
 
-**约束条件**：
-- `self_use_ratio >= self_use_ratio_min`：新能源自用率
-- `load_cover_ratio >= load_cover_ratio_min`：负荷覆盖率
+**功能**：给定 PV 装机，二分搜索最小储能容量，使自用率和负荷覆盖率达到阈值。
 
-**调度逻辑**：
+**调度模式**（两种）：
+
+1. **纯弃电搬运**（`enable_shift=False`）：
+   - `surplus > 0`（PV > Load）→ 充电
+   - `deficit > 0`（Load > PV）→ 放电
+   - 禁止电网充电
+
+2. **平移充电**（`enable_shift=True`）：
+   - 允许 PV < Load 时主动抽取部分 PV 充电
+   - 通过 `lookahead_steps` 预判未来缺口（`future_deficit > 0.5·L·window` 且 SOC < 0.7 时触发）
+   - `shift_max_frac_of_pv` 限制平移比例（默认 0.30）
+
+**搜索算法**：二分搜索。先 `check_feasibility_upper_bound()`（极大容量测物理可达性），再倍增找可行上界，最后二分到 `tol_mwh` 精度。
+
+**效率模型**：充放分离 `eta_charge` / `eta_discharge`（默认均 0.92），与第四组 `dispatch_annual` 的对称开方不同。
+
+### `pv_bess_irr_planner.py`
+
+**功能**：**不模拟时序调度**，用三段式收益模型 + 轮巡扫描储能容量 × 购电电价，计算光储整体 IRR。
+
+**三段式收益模型**（每月一行 MWh 数据）：
+
 ```
-surplus > 0 且 SOC < SOC_max → 充电
-deficit > 0 且 SOC > SOC_min → 放电
+1. PV 自用：    Gain1 = min(PV, Load) × buy_price
+2. BESS 平移弃电：Gain3 = min(BESS, Curtail, load_after_PV) × buy_price
+3. 余电上网：    Gain2 = min(PV_left, PV × max_export_ratio) × export_price
 ```
 
-**实现状态**：✅ 完整实现
+**与 pv_bess_planner 的本质区别**：
+
+| 维度 | `pv_bess_planner` | `pv_bess_irr_planner` |
+|------|-------------------|----------------------|
+| 时间粒度 | 逐时步（8760h+） | 月度聚合（12 行） |
+| 调度引擎 | 逐时步仿真（Python/numpy） | 无调度，三段式公式 |
+| 决策目标 | 满足消纳约束的最小容量 | 最大化 IRR |
+| 输入数据 | 高分辨率负荷/PV 曲线 | 月度 PV/Load/Curtail 汇总 |
+| 扫描维度 | 单变量（BESS 容量）二分 | 双变量（BESS × 购电价）网格 |
+| 适用阶段 | 详细设计 | 前期可研/敏感性分析 |
 
 ---
 
-### 6. wind_bess_planner.py - Wind+BESS 容量规划
+## 第三组：Wind+BESS 容量规划
 
-**功能**：支持两种调度模式的风电+储能容量规划。
+**共同场景**：给定风电装机，搜索满足消纳约束的储能容量。结构与第二组高度对称。
 
-**调度模式**：
-1. **纯弃电搬运模式** (`enable_shift=False`)：
-   - surplus (W > L) → 充电
-   - deficit (L > W) → 放电
+### `wind_bess_planner.py`
 
-2. **平移充电模式** (`enable_shift=True`)：
-   - 允许 Wind < Load 时抽取部分风电充电
-   - 通过 lookahead 预判未来缺口
-   - `shift_max_frac_of_wind`：最大平移比例
+**功能/算法**：与 `pv_bess_planner.py` **几乎完全对称**，仅把 `pv_kw` 换成 `wind_kw`。同样支持纯弃电搬运 / 平移充电两种模式，二分搜索，充放分离效率。差异仅在数据对齐时风电单位为 MW（需 ×1000 转 kW）。
 
-**搜索算法**：
-- **二分搜索**：比线性搜索更快
-- **可达性检查**：用极大容量测试物理上是否可达
-- **可行性判断**：检查绿电自用率和负荷覆盖率
+### `wind_bess_irr_planner.py`
 
-**配置参数**：
-```python
-WindBESSPlanConfig:
-    eta_charge: float = 0.92       # 充电效率
-    eta_discharge: float = 0.92    # 放电效率
-    c_rate: float = 1.0            # 倍率
-    min_green_self_consumption: float = 0.60
-    min_load_coverage: float = 0.30
-    tol_mwh: float = 0.1           # 二分搜索精度
-    shift_policy: ShiftPolicy      # 平移策略
-```
+**功能**：与 `pv_bess_irr_planner.py` 对称，轮巡储能容量 × 购电电价，计算风储整体 IRR。采用**两段式收益模型**（风电直供 → 储能平移弃风补缺，余电上网极少触发）。
 
-**辅助功能**：
-- `quick_feasibility_diagnose()`：快速诊断能量比、富余能量比例
-- `check_feasibility_upper_bound()`：极大容量测试
-- `calc_monthly_wind_metrics()`：月度风电消纳统计
-- `plot_capacity_curve()`：容量响应曲线可视化
+**与 pv_bess_irr 的差异**：光储三段式（自用→平移→上网），风储退化为两段（风电通常 < 负荷，无大量余电上网）。保留第三段（余电上网）作为与光储对称的出口，默认 `max_export_ratio=0.20` 下几乎不生效。
 
-**实现状态**：✅ 完整实现
+**核心入口**：`scan_wind_bess_irr()`，返回 `WindBESSIRRResult`（scan_df + delta_df + best）。
 
 ---
 
-### 7. wind_pv_bess_planner.py - Wind+PV+BESS 容量规划
+## 第四组：Wind+PV+BESS 三要素联合规划
 
-**功能**：风光储三要素联合容量规划，PV 粗扫+细扫两阶段搜索 + BESS 二分搜索。
+**共同场景**：风、光、储三个决策变量联合优化。三个脚本代表三种不同的决策目标。
+
+### `wind_pv_bess_capacity_optimizer.py` — 最低成本优化器
+
+**功能**：网格搜索 + 细扫两阶段，寻找满足绿电比例和自用率约束的**最低投资成本**组合。
 
 **算法流程**：
+
 ```
-1. 能量门槛检查（gate check）
-   └── 风+光年发电量/用电量 >= target_ratio
-
-2. PV 粗扫
-   └── 遍历 pv_min_kwp 到 pv_max_kwp，步长 pv_step_coarse_kwp
-
-3. 对每个 PV 候选值
-   └── BESS 二分搜索找最小容量
-
-4. PV 细扫（可选）
-   └── 在粗扫最优解附近精细搜索
-
-5. 输出最优组合
+1. 粗扫：wind × pv × ess 三维网格（步长 10MW / 10MW / 20MWh）
+   └── 快速剪枝：wind_unit_sum·w + pv_unit_sum·p < green_threshold 则跳过
+2. 细扫：在粗扫最优解 ±30% 范围内，步长缩至 1MW / 1MW / 2MWh
+3. 返回最低 cost 的可行解
 ```
 
-**能量门槛检查**：
-```python
-gen_ratio = (wind_kwh + pv_kwh + other_kwh) / load_kwh
-if gen_ratio < gate_target_ratio:
-    return "gate_failed"
-```
+**调度引擎**：自带 `_simulate_op()`（内联贪心，与 `dispatch_annual` 逻辑一致但独立实现），未调用 `models/dispatch_algo.py`。
 
-**Numba JIT 加速**：
-- `_dispatch_annual_numba()`：贪心调度核心函数
-- 支持充放切换间隔（`switch_gap_steps`）
-- 自动回退到 Python 实现
+**约束**：`green_ratio ≥ green_ratio_min`（绿电占负荷比）、`self_use_ratio ≥ self_use_ratio_min`（绿电自用率）。
 
-**配置参数**：
-```python
-WindPVBESSPlanConfig:
-    # 成本
-    pv_capex_yuan_per_kwp: float = 2000
-    bess_capex_yuan_per_kwh: float = 1000
-    # 储能参数
-    eta_roundtrip: float = 0.92
-    c_rate: float = 0.5
-    # 约束
-    self_use_ratio_min: float = 0.60
-    load_cover_ratio_min: float = 0.20
-    # PV 搜索
-    pv_step_coarse_kwp: float = 2000
-    pv_step_fine_kwp: float = 250
-    pv_refine_window_kwp: float = 8000
-    # BESS 搜索
-    batt_bisect_iter: int = 26
-    batt_tol_kwh: float = 1.0
-    # 能量门槛
-    enable_gate_check: bool = True
-    gate_target_ratio: float = 0.30
-```
+**成本函数**：`cost = wind·元/kW + pv·元/kWp + ess·元/kWh`（万元）。
 
-**对外 API**：
-- `plan_wind_pv_bess()`：主规划函数（PV 参与搜索）
-- `evaluate_wind_pv_bess()`：评估固定 PV 方案
-- `evaluate_fixed_wind_pv_bess_capacity()`：评估固定容量组合
-- `energy_gate_check()`：能量门槛检查
+### `wind_pv_bess_capacity_planner.py` — 最小储能规划器
 
-**实现状态**：✅ 完整实现
+**功能**：给定风/光装机，搜索满足自用率和负荷覆盖率的**最小储能容量**。本质是 optimizer 的退化版（风/光固定，只搜储能）。
 
----
+**调度引擎**：自带 `_dispatch_numba()`（Numba JIT，独立实现，逻辑同 `dispatch_annual`）。
 
-### 8. wind_pv_bess_irr_planner.py - IRR 目标型规划
+**搜索**：线性扫描 `linspace(0, batt_hi_max, search_points)`，取第一个满足约束的容量（非二分，因为目标是最小容量而非最小成本）。
 
-#### 8.1 算法定位与适用场景
+**与 optimizer 的区别**：
 
-**一句话定位**：在业主综合电价上限给定的前提下，反推「风电 + 光伏 + 储能」三要素的最优容量配比，使项目财务 IRR 达到目标值。
+| 维度 | capacity_optimizer | capacity_planner |
+|------|-------------------|-----------------|
+| 决策变量 | wind + pv + ess 三维 | 仅 ess（风/光给定） |
+| 搜索方式 | 粗扫 + 细扫两阶段 | 线性扫描 |
+| 目标 | min cost（满足约束） | min bess_kwh（满足约束） |
+| 约束 | green_ratio + self_use_ratio | self_use_ratio + load_cover_ratio |
+| 调度引擎 | 内联 `_simulate_op` | 内联 `_dispatch_numba` |
 
-**与其他规划器的区别**：
+### `wind_pv_bess_irr_planner.py` — IRR 目标型规划
+
+**功能**：在业主综合电价上限给定的前提下，反推风/光/储的最优容量配比，使项目 IRR 达到目标值。
+
+**算法定位**（与同组两个的区别）：
 
 | 规划器 | 优化目标 | 决策方向 |
-|---|---|---|
-| #4 `wind_pv_bess_capacity_optimizer` | 满足消纳/覆盖约束的最低成本 | 风/光/储组合成本最小 |
-| #7 `wind_pv_bess_planner` | 满足约束的最小 BESS 容量 | 给定 PV 反求 BESS |
-| **本模块 IRR 目标型** | 满足 IRR 目标 + 约束的最低投资 | 三维联合 + 电价反推 |
+|--------|---------|---------|
+| capacity_optimizer | 满足消纳约束的最低成本 | 三维 min cost |
+| capacity_planner | 满足约束的最小储能 | 给定风/光反求 BESS |
+| **irr_planner** | 满足 IRR 目标的可行配比 | 三维联合 + 电价反推 |
 
-**适用场景**：业主自建/合建新能源项目，电价已锁定，需要在给定回报率下校核可建规模；或开发商需要回答「业主综合电价多少时项目可做」的反问题。
+**核心数学模型**：
 
-#### 8.2 算法测试运行流程
+1. **物理层**：调用 `models/dispatch_algo.py::dispatch_annual()`（**唯一使用共享引擎的脚本**），对每个候选 (w, pv, b) 做 105,120 步逐时步仿真，得到 `ren_gen_kwh` / `ren_used_kwh` / `load_kwh` / `curtail_kwh`。
 
-入口脚本：`app/capacity_planning/run_wind_pv_bess_irr_planning.py`。端到端流程分为 6 步：
+2. **经济层 — 绿电结算价反推**：
 
-| 步骤 | 动作 | 输入 | 输出 | 典型耗时 |
-|---|---|---|---|---|
-| 1 | 加载负荷数据 | `data/profit_calc/wind_pv_bess/v1/demand_load.csv` | `df_load`（105,120 行，5min 步长，2023 全年） | < 1s |
-| 2 | 构建/读取风电单位出力曲线 | `wind_simulation_v1` + Open-Meteo 气象数据 | `wind_unit` Series（8760 行，kW/MW） | 首次 ~30s（带气象下载），缓存命中 < 0.1s |
-| 3 | 构建/读取光伏单位出力曲线 | `pv_simulation_v1` | `pv_unit` Series（105,120 行，kW/kWp） | 首次 ~3s，缓存命中 < 0.1s |
-| 4 | 三维网格扫描 + BESS 调度仿真 | 三项 + `WindPVBESSIRRPlanConfig` | 候选列表 / 诊断表 | ~18s（Numba 加速） |
-| 5 | 保存结果 | 扫描结果 | `results/wind_pv_bess_irr/optimal_solution.csv`、`diagnostics.csv` | < 1s |
-| 6 | 日志输出关键指标 | 扫描结果 | 结构化日志 | < 0.1s |
+$$
+P_{green} = \frac{P_{owner} \cdot L - P_{grid} \cdot (L - L_{green})}{L_{green}}
+$$
 
-**缓存机制**：
-- 风电单位曲线缓存于 `wind_unit_curve.csv`（小时级）
-- 光伏单位曲线缓存于 `pv_unit_curve.csv`（5min 级）
-- 气象数据缓存于 `weather_cache.csv`（避免重复调用 Open-Meteo）
-- 任一缓存命中即跳过仿真，仅做读 CSV → 索引对齐
+含义：业主全年总电费固定为 $P_{owner} \cdot L$，绿电部分按 $P_{green}$ 结算，缺口按电网价 $P_{grid}$ 买。$P_{green} \le 0$ 则项目无收入。
 
-**配置加载**：YAML 路径 `configs/capacity_planning/wind_pv_bess_irr_planning.yaml`，通过 `_to_config()` 装配为 `WindPVBESSIRRPlanConfig` dataclass。
+3. **IRR 解算**：现金流 `[-CAPEX, annual_cf × life_years]`，`annual_cf = revenue - OPEX`，用 `compute_irr()` 求解。
 
-#### 8.3 算法原理（数学建模）
+**搜索空间**：wind × pv × bess 三维网格（默认 28 × 14 × 100 = 39,200 候选），逐个评估，筛出 IRR ∈ [target - tol, target + tol] 的可行解，取投资规模最大者。
 
-##### 8.3.1 决策变量与搜索空间
+**详细数学推导**见下方 [§8.3 算法原理](#83-算法原理数学建模)（现有 README 完整保留）。
+
+---
+
+## 辅助模块
+
+### `feasibility_analyzer.py` — 储能可行性评估
+
+**定位**：MILP 优化前的**前置筛选**。不建储能模型，仅用统计特征评分。
+
+**匹配性评分公式**：
+
+```
+score = max(0, corr_high_price_load) × 0.4      # 高电价与高负荷正相关
+      + max(0, -corr_low_price_load) × 0.2      # 低电价与低负荷负相关
+      + charge_feasibility × 0.2                 # 低价时段变压器有余量
+      + strategy_executability × 0.2             # 可充窗口占比
+```
+
+**策略推荐**：score ≥ 0.75 → 中大容量；0.55-0.75 → 中等；0.35-0.55 → 小容量高功率；< 0.35 → 不建议。
+
+### `multi_node_scanner.py` — 多节点容量扫描
+
+**功能**：对多个电价节点用 PuLP MILP 求解最优套利调度，扫描容量区间计算 IRR 和全寿命经济指标。支持容量线性衰减、循环次数约束、负电价处理。
+
+### `wind_pv_bess_irr_tuning.py` — 资源场景敏感性
+
+**功能**：遍历不同风/光资源场景（不同年份的气象数据），对每个场景运行 `plan_wind_pv_bess_for_target_irr`，评估最优解对资源波动的鲁棒性。
+
+---
+
+## 跨组对比与选型指南
+
+### 按场景选型
+
+| 你的场景 | 推荐模块 | 理由 |
+|---------|---------|------|
+| 工业园区多变压器，各节点配多少储能 | `bess_capacity_distributed_planner` | 唯一支持多节点拓扑 |
+| 单节点，要最优容量 + 策略联合解 | `bess_capacity_economic_planner` | MILP 全局最优 |
+| 单节点，给定容量想看运营收益曲线 | `bess_capacity_operating_planner` | CVXPY + 仿真回放 |
+| 只有月度数据，快速看光储 IRR | `pv_bess_irr_planner` | 三段式公式，无需时序 |
+| 有 PV 曲线，求最小储能满足自用率 | `pv_bess_planner` | 二分搜索，支持平移充电 |
+| 有风电曲线，求最小储能 | `wind_bess_planner` | 与 pv_bess 对称 |
+| 风+光+储三维，求最低投资 | `wind_pv_bess_capacity_optimizer` | 两阶段网格搜索 |
+| 风+光固定，只求最小储能 | `wind_pv_bess_capacity_planner` | 线性扫描 |
+| 业主要求 IRR 达标，反推配比 | `wind_pv_bess_irr_planner` | 唯一支持电价反推 |
+
+### 按调度引擎分组
+
+| 引擎 | 使用者 | 效率模型 |
+|------|-------|---------|
+| `dispatch_annual`（共享贪心） | `wind_pv_bess_planner`, `wind_pv_bess_irr_planner` | 对称开方 √η_rt |
+| `resource_bess_planner_core`（单源贪心） | `pv_bess_planner`, `wind_bess_planner`（薄包装） | 充放分离 η_c/η_d |
+| 内联贪心（各 planner 自带） | `wind_pv_bess_capacity_optimizer`, `wind_pv_bess_capacity_planner` | 对称开方或充放分离 |
+| LP/MILP（PuLP） | `bess_capacity_economic_planner`, `multi_node_scanner`, `bess_capacity_distributed_planner` | 充放分离 |
+| CVXPY | `bess_capacity_operating_planner` | 充放分离 |
+| 三段式/两段式公式（无调度） | `pv_bess_irr_planner`, `wind_bess_irr_planner` | 不涉及 |
+| `EssSimulationModel`（回放） | `bess_capacity_operating_planner`（验证环节） | 充放分离 |
+
+> **⚠️ 已知一致性问题**：不同脚本对充放效率的建模不统一（对称开方 vs 充放分离）。若用 `dispatch_annual` 生成策略后再用 `EssSimulationModel` 回放，结果会因效率建模差异不闭合。跨脚本串联时需注意。
+
+---
+
+## 子模块索引
+
+| 文件 | 组 | 核心入口 | 状态 |
+|------|---|---------|------|
+| `bess_capacity_distributed_planner.py` | 1 | `run_capacity_search()`, `optimize_combo()` | ✅ |
+| `bess_capacity_economic_planner.py` | 1 | `solve_capacity_sizing()` | ✅ |
+| `bess_capacity_operating_planner.py` | 1 | `plan_energy_system()` | ✅ |
+| `pv_bess_planner.py` | 2 | `plan_pv_bess_system()` | ✅ |
+| `pv_bess_irr_planner.py` | 2 | `scan_pv_bess_irr()` | ✅ |
+| `wind_bess_planner.py` | 3 | `plan_wind_bess_system()` | ✅ |
+| `wind_bess_irr_planner.py` | 3 | `scan_wind_bess_irr()` | ✅ |
+| `wind_pv_bess_capacity_optimizer.py` | 4 | `CapacityOptimizer.optimize()` | ✅ |
+| `wind_pv_bess_capacity_planner.py` | 4 | `plan_energy_system()` | ✅ |
+| `wind_pv_bess_irr_planner.py` | 4 | `plan_wind_pv_bess_for_target_irr()` | ✅ |
+| `feasibility_analyzer.py` | 辅助 | `BESSFeasibilityAnalyzer.analyze()` | ✅ |
+| `multi_node_scanner.py` | 辅助 | `scan_multiple_nodes()` | ✅ |
+| `wind_pv_bess_irr_tuning.py` | 辅助 | `run_wind_pv_bess_irr_resource_tuning()` | ✅ |
+| `models/dispatch_algo.py` | 引擎 | `dispatch_annual()` | ✅ |
+| `models/resource_bess_planner_core.py` | 引擎 | `simulate_dispatch()`, `find_min_capacity_bisect()` | ✅ |
+| `models/simulation_model.py` | 引擎 | `EssSimulationModel` | ✅ |
+
+---
+
+## 8.3 算法原理（数学建模）
+
+> 以下为 `wind_pv_bess_irr_planner.py` 的完整数学推导，从物理层调度到经济层 IRR 解算。
+
+### 8.3.1 决策变量与搜索空间
 
 决策变量为风电装机 $w$、光伏装机 $pv$、储能容量 $b$（单位 MW、MWh）：
 
@@ -351,7 +431,7 @@ $$
 N_{cand} = 28 \times 14 \times 100 = 39{,}200 \text{ 候选}
 $$
 
-##### 8.3.2 物理层：BESS 贪心调度（逐时步仿真）
+### 8.3.2 物理层：BESS 贪心调度（逐时步仿真）
 
 对每个候选 $(w, pv, b)$，先把单位出力曲线按装机缩放，再做 105,120 步逐时步仿真。设时步长 $\Delta t$（小时），$L_t$ 为负荷功率（kW），新能源发电为：
 
@@ -427,13 +507,6 @@ $$
 curtail = \sum_{t=1}^{T} (S_t - p_t^{ch}) \cdot \Delta t
 $$
 
-**逐项物理意义**：
-
-- $(S_t - p_t^{ch})$：当前时刻 $t$ 的新能源盈余中，**没能存入电池的部分**（kW）。当 $p_t^{ch} < S_t$ 时差值为正，即为损失；当 $p_t^{ch} = S_t$ 时盈余全部消纳，弃电贡献为 0。
-- $\max(\cdot, 0)$（代码中隐含）：**数值保护**，防止浮点误差下 $p_t^{ch}$ 略大于 $S_t$ 出现负弃电。
-- $\sum_{t=1}^{T}$：全年 $T$ 步（$T = 105{,}120$）累加，得到**年弃电量**（kWh）。
-- $\Delta t$：把每步的功率（kW）转换为能量（kWh）的换算因子。
-
 **弃电发生的三个原因**（任一即触发）：
 
 | 触发条件 | 物理现象 | 后果 |
@@ -442,50 +515,29 @@ $$
 | $P_{\max}$ 不够大 | 功率到顶 | $p_t^{ch} = P_{\max}$，$S_t - P_{\max}$ 部分弃掉 |
 | $(soc_{\max} - soc_{t-1})$ 太小 | 剩余空间不足 | SOC 上限约束功率 < $S_t$，差额弃掉 |
 
-**弃电量的经济意义**：在 IRR 模型中**不计收入**（既不售电网也不供业主），是新能源项目的「免费损失」。本规划通过 `curtail_kwh` 字段输出至 `diagnostics.csv`，可作为**是否扩容 BESS** 的判断依据：弃电率高时增大 $b$ 往往能摊薄单位投资。
-
 **关键参数化**：
 - 效率对称化：$\eta_c = \eta_d = \sqrt{\eta_{roundtrip}}$，默认 0.92 → 0.959
 - 功率上限：$P_{\max} = c\_rate \cdot E$，默认 $c\_rate = 0.5$（2 小时电池）
 - SOC 边界：$soc \in [0.1E,\ 1.0E]$
 - 初始 SOC：$soc_0 = 0.5E$
 
-**年度统计量**：仿真返回 $\sum G_t \cdot \Delta t$（年发电）、$\sum (D_t + p_t^{dis} \cdot \Delta t)$（年绿电消纳）、$\sum L_t \cdot \Delta t$（年用电）、$curtail$（年弃电）。
+### 8.3.3 经济层：电价反推与 IRR 解算
 
-##### 8.3.3 经济层：电价反推与 IRR 解算
+#### 绿电结算价反推
 
-###### 8.3.3.1 绿电结算价反推
-
-**核心假设**：业主综合用电价恒等于目标值 $P_{owner}$（业主视角下的「不介意电源结构」）：
+**核心假设**：业主综合用电价恒等于目标值 $P_{owner}$：
 
 $$
 P_{owner} \cdot L = P_{green} \cdot L_{green} + P_{grid} \cdot (L - L_{green})
 $$
 
-**公式的物理/业务含义**：
-
-| 项 | 含义 | 业务侧 |
-|---|---|---|
-| $P_{owner} \cdot L$ | 业主全年总电费 | 业主视角 |
-| $P_{green} \cdot L_{green}$ | 业主向新能源项目支付的绿电费 | 业主 → 项目 |
-| $P_{grid} \cdot (L - L_{green})$ | 业主向电网支付的电费 | 业主 → 电网 |
-
-等式含义：业主**不关心**电从哪里来，只关心**全年总电费**等于目标值。绿色电力对业主等价于「省下的电网电费」，这部分由项目通过 $P_{green}$ 回收。
-
-**反推公式推导**（由上式解 $P_{green}$）：
+**反推公式**（由上式解 $P_{green}$）：
 
 $$
 P_{green} = \frac{P_{owner} \cdot L - P_{grid} \cdot (L - L_{green})}{L_{green}}
 $$
 
-**逐项物理意义**：
-
-- **分子第一项** $P_{owner} \cdot L$：业主全年愿意支付的总电费（市场约束 / 业主预算上限）
-- **分子第二项** $P_{grid} \cdot (L - L_{green})$：如果这部分电从电网买，业主应支付的电费
-- **分子差值**：业主**因自建新能源而省下的电费** = 新能源项目的"收入总盘"
-- **除以 $L_{green}$**：把"省下的总盘"分摊到每度新能源电上 = $P_{green}$
-
-**几何直觉**（设覆盖率 $\rho = L_{green}/L$，化简为单变量）：
+**几何直觉**（设覆盖率 $\rho = L_{green}/L$）：
 
 $$
 P_{green} = P_{grid} - \frac{P_{grid} - P_{owner}}{\rho}
@@ -495,585 +547,27 @@ $$
 
 1. $\rho$ 越小（覆盖率越低），$P_{green}$ 越低 → 项目收入越少
 2. 当 $\rho \to 1$（全自用），$P_{green} \to P_{owner}$，与电网电价无关
-3. 当 $P_{green} \le 0$：意味着"省下的电费"为 0 或负 → 项目无收入或倒贴 → **L3 PPA 约束失败**
+3. 当 $P_{green} \le 0$：项目无收入 → **PPA 约束失败**
 4. 给定 $P_{grid} = 0.36$、$P_{owner} = 0.32$，覆盖率每提升 10%，$P_{green}$ 提高约 0.011 元/kWh
 
-**剥离绿电附加价得到 PPA 价**：
+#### IRR 解算
+
+现金流序列：
 
 $$
-P_{ppa} = P_{green} - P_{adder}
+\text{cashflows} = [-\text{CAPEX},\ \underbrace{\text{annual\_cf},\ \ldots,\ \text{annual\_cf}}_{\text{life\_years 年}}]
 $$
 
-**业务含义**：
-- 绿电附加价 $P_{adder}$（默认 0.074 元/kWh）是国家/地方对绿色电力的环境价值补贴
-- 业主**实际支付** $P_{green}$，但其中 $P_{adder}$ 部分代表环境价值归属，回流到新能源项目
-- 新能源项目**实际收入口径** = $P_{ppa} \cdot L_{green}$
-- 当 $P_{ppa} > 0$ 时项目方可覆盖成本 → L3 约束
-
-###### 8.3.3.2 总投资与年现金流
-
-**总投资**（一次性，建设期不考虑）：
+其中：
 
 $$
-CAPEX = 10^3 \left(w \cdot c_w + pv \cdot c_{pv} + b \cdot c_b\right)
+\text{annual\_cf} = P_{green} \cdot L_{green} - \text{OPEX}
 $$
 
-**逐项解释**：
-
-| 项 | 单位 | 量纲换算 | 经济含义 |
-|---|---|---|---|
-| $w \cdot c_w$ | MW × 元/kW = 1000 × 元 | $10^3$ 把 MW 转为 kW | 风电设备 + 安装 |
-| $pv \cdot c_{pv}$ | MWp × 元/kWp = 1000 × 元 | $10^3$ 把 MWp 转为 kWp | 光伏组件 + 支架 + 逆变器 |
-| $b \cdot c_b$ | MWh × 元/kWh = 1000 × 元 | $10^3$ 把 MWh 转为 kWh | 电池 + PCS + BMS |
-
-**简化假设**：建设期一次性投入，无分期付款；不考虑建设期利息（用 $r$ 反映时间价值）；期末残值为 0。
-
-**年现金流**：
+IRR 为使 NPV = 0 的折现率 $r^*$：
 
 $$
-CF_{annual} = \underbrace{P_{green} \cdot L_{green}}_{\text{年收入}} - \underbrace{\alpha \cdot CAPEX}_{\text{年运维}}
+\sum_{t=0}^{T} \frac{\text{cashflows}_t}{(1+r^*)^t} = 0
 $$
 
-| 项 | 符号 | 性质 | 备注 |
-|---|---|---|---|
-| $P_{green} \cdot L_{green}$ | $+$ | 流入 | 来自业主的绿电费 |
-| $\alpha \cdot CAPEX$ | $-$ | 流出 | 运维、检修、保险、人工、税费 |
-
-**关键参数 $\alpha$**：默认 0.02（年运维 = 总投资 2%）。这是**简化建模**——把不规则的运维支出均摊为与 CAPEX 成正比的年金。
-
-**为什么不折旧**：
-- 本模型用**现金流法**（cash flow method），不是会计利润法
-- 不扣折旧，但通过折现率 $r$ 反映资本时间价值
-- 期末残值：本模型设为 0（不回收残值）
-
-**为什么不交所得税**：
-- 简化场景：税前 IRR（pre-tax IRR）
-- 真实项目可在 $CF_{annual}$ 中再扣 $T \cdot (CF_{annual} - 折旧)$
-
-###### 8.3.3.3 IRR 求解
-
-**基本方程**（NPV = 0）：
-
-$$
-NPV(r) = \sum_{t=0}^{N} \frac{CF_t}{(1+r)^t} = 0
-$$
-
-$$
-CF_0 = -CAPEX, \quad CF_{t \ge 1} = CF_{annual}
-$$
-
-**展开形式**：
-
-$$
-0 = -CAPEX + \frac{CF_{annual}}{1+r} + \frac{CF_{annual}}{(1+r)^2} + \cdots + \frac{CF_{annual}}{(1+r)^N}
-$$
-
-**几何级数求和**（等额年金）：
-
-利用 $\sum_{t=1}^{N} x^t = x \cdot \frac{1 - x^N}{1 - x}$，令 $x = 1/(1+r)$：
-
-$$
-CAPEX = CF_{annual} \cdot \frac{1 - (1+r)^{-N}}{r}
-$$
-
-**资本回收系数**（Capital Recovery Factor, CRF）：
-
-设 $k = CF_{annual} / CAPEX$（资本回收率，量纲 1/年），移项得：
-
-$$
-k = CRF(r, N) = \frac{r \cdot (1+r)^N}{(1+r)^N - 1}
-$$
-
-求解 $r$ 即为 IRR。**对一般 $k$ 值无解析解**，必须用数值方法。
-
-**$N = 15$ 年线性年金下 $k$ 与 $r$ 的对应关系**（数值求解）：
-
-| $k = CF_{annual}/CAPEX$ | IRR $r$ | 业务含义 |
-|---|---|---|
-| 0.0667（$= 1/15$） | $\to 0\%$ | 年金勉强覆盖投资（理论下界） |
-| 0.070 | 0.62% | 微弱回收 |
-| 0.080 | 2.37% | 较低回报 |
-| 0.096 | 4.95% | 银行理财水平 |
-| **0.117** | **8.02%** | **本项目目标 IRR** |
-| 0.130 | 9.80% | 接近 10% |
-| 0.150 | 12.40% | 较高回报 |
-| 0.200 | 18.42% | 高回报 |
-| 0.250 | 24.01% | 极高回报 |
-
-> 验证：$k = 0.117$ 时 $r \approx 8\%$，与 $CRF(8\%, 15) = 11.68\%$ 一致（数值解与公式互证）。
-
-**当前实跑验证**（125/140/5 候选）：
-- $CAPEX = 11.225$ 亿、$CF_{annual} = 0.793$ 亿 → $k = 7.06\%$
-- 查表内插：$r \approx 0.73\%$（与代码实测 IRR=0.0073 一致）
-- **远低于**目标 8% 对应的 $k = 11.7\%$，故无解
-
-###### 8.3.3.4 IRR 数值方法（二分法 Bisection）
-
-**为什么用数值方法**：
-- 等额年金下 $CRF(r, N) = k$ 涉及 $(1+r)^N$，无封闭解（Lambert W 函数可解但不实用）
-- 不等额现金流序列：更无解析解
-- 必须用迭代法
-
-**本项目实现**（`ele_trading.evaluation.metrics.compute_irr`）：
-
-**步骤 1：可行性检查**
-
-```python
-if not (has_negative and has_positive in cash_flows):
-    return 0.0
-```
-
-- 现金流必须**既有正又有负**（典型：$CF_0 < 0$ + $CF_{t \ge 1} > 0$）
-- 否则 NPV 永远不为 0 → 无 IRR → 返回 0.0
-
-**步骤 2：动态区间搜索**
-
-```python
-low, high = -0.99, 1.0     # 初始 [-99%, 100%]
-for _ in range(20):
-    if npv(low) * npv(high) <= 0:
-        break              # 找到异号区间，根存在
-    high *= 10             # 否则 high *= 10
-```
-
-- 初始区间 $[-0.99, 1.0]$ 覆盖新能源项目典型 IRR（-99% ~ 100%）
-- 若整个区间 $NPV$ 同号（说明根不在 $[-0.99, 1.0]$ 内），逐步扩大 $high$ 到 10、100、1000...
-- 最多 20 次扩大 → $high$ 可达 $10^{20}$
-- 仍无异号 → 无 IRR → 返回 0.0
-
-**NPV 函数定义**：
-
-$$
-NPV(r) = \sum_{t=0}^{N} \frac{CF_t}{(1+r)^t}
-$$
-
-**步骤 3：二分法迭代**
-
-```python
-for _ in range(max_iter):  # max_iter=100
-    mid = (low + high) / 2
-    npv_mid = npv(mid)
-    if abs(npv_mid) < tol:  # tol=1e-6
-        return mid          # 收敛
-    if npv_mid * npv_low < 0:
-        high, npv_high = mid, npv_mid   # 根在 [low, mid]
-    else:
-        low, npv_low = mid, npv_mid     # 根在 [mid, high]
-return (low + high) / 2  # 兜底：未收敛时取中点
-```
-
-**收敛原理**：
-- $NPV(r)$ 在根附近单调（标准项目）
-- 每次迭代区间折半：$[low, high]$ 长度 $\to 0$
-- 100 次迭代后区间长度 $1.99 \times 2^{-100} \approx 1.5 \times 10^{-30}$，远低于 $10^{-6}$ 容差
-- 实际收敛步数：约 21 步（$\log_2(1.99 / 10^{-6}) \approx 21$）
-
-**单调性保证**：
-- 对等额年金 + 一次性投资的「标准项目」，$NPV(r)$ 是 $r$ 的单调递减函数
-- 对非典型项目（如末期大额残值），可能违反单调性，二分法可能失败
-- 本项目 15 年线性年金 + 0 残值 = 标准场景，**保证收敛**
-
-**数值方法的优劣对比**：
-
-| 维度 | 二分法（采用） | 牛顿法 | 解析法 |
-|---|---|---|---|
-| 收敛速度 | 线性（~21 步） | 二次（~5 步） | — |
-| 稳定性 | **高**（必收敛） | 中（需好初值） | — |
-| 实现复杂度 | 低 | 中（需解析导数） | 高（无一般解） |
-| 适用范围 | 任何 NPV 函数 | 需可导 | 等额年金 |
-| 本项目选择 | ✅ | ❌ | ❌ |
-
-**选择二分法的原因**：稳定性 > 速度。IRR 在规划算法中调用 ~39,200 次/次规划，21 步与 5 步的差异（~4×）远不如"必收敛"的鲁棒性重要。
-
-**误差与精度**：
-- 默认 $tol = 10^{-6}$，对应 IRR 精度 0.0001%（远超 0.2% 容差需求）
-- $max\_iter = 100$ 远大于实际需求（~21 步），**无收敛失败风险**
-
-**典型调用栈**：
-1. `plan_wind_pv_bess_for_target_irr` 调用 39,200 次 `_evaluate_candidate`
-2. 每次 `_evaluate_candidate` 调用 1 次 `compute_irr`
-3. 每次 `compute_irr` 平均 ~21 步二分迭代
-4. 每步 NPV 计算 N+1=16 次加法和除法
-5. **总 NPV 评估** = 39,200 × 21 × 16 ≈ **13.2M 次浮点运算**
-
-###### 8.3.3.5 简化与精度边界
-
-| 简化项 | 实际情形 | 影响 |
-|---|---|---|
-| 15 年线性 $CF_{annual}$ | 首年运维低、末期高 | IRR 偏低估 0.1~0.3% |
-| 期末残值为 0 | 设备残值 5~10% CAPEX | IRR 偏低估 0.3~0.5% |
-| 税前模型 | 实际所得税率 25% | 税后 IRR 低 2~3% |
-| 无衰减 | PV 年衰减 0.5%、BESS 容量 80%/10y | 第 10 年起发电少，IRR 低 |
-| 单业主分时电价 | 实际分时电价 | 反推 $P_{green}$ 略偏 |
-| 无风险溢价 | 实际含 1~2% 风险溢价 | 目标 IRR 应更高 |
-
-**结论**：本模型 IRR 是**项目经济性边界估算**，精度量级 ±0.5%。如需精确到 ±0.1%，需引入衰减模型、分时电价、税收。
-
-##### 8.3.4 四道过滤
-
-| 层级 | 条件 | 不通过后果 |
-|---|---|---|
-| L1 物理存在 | $gen, used, load > 0$ | 直接丢弃（不进 diagnostics） |
-| L2 消纳约束 | 自用率 $\ge 60\%$ ∧ 覆盖率 $\ge 35\%$ | 直接丢弃（不进 diagnostics） |
-| L3 PPA 价格 | $P_{green} > 0$ ∧ $P_{ppa} > 0$ | 保留至 diagnostics（reason=`non_positive_ppa`） |
-| L4 IRR 约束 | $\lvert IRR - r_{target} \rvert \le 0.2\%$ | 保留至 diagnostics（reason=`irr_out_of_tolerance`） |
-
-**最优解选择**（两级排序）：
-
-$$
-\text{best} = \arg\min_{(w, pv, b)\ \text{passed}} \left(CAPEX,\ \lvert IRR - r_{target} \rvert \right)
-$$
-
-##### 8.3.5 算法复杂度
-
-- **时间复杂度**：$O(N_{cand} \times T)$，本次实跑 $39{,}200 \times 105{,}120 \approx 4.1 \times 10^9$ 步。Numba JIT 加速后实测约 18 秒；无 Numba 时 Python 解释器下耗时约 100× 上升。
-- **空间复杂度**：$O(T)$ 每候选（已展开为连续 numpy 数组，无副本复制）。
-- **结果规模**：物理/PPA/IRR 任一不通过时仅写 `diagnostics.csv`；本实跑产生 17,258 行诊断记录。
-
-#### 8.4 算法运行结果解读
-
-针对本次实跑（默认配置）：
-
-```
-status=no_solution
-message=未找到满足 PPA/IRR 约束的风光储组合
-```
-
-**最近候选**（IRR 差距最小）：
-
-| 指标 | 值 |
-|---|---|
-| 装机 | 风 125MW + 光 140MW + 储 5MWh |
-| 总投资 CAPEX | **11.225 亿元** |
-| 年绿电消纳 | 4.121 亿 kWh |
-| 年电网购电 | 7.540 亿 kWh |
-| 自用率 / 覆盖率 | 94.3% / 35.3% |
-| 反推绿电价 | 0.247 元/kWh |
-| 年收入 / 年运维 / 年净 CF | 1.017 / 0.225 / **0.793 亿元** |
-| **IRR** | **0.73%**（目标 8%，差距 7.27%） |
-
-**为何无可行解**（数学推导）：
-
-1. **覆盖率锁定绿电价格**：覆盖率上限 35.3% 决定 $L_{green}/L = 0.353$，代入电价反推式：
-
-$$
-P_{green} = 0.36 - \frac{0.36 - 0.32}{0.353} \approx 0.247\ \text{元/kWh} \ll 0.32
-$$
-
-2. **投资回收能力不足**：年净 CF / CAPEX = 7.06%。对 15 年线性年金，达成 8% IRR 所需的最低回收率为：
-
-$$
-r_{req} = \frac{r(1+r)^N}{(1+r)^N - 1} = \frac{0.08 \times 1.08^{15}}{1.08^{15} - 1} \approx 11.7\%
-$$
-
-3. **根本性矛盾**：业主综合电价上限 0.32 元/kWh < 电网电价 0.36 元/kWh，绿电消纳越多反而需要把 $P_{green}$ 压得越低（对业主的"让利"），最终落在 0.247 元/kWh 附近，远不足以让 11.225 亿投资在 15 年内回收到 8% IRR。
-
-**调参建议**（如需找到可行解）：
-
-| 调整方向 | 参数 | 建议值 |
-|---|---|---|
-| 提高业主电价 | `target_owner_price_yuan_per_kwh` | 0.36 ~ 0.40 元/kWh |
-| 降低回报要求 | `target_irr` | 0.05（5%） |
-| 提高绿电占比 | `load_cover_ratio_min` | ≥ 0.50 |
-| 降低单位投资 | `wind/pv/bess_capex` | 跟随市场下行趋势调整 |
-
-**结果文件位置**：
-- `results/wind_pv_bess_irr/optimal_solution.csv` — 无解时**不生成**
-- `results/wind_pv_bess_irr/diagnostics.csv` — 17,258 行，按 `irr_gap` 升序排列
-
-#### 8.5 关键工程取舍
-
-| 维度 | 现状 | 边界 |
-|---|---|---|
-| 调度策略 | 贪心逐时步 | 非全局最优（无前瞻窗口、无分时电价套利） |
-| 搜索方式 | 三维等步长网格 | 步长 10 偏粗，无局部精修阶段 |
-| 加速手段 | Numba JIT | 依赖 numba，否则 Python 慢 ~100× |
-| 物理粒度 | 5min 步长 | 不模拟尾流、逆变器限功率、机型差异 |
-| 业务范围 | 单业主电价上限 | 不支持多业主分账、跨节点套利 |
-| 数据来源 | 缓存 + 真实 Open-Meteo 气象 | 风电仿真为统计模型，非真实机组 SCADA |
-
-**算法本质**：是「项目经济性边界扫描」工具，**不是**「调度最优」工具。它回答的是「在业主综合电价约束下，哪种配比能让项目 IRR 达到目标」，而非「给定配比后如何最优调度」。两者精度需求不同：经济性边界只需近似电量平衡，而调度最优需要分时电价、设备约束的全链路建模。
-
-#### 8.6 实现状态
-
-✅ **完整实现**：含三维网格扫描、BESS 贪心调度（Numba）、电价反推、IRR 数值解、四级过滤、诊断表导出。
-
----
-
-### 9. bess_capacity_economic_planner.py - 储能容量+调度联合优化
-
-**功能**：MILP 联合优化储能容量与调度策略，最大化净套利收益。
-
-**决策变量**：
-- `Cap_rated`：额定容量
-- `P_ch[t]`、`P_dis[t]`：充放电功率
-- `E[t]`：SOC
-- `u_ch[t]`、`u_dis[t]`：充放电状态（二进制）
-
-**目标函数**：
-```
-max Σ(price[t] * P_dis[t] * dt) - Σ(price[t] * P_ch[t] * dt)
-    - annualized_capex - opex
-```
-
-**年化 CAPEX 计算**：
-```python
-crf = r * (1+r)^n / ((1+r)^n - 1)  # 资本回收系数
-annualized_capex = capex_per_kwh * Cap_rated * crf
-```
-
-**约束条件**：
-- SOC 动态约束
-- 充放电互斥约束
-- 变压器容量约束
-- 周期性 SOC 回归约束
-- 充放电切换间隔约束
-- 最小连续充放电时段约束
-- 循环次数约束
-- McCormick 包络松弛（可选）
-
-**实现状态**：✅ 完整实现
-
----
-
-### 10. bess_capacity_distributed_planner.py - 分布式储能测算
-
-**功能**：多变压器公共母线下的分布式储能调度优化。
-
-**数据类型**：输入输出与调度配置 dataclass 定义于本目录 `interfaces.py`（`DistBESSDispatchInput`、`DistBESSDispatchResult`、`DistBESSSchedulerConfig` 等），不再反向依赖 `optimization/interfaces.py`。
-
-**拓扑结构**：
-```
-        ┌─────────────────────────────────────┐
-        │            公共母线 (Park)            │
-        └───┬─────────┬─────────┬─────────┬───┘
-            │         │         │         │
-        ┌───┴───┐ ┌───┴───┐ ┌───┴───┐ ┌───┴───┐
-        │ 338_1 │ │ 338_2 │ │ 338_3 │ │ 342_1 │ ...
-        │ 2000kVA│ │1600kVA│ │1600kVA│ │1250kVA│
-        └───────┘ └───────┘ └───────┘ └───────┘
-```
-
-**预设配置**：
-
-| 预设 | 求解器 | 网格公式 | 非负约束 | 放电模式 | 平滑惩罚 | 斜坡限制 |
-|-----|--------|---------|---------|---------|---------|---------|
-| v1 | LP | SUM_LOAD | 否 | price_type | 无 | 无 |
-| v2 | LP | SUM_LOAD | 否 | price_type | 有 | 有 |
-| v3 | LP | SUM_LOAD | 否 | price_type | 有 | 有 |
-| v4 | LP | PARK_BASELINE | 是 | price_type | 有 | 有 |
-| v5 | RULE_BASED | PARK_BASELINE | 是 | fixed_window | 无 | 无 |
-
-**约束条件**：
-- SOC 动态约束
-- 充放电时间窗口约束
-- 变压器容量约束
-- 跨变压器功率流约束
-- 斜坡率约束（可选）
-- SOC 目标惩罚（可选）
-
-**目标函数**：
-```
-min energy_cost + max_demand_cost + cross_flow_penalty + smooth_penalty + soc_target_penalty
-```
-
-**容量搜索模式**：
-- `full_grid`：全网格搜索（支持并行）
-- `max_capacity`：仅评估最小和最大容量
-- `coordinate`：坐标下降法（贪心邻居搜索）
-
-**柜数约束模式**：
-- `CabinetEqualityMode.NONE`：无约束
-- `CabinetEqualityMode.GLOBAL`：全局等柜数
-- `CabinetEqualityMode.GROUP`：分组等柜数
-
-**实现状态**：✅ 完整实现
-
----
-
-### 11. pv_bess_planner.py - PV+BESS 容量规划
-
-**功能**：光伏+储能系统容量规划，支持两种调度模式。
-
-**调度模式**：
-1. **纯弃电搬运模式** (`enable_shift=False`)：
-   - surplus (PV > L) → 充电
-   - deficit (L > PV) → 放电
-
-2. **平移充电模式** (`enable_shift=True`)：
-   - 允许 PV < Load 时抽取部分 PV 充电
-   - 通过 lookahead 预判未来缺口
-   - `shift_max_frac_of_pv`：最大平移比例
-
-**搜索算法**：
-- **二分搜索**：快速定位最小可行容量
-- **可达性检查**：用极大容量测试物理上是否可达
-- **可行性判断**：检查自用率和负荷覆盖率
-
-**配置参数**：
-```python
-PVBESSPlanConfig:
-    eta_charge: float = 0.92       # 充电效率
-    eta_discharge: float = 0.92    # 放电效率
-    c_rate: float = 1.0            # 倍率
-    min_self_consumption: float = 0.60
-    min_load_coverage: float = 0.30
-    pv_capex_yuan_per_kwp: float = 2000    # PV 单位投资
-    bess_capex_yuan_per_kwh: float = 1000  # 储能单位投资
-    tol_mwh: float = 0.1           # 二分搜索精度
-    shift_policy: ShiftPolicy      # 平移策略
-```
-
-**辅助功能**：
-- `quick_feasibility_diagnose()`：快速诊断能量比、富余能量比例
-- `check_feasibility_upper_bound()`：极大容量测试
-- `calc_monthly_pv_metrics()`：月度光伏消纳统计
-- `plot_capacity_curve()`：容量响应曲线可视化
-
-**实现状态**：✅ 完整实现
-
----
-
-## 算法实现程度评估
-
-| 模块 | 实现状态 | 完整度 | 备注 |
-|-----|---------|-------|------|
-| feasibility_analyzer | ✅ | 100% | 完整实现，含敏感性分析 |
-| multi_node_scanner | ✅ | 100% | 完整实现，含衰减模型 |
-| pv_bess_irr_planner | ✅ | 100% | 完整实现，三段式收益模型 |
-| pv_bess_planner | ✅ | 100% | 完整实现，含平移充电模式 |
-| wind_pv_bess_capacity_optimizer | ✅ | 100% | 完整实现，两阶段搜索 |
-| wind_pv_bess_capacity_planner | ✅ | 100% | 完整实现，含 Numba 加速 |
-| wind_bess_planner | ✅ | 100% | 完整实现，含平移充电模式 |
-| wind_pv_bess_planner | ✅ | 100% | 完整实现，含能量门槛检查 |
-| wind_pv_bess_irr_planner | ✅ | 100% | 完整实现，IRR 目标型 |
-| bess_capacity_economic_planner | ✅ | 100% | 完整实现，MILP 联合优化 |
-| bess_capacity_distributed_planner | ✅ | 100% | 完整实现，含 v1-v5 预设 |
-
-**总体评估**：模块实现完整度 **100%**（11个子模块全部实现）。
-
-## 依赖关系
-
-```
-capacity_planning/
-├── utils/
-│   ├── time_index.py          # 时间索引处理
-│   ├── data_alignment.py      # 数据对齐
-│   ├── num_utils.py           # 数值工具
-│   ├── demand_charge.py       # 需量电费计算
-│   └── time_splitting.py      # 时间分割
-└── evaluation/
-    └── metrics.py             # IRR 计算等指标
-```
-
-## 外部依赖
-
-- **numpy**：数值计算
-- **pandas**：数据处理
-- **pulp**：MILP 求解器
-- **cvxpy**：凸优化求解器
-- **numba**：JIT 编译加速（可选）
-- **matplotlib**：可视化（可选）
-
-## 使用示例
-
-### 1. 可行性评估
-
-```python
-from ele_trading.capacity_planning import BESSFeasibilityAnalyzer, FeasibilityAnalyzerConfig
-
-cfg = FeasibilityAnalyzerConfig(
-    load_col="Load",
-    price_col="Price",
-    time_col="Time",
-    transformer_kva=80000,
-)
-analyzer = BESSFeasibilityAnalyzer(cfg)
-result = analyzer.analyze(df_price, df_load)
-
-print(f"匹配性评分: {result.matching.score:.2f}")
-print(f"推荐策略: {result.strategy.description}")
-```
-
-### 2. Wind+BESS 容量规划
-
-```python
-from ele_trading.capacity_planning import plan_wind_bess_system, WindBESSPlanConfig
-
-cfg = WindBESSPlanConfig(
-    min_green_self_consumption=0.60,
-    min_load_coverage=0.30,
-    capex_cny_per_kwh=1000,
-)
-result = plan_wind_bess_system(df_load, wind_input, cfg)
-
-print(f"可行: {result.feasible}")
-print(f"容量: {result.capacity_mwh:.1f} MWh")
-print(f"成本: {result.cost_cny/1e4:.1f} 万元")
-```
-
-### 3. Wind+PV+BESS 容量规划
-
-```python
-from ele_trading.capacity_planning import plan_wind_pv_bess, WindPVBESSPlanConfig
-
-cfg = WindPVBESSPlanConfig(
-    self_use_ratio_min=0.60,
-    load_cover_ratio_min=0.20,
-    gate_target_ratio=0.30,
-)
-result = plan_wind_pv_bess(df_load, pv_unit_kw, wind_input, cfg)
-
-print(f"状态: {result.status}")
-print(f"PV: {result.pv_kwp/1e3:.1f} MWp")
-print(f"BESS: {result.bess_kwh/1e3:.1f} MWh")
-print(f"总投资: {result.total_capex_yuan/1e4:.1f} 万元")
-```
-
-### 4. 分布式储能测算
-
-```python
-from ele_trading.capacity_planning import run_dist_bess_dispatch, DistBESSDispatchInput
-
-input_data = DistBESSDispatchInput(
-    base_dir="/path/to/data",
-    start_time=datetime(2024, 1, 1),
-    end_time=datetime(2024, 12, 31),
-    max_demand_price=40.0,
-    freq_minutes=15,
-    search_mode="coordinate",
-    system_name="park",
-    preset="v4",
-)
-result = run_dist_bess_dispatch(input_data)
-
-print(f"最优收益: {result.best_revenue:.2f} 元")
-print(f"储能柜数: {result.best_total_cabinets}")
-```
-
-## 注意事项
-
-1. **数据格式要求**：
-   - 时间列必须是 datetime 格式
-   - 功率单位需要明确指定（kW/MW/GW）
-   - 电价单位需要明确指定（元/kWh 或 元/MWh）
-
-2. **性能优化**：
-   - 安装 numba 可显著加速调度仿真
-   - 分布式储能测算支持 `workers` 参数并行计算
-   - 大规模搜索建议使用 `coordinate` 模式
-
-3. **约束松弛**：
-   - 如果找不到可行解，尝试放松约束阈值
-   - 检查能量门槛是否通过
-   - 增大搜索范围上限
-
-4. **IRR 计算**：
-   - 依赖 `evaluation.metrics.compute_irr` 函数
-   - 需要确保现金流序列正确（首期为负的投资）
-
-## 待改进项
-
-1. **搜索效率**：部分模块使用线性搜索，可考虑改用二分或梯度方法
-2. **不确定性**：当前算法为确定性优化，可考虑加入鲁棒优化或随机规划
-3. **多目标**：当前主要优化成本/收益，可考虑加入碳排放等多目标
+候选解需满足 $|r^* - \text{target\_irr}| \le \text{irr\_tolerance}$。

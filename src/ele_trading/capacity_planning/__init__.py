@@ -32,6 +32,10 @@ from .wind_bess_planner import (
     plan_wind_bess_system, simulate_dispatch, calc_monthly_wind_metrics,
     plot_capacity_curve,
 )
+from .wind_bess_irr_planner import (
+    WindBESSIRRConfig, WindBESSIRRRow, DeltaIRRRow, WindBESSIRRResult,
+    scan_wind_bess_irr, simulate_annual_gain as simulate_annual_wind_gain,
+)
 from .wind_pv_bess_planner import (
     WindPVBESSPlanConfig, WindPVBESSResult,
     plan_wind_pv_bess, evaluate_wind_pv_bess, energy_gate_check,
@@ -111,6 +115,8 @@ __all__ = [
     'WindBESSPlanConfig', 'WindBESSResult', 'ShiftPolicy',
     'plan_wind_bess_system', 'simulate_dispatch', 'calc_monthly_wind_metrics',
     'plot_capacity_curve',
+    'WindBESSIRRConfig', 'WindBESSIRRRow', 'DeltaIRRRow', 'WindBESSIRRResult',
+    'scan_wind_bess_irr', 'simulate_annual_wind_gain',
     'WindPVBESSPlanConfig', 'WindPVBESSResult',
     'plan_wind_pv_bess', 'evaluate_wind_pv_bess', 'energy_gate_check',
     'evaluate_fixed_wind_pv_bess_capacity',

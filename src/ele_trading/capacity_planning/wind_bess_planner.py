@@ -1,8 +1,9 @@
 """Wind+BESS 容量规划模块
 
+基于共享调度内核 models/resource_bess_planner_core.py 实现。
 支持两种调度模式：
 - 纯弃电搬运模式 (enable_shift=False): 只用 surplus 充电，deficit 放电
-- 平移充电模式 (enable_shift=True): 允许 Wind<Load 时平移充电
+- 平移充电模式 (enable_shift=True): 允许 Wind < Load 时平移充电（lookahead 预判）
 
 采用二分搜索算法，比线性搜索更快。
 """
@@ -16,21 +17,25 @@ import pandas as pd
 
 from ele_trading.utils.data_alignment import align_and_merge, ensure_datetime_index
 
+from .models.resource_bess_planner_core import (
+    ResourceBESSConfig,
+    ShiftPolicy,
+    find_min_capacity_bisect,
+    quick_feasibility_diagnose as _core_quick_feasibility_diagnose,
+    simulate_dispatch as _core_simulate_dispatch,
+)
+
 
 # ============================================================
-# 配置数据类
+# Wind 特定配置与结果（保留向后兼容的字段名）
 # ============================================================
-@dataclass(slots=True)
-class ShiftPolicy:
-    """平移充电策略配置。"""
-    enable_shift: bool = False
-    lookahead_steps: int = 8
-    shift_max_frac_of_wind: float = 0.30
-
-
 @dataclass(slots=True)
 class WindBESSPlanConfig:
-    """Wind+BESS 容量规划配置。"""
+    """Wind+BESS 容量规划配置。
+
+    字段与旧版完全一致，向后兼容；内部转换为 ResourceBESSConfig 供共享内核使用。
+    注：旧版用 min_green_self_consumption 字段名，映射到内核的 min_self_consumption。
+    """
     # 储能物理参数
     eta_charge: float = 0.92
     eta_discharge: float = 0.92
@@ -66,170 +71,31 @@ class WindBESSResult:
 
 
 # ============================================================
-# 调度仿真 - 纯弃电搬运模式
+# 配置转换
 # ============================================================
-def _simulate_surplus_shift(
-    load_kw: np.ndarray,
-    wind_kw: np.ndarray,
-    dt_h: float,
-    cap_kwh: float,
-    cfg: WindBESSPlanConfig,
-) -> dict[str, Any]:
+def _to_core_config(cfg: WindBESSPlanConfig) -> ResourceBESSConfig:
+    """将 Wind 特定配置映射为共享内核配置。
+
+    min_green_self_consumption → min_self_consumption（语义统一）。
     """
-    纯弃电搬运模式：
-    - surplus (W > L): 充电
-    - deficit (L > W): 放电
-    - 无平移，无 lookahead
-    """
-    n = len(load_kw)
-
-    if cap_kwh <= 0:
-        served = np.minimum(wind_kw, load_kw)
-        curtail = np.maximum(wind_kw - served, 0.0)
-        soc = np.full(n, cfg.soc_init, dtype=float)
-        charge = np.zeros(n, dtype=float)
-        discharge = np.zeros(n, dtype=float)
-        return _post_metrics(served, load_kw, wind_kw, charge, discharge, soc, curtail, dt_h, cap_kwh)
-
-    pmax = cfg.c_rate * cap_kwh
-    soc_min_e = cfg.soc_min * cap_kwh
-    soc_max_e = cfg.soc_max * cap_kwh
-
-    soc = np.zeros(n, dtype=float)
-    charge = np.zeros(n, dtype=float)
-    discharge = np.zeros(n, dtype=float)
-    served = np.zeros(n, dtype=float)
-    curtail = np.zeros(n, dtype=float)
-
-    e = cfg.soc_init * cap_kwh
-
-    for t in range(n):
-        L = float(max(0.0, load_kw[t]))
-        W = float(max(0.0, wind_kw[t]))
-
-        served_direct = min(L, W)
-        surplus = max(W - L, 0.0)
-        deficit = max(L - W, 0.0)
-
-        room = max(soc_max_e - e, 0.0)
-        avail = max(e - soc_min_e, 0.0)
-
-        ch = min(surplus, pmax, room / (cfg.eta_charge * dt_h))
-        dis = min(deficit, pmax, avail * cfg.eta_discharge / dt_h)
-
-        e += (ch * cfg.eta_charge - dis / cfg.eta_discharge) * dt_h
-        e = float(np.clip(e, soc_min_e, soc_max_e))
-
-        charge[t] = ch
-        discharge[t] = dis
-        served[t] = served_direct + dis
-        curtail[t] = max(surplus - ch, 0.0)
-        soc[t] = e / cap_kwh if cap_kwh > 0 else cfg.soc_init
-
-    return _post_metrics(served, load_kw, wind_kw, charge, discharge, soc, curtail, dt_h, cap_kwh)
+    return ResourceBESSConfig(
+        eta_charge=cfg.eta_charge,
+        eta_discharge=cfg.eta_discharge,
+        c_rate=cfg.c_rate,
+        soc_init=cfg.soc_init,
+        soc_min=cfg.soc_min,
+        soc_max=cfg.soc_max,
+        enforce_terminal_soc=cfg.enforce_terminal_soc,
+        min_self_consumption=cfg.min_green_self_consumption,
+        min_load_coverage=cfg.min_load_coverage,
+        cap_max_mwh=cfg.cap_max_mwh,
+        tol_mwh=cfg.tol_mwh,
+        shift_policy=cfg.shift_policy,
+    )
 
 
 # ============================================================
-# 调度仿真 - 平移充电模式
-# ============================================================
-def _simulate_shift(
-    load_kw: np.ndarray,
-    wind_kw: np.ndarray,
-    dt_h: float,
-    cap_kwh: float,
-    cfg: WindBESSPlanConfig,
-    policy: ShiftPolicy,
-) -> dict[str, Any]:
-    """
-    平移充电模式：
-    - 允许 Wind < Load 时抽取部分风电充电（通过 lookahead 预判未来缺口）
-    - 禁止电网充电
-    """
-    n = len(load_kw)
-
-    if cap_kwh <= 0:
-        served = np.minimum(wind_kw, load_kw)
-        curtail = np.maximum(wind_kw - served, 0.0)
-        soc = np.full(n, cfg.soc_init, dtype=float)
-        charge = np.zeros(n, dtype=float)
-        discharge = np.zeros(n, dtype=float)
-        return _post_metrics(served, load_kw, wind_kw, charge, discharge, soc, curtail, dt_h, cap_kwh)
-
-    pmax = cfg.c_rate * cap_kwh
-
-    soc = np.zeros(n, dtype=float)
-    charge = np.zeros(n, dtype=float)
-    discharge = np.zeros(n, dtype=float)
-    served = np.zeros(n, dtype=float)
-    curtail = np.zeros(n, dtype=float)
-
-    e = cfg.soc_init * cap_kwh
-    soc_min_e = cfg.soc_min * cap_kwh
-    soc_max_e = cfg.soc_max * cap_kwh
-
-    look = max(1, int(policy.lookahead_steps))
-    net = load_kw - wind_kw
-
-    for t in range(n):
-        L = float(max(0.0, load_kw[t]))
-        W = float(max(0.0, wind_kw[t]))
-
-        room = max(0.0, soc_max_e - e)
-        avail = max(0.0, e - soc_min_e)
-
-        ch_max = min(pmax, room / (cfg.eta_charge * dt_h)) if room > 0 else 0.0
-        dis_max_out = min(pmax, (avail * cfg.eta_discharge) / dt_h) if avail > 0 else 0.0
-
-        # 1) 判断是否平移充电（即使 Wind < Load）
-        ch_plan = 0.0
-        if ch_max > 0 and W > 0:
-            t2 = min(n, t + look)
-            future_def = float(np.maximum(net[t:t2], 0.0).sum())
-            soc_ratio = e / cap_kwh
-            if future_def > 0.5 * L * (t2 - t) and soc_ratio < 0.7:
-                ch_plan = min(ch_max, policy.shift_max_frac_of_wind * W)
-
-        # 2) 风电分配：先预留 ch_plan，再供负荷
-        W_after_ch = max(0.0, W - ch_plan)
-        serve_from_wind = min(L, W_after_ch)
-
-        # 3) 电池放电补缺口
-        deficit = L - serve_from_wind
-        dis_out = min(dis_max_out, max(0.0, deficit))
-        served_t = serve_from_wind + dis_out
-
-        # 4) 富余风电继续充电
-        surplus = max(0.0, W - serve_from_wind - ch_plan)
-        ch_extra = min(max(0.0, ch_max - ch_plan), surplus)
-        ch_in = ch_plan + ch_extra
-
-        # 5) 弃电
-        curtail_t = max(0.0, W - serve_from_wind - ch_in)
-
-        # 6) 更新能量
-        e += (ch_in * cfg.eta_charge - dis_out / cfg.eta_discharge) * dt_h
-        e = float(np.clip(e, soc_min_e, soc_max_e))
-
-        charge[t] = ch_in
-        discharge[t] = dis_out
-        served[t] = served_t
-        curtail[t] = curtail_t
-        soc[t] = e / cap_kwh
-
-    # 期末 SOC 约束
-    if cfg.enforce_terminal_soc:
-        if abs(soc[-1] - cfg.soc_init) > 0.02:
-            res = _post_metrics(served, load_kw, wind_kw, charge, discharge, soc, curtail, dt_h, cap_kwh)
-            res["terminal_soc_ok"] = False
-            return res
-
-    res = _post_metrics(served, load_kw, wind_kw, charge, discharge, soc, curtail, dt_h, cap_kwh)
-    res["terminal_soc_ok"] = True
-    return res
-
-
-# ============================================================
-# 统一调度仿真入口
+# 向后兼容的公开接口（委托给共享内核）
 # ============================================================
 def simulate_dispatch(
     load_kw: np.ndarray,
@@ -238,186 +104,59 @@ def simulate_dispatch(
     cap_kwh: float,
     cfg: WindBESSPlanConfig,
 ) -> dict[str, Any]:
-    """
-    统一调度仿真：
-    - cfg.shift_policy.enable_shift=True:  平移充电模式
-    - cfg.shift_policy.enable_shift=False: 纯弃电搬运模式
-    """
-    if cfg.shift_policy.enable_shift:
-        return _simulate_shift(load_kw, wind_kw, dt_h, cap_kwh, cfg, cfg.shift_policy)
-    else:
-        return _simulate_surplus_shift(load_kw, wind_kw, dt_h, cap_kwh, cfg)
+    """单次调度仿真入口（委托共享内核）。"""
+    return _core_simulate_dispatch(load_kw, wind_kw, dt_h, cap_kwh, _to_core_config(cfg))
 
 
-# ============================================================
-# 指标计算
-# ============================================================
-def _post_metrics(
-    served_kw: np.ndarray,
+def calc_monthly_wind_metrics(
     load_kw: np.ndarray,
     wind_kw: np.ndarray,
-    charge_kw: np.ndarray,
-    discharge_kw: np.ndarray,
-    soc: np.ndarray,
-    curtail_kw: np.ndarray,
     dt_h: float,
-    cap_kwh: float,
+    time_index: pd.DatetimeIndex,
 ) -> dict[str, Any]:
-    e_load = float(load_kw.sum() * dt_h)
-    e_wind = float(wind_kw.sum() * dt_h)
-    e_served = float(served_kw.sum() * dt_h)
-    e_curtail = float(curtail_kw.sum() * dt_h)
-
-    green_self = (e_served / e_wind) if e_wind > 0 else 0.0
-    coverage = (e_served / e_load) if e_load > 0 else 0.0
-
-    e_dis = float(discharge_kw.sum() * dt_h)
-    equiv_cycles = (e_dis / cap_kwh) if cap_kwh > 0 else 0.0
-
-    return {
-        "energy_kwh": {
-            "load": e_load,
-            "wind": e_wind,
-            "served": e_served,
-            "curtail": e_curtail,
-            "charge_in": float(charge_kw.sum() * dt_h),
-            "discharge_out": float(discharge_kw.sum() * dt_h),
-        },
-        "metrics": {
-            "green_self_consumption": float(green_self),
-            "load_coverage": float(coverage),
-            "equiv_cycles": float(equiv_cycles),
-        },
-        "series": {
-            "served_kw": served_kw,
-            "charge_kw": charge_kw,
-            "discharge_kw": discharge_kw,
-            "soc": soc,
-            "curtail_kw": curtail_kw,
-        }
-    }
+    """月度风电消纳统计（Wind 特有，保留在此模块）。"""
+    df = pd.DataFrame({"load": load_kw, "wind": wind_kw}, index=time_index)
+    monthly = df.resample("ME").agg({"load": "sum", "wind": "sum"})
+    load_sum = monthly["load"].to_numpy(dtype=float)
+    wind_sum = monthly["wind"].to_numpy(dtype=float)
+    safe_load = np.where(load_sum > 0, load_sum, np.nan)
+    monthly["wind_ratio"] = wind_sum / safe_load
+    return {str(k): v for k, v in monthly.to_dict("index").items()}
 
 
-# ============================================================
-# 快速可行性诊断
-# ============================================================
-def quick_feasibility_diagnose(
+def plot_capacity_curve(
     load_kw: np.ndarray,
     wind_kw: np.ndarray,
     dt_h: float,
     cfg: WindBESSPlanConfig,
-) -> dict[str, float]:
-    """
-    给出几个关键上界/必要条件：
-        - 能量比 wind/load
-        - 可用于充电的"富余能量"比例 surplus/load
-        - 理论最大 served 上界
-    """
-    e_load = float(load_kw.sum() * dt_h)
-    e_wind = float(wind_kw.sum() * dt_h)
-    direct = np.minimum(load_kw, wind_kw)
-    surplus = np.maximum(wind_kw - load_kw, 0.0)
-    e_direct = float(direct.sum() * dt_h)
-    e_surplus = float(surplus.sum() * dt_h)
-    eta_rt = cfg.eta_charge * cfg.eta_discharge
+    output_path: str | None = None,
+) -> None:
+    """容量响应曲线可视化（Wind 特有，保留在此模块）。"""
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return
 
-    e_served_upper = e_direct + eta_rt * e_surplus
+    caps = np.linspace(0, cfg.cap_max_mwh * 1000, 50)
+    green_self = []
+    coverage = []
+    core_cfg = _to_core_config(cfg)
+    for c in caps:
+        res = _core_simulate_dispatch(load_kw, wind_kw, dt_h, c, core_cfg)
+        green_self.append(res["metrics"]["self_consumption"])
+        coverage.append(res["metrics"]["load_coverage"])
 
-    return {
-        "wind_load_ratio": (e_wind / e_load) if e_load > 0 else 0.0,
-        "surplus_load_ratio": (e_surplus / e_load) if e_load > 0 else 0.0,
-        "served_upper_ratio": (e_served_upper / e_load) if e_load > 0 else 0.0,
-        "green_self_upper": (e_served_upper / e_wind) if e_wind > 0 else 0.0,
-    }
-
-
-# ============================================================
-# 可达性检查
-# ============================================================
-def check_feasibility_upper_bound(
-    load_kw: np.ndarray,
-    wind_kw: np.ndarray,
-    dt_h: float,
-    cfg: WindBESSPlanConfig,
-) -> dict[str, float]:
-    """用极大容量测试物理上是否可达，返回最大消纳率和覆盖率。"""
-    r_inf = simulate_dispatch(load_kw, wind_kw, dt_h, cap_kwh=1e9, cfg=cfg)
-    return {
-        "max_green_self_consumption": r_inf["metrics"]["green_self_consumption"],
-        "max_load_coverage": r_inf["metrics"]["load_coverage"],
-    }
-
-
-# ============================================================
-# 可行性判断
-# ============================================================
-def is_feasible(res: dict[str, Any], cfg: WindBESSPlanConfig) -> bool:
-    m = res["metrics"]
-    ok = (m["green_self_consumption"] >= cfg.min_green_self_consumption and
-          m["load_coverage"] >= cfg.min_load_coverage)
-    if "terminal_soc_ok" in res and (res["terminal_soc_ok"] is False):
-        return False
-    return ok
-
-
-# ============================================================
-# 二分搜索最小容量
-# ============================================================
-def find_min_capacity_bisect(
-    load_kw: np.ndarray,
-    wind_kw: np.ndarray,
-    dt_h: float,
-    cfg: WindBESSPlanConfig,
-) -> dict[str, Any]:
-    """
-    二分搜索最小可行容量。
-    容量越大，能搬运的能量越多，覆盖率与自用率不会变差。
-    """
-    # 可达性检查：用极大容量测试物理上是否可达
-    upper = check_feasibility_upper_bound(load_kw, wind_kw, dt_h, cfg)
-    if upper["max_green_self_consumption"] < cfg.min_green_self_consumption or \
-       upper["max_load_coverage"] < cfg.min_load_coverage:
-        raise RuntimeError(
-            f"目标在物理上不可达：\n"
-            f"最大风电消纳率={upper['max_green_self_consumption']:.3f}, "
-            f"最大负荷覆盖率={upper['max_load_coverage']:.3f}"
-        )
-
-    # 先快速找可行上界
-    lo = 0.0
-    hi = 1.0
-    best = None
-
-    while hi <= cfg.cap_max_mwh * 1000.0 + 1e-9:
-        res = simulate_dispatch(load_kw, wind_kw, dt_h, hi, cfg)
-        if is_feasible(res, cfg):
-            best = res
-            break
-        hi *= 2.0
-
-    if best is None:
-        raise RuntimeError(
-            f"No feasible solution up to cap_max_mwh={cfg.cap_max_mwh}. "
-            f"Try increasing cap_max_mwh or relaxing targets."
-        )
-
-    # 二分搜索
-    tol_kwh = cfg.tol_mwh * 1000.0
-    while (hi - lo) > tol_kwh:
-        mid = (lo + hi) / 2.0
-        res = simulate_dispatch(load_kw, wind_kw, dt_h, mid, cfg)
-        if is_feasible(res, cfg):
-            best = res
-            hi = mid
-        else:
-            lo = mid
-
-    # 容量取整（向上取到 tol_kwh）
-    cap_final_kwh = float(np.ceil(hi / tol_kwh) * tol_kwh)
-    best = simulate_dispatch(load_kw, wind_kw, dt_h, cap_final_kwh, cfg)
-    best["cap_kwh"] = cap_final_kwh
-
-    return best
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(caps / 1000, green_self, label="green_self_consumption", color="green")
+    ax.plot(caps / 1000, coverage, label="load_coverage", color="blue")
+    ax.set_xlabel("BESS Capacity (MWh)")
+    ax.set_ylabel("Ratio")
+    ax.set_title("Wind+BESS Capacity Response Curve")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    if output_path:
+        fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
 
 
 # ============================================================
@@ -432,8 +171,7 @@ def plan_wind_bess_system(
     wind_col: str = "WindPower_MW",
     out_schedule_csv: str | None = None,
 ) -> WindBESSResult:
-    """
-    Wind+BESS 容量规划主入口。
+    """Wind+BESS 容量规划主入口。
 
     Args:
         df_load: 负荷数据 DataFrame
@@ -445,7 +183,7 @@ def plan_wind_bess_system(
         out_schedule_csv: 调度策略输出 CSV 路径，None 则不输出
 
     Returns:
-        WindBESSResult: 规划结果
+        WindBESSResult
     """
     try:
         # 数据读取与对齐
@@ -453,15 +191,16 @@ def plan_wind_bess_system(
         df_wind_ts = _read_timeseries(wind_input, time_col)
         df, dt_h = align_and_merge(df_load_ts, df_wind_ts, load_col, wind_col)
 
-        # 转 numpy
+        # 转 numpy（风电 MW → kW）
         load_kw = df["Load_kW"].to_numpy(dtype=float)
         wind_kw = df["Wind_kW"].to_numpy(dtype=float)
 
         # 快速诊断
-        diag = quick_feasibility_diagnose(load_kw, wind_kw, dt_h, cfg)
+        core_cfg = _to_core_config(cfg)
+        diag = _core_quick_feasibility_diagnose(load_kw, wind_kw, dt_h, core_cfg)
 
         # 二分求最小容量
-        result = find_min_capacity_bisect(load_kw, wind_kw, dt_h, cfg)
+        result = find_min_capacity_bisect(load_kw, wind_kw, dt_h, core_cfg)
 
         # 输出策略时间序列
         s = result["series"]
@@ -490,7 +229,7 @@ def plan_wind_bess_system(
             feasible=True,
             capacity_mwh=cap_kwh / 1000.0,
             cost_cny=cost_cny,
-            green_self_consumption=result["metrics"]["green_self_consumption"],
+            green_self_consumption=result["metrics"]["self_consumption"],
             load_coverage=result["metrics"]["load_coverage"],
             equiv_cycles=result["metrics"]["equiv_cycles"],
             energy_kwh=result["energy_kwh"],
@@ -498,109 +237,17 @@ def plan_wind_bess_system(
             diagnosis=diag,
         )
 
+    except RuntimeError as e:
+        return WindBESSResult(feasible=False, diagnosis={"reason": str(e)})
     except Exception as e:
-        return WindBESSResult(
-            feasible=False,
-            diagnosis={"error": str(e)},
-        )
-
-
-def _read_timeseries(obj, time_col: str = "Time") -> pd.DataFrame:
-    """读取时间序列数据，返回 DatetimeIndex 的 DataFrame。"""
-    if isinstance(obj, pd.DataFrame):
-        return ensure_datetime_index(obj, time_col)
-    raise ValueError(f"Unsupported input type: {type(obj)}")
+        return WindBESSResult(feasible=False, diagnosis={"reason": f"{type(e).__name__}: {e}"})
 
 
 # ============================================================
-# 月度统计
+# 数据读取辅助（保持与 pv_bess_planner 一致的接口）
 # ============================================================
-def calc_monthly_wind_metrics(
-    df: pd.DataFrame,
-    load_col: str = "Load_kW",
-    wind_col: str = "Wind_kW",
-) -> pd.DataFrame:
-    """计算月度风电消纳统计。"""
-    if not isinstance(df.index, pd.DatetimeIndex):
-        raise ValueError("df.index 必须是 DatetimeIndex")
-
-    df = df[[load_col, wind_col]].copy()
-
-    dt_hours = (
-        df.index.to_series().diff().dt.total_seconds().median() / 3600
-    )
-
-    df["used_kW"] = np.minimum(df[wind_col], df[load_col])
-    df["wind_kWh"] = df[wind_col] * dt_hours
-    df["load_kWh"] = df[load_col] * dt_hours
-    df["used_kWh"] = df["used_kW"] * dt_hours
-
-    monthly = df.resample("M").sum()
-
-    monthly["curtail_kWh"] = monthly["wind_kWh"] - monthly["used_kWh"]
-    monthly["wind_consumption_rate"] = monthly["used_kWh"] / monthly["wind_kWh"]
-    monthly["load_coverage_rate"] = monthly["used_kWh"] / monthly["load_kWh"]
-
-    result = monthly[[
-        "wind_kWh", "used_kWh", "curtail_kWh", "load_kWh",
-        "wind_consumption_rate", "load_coverage_rate",
-    ]].copy()
-
-    result.columns = [
-        "风电发电量(kWh)", "风电消纳电量(kWh)", "弃电电量(kWh)",
-        "用电量(kWh)", "风电消纳率", "负荷覆盖率",
-    ]
-
-    return result
-
-
-# ============================================================
-# 容量曲线绘制
-# ============================================================
-def plot_capacity_curve(
-    df: pd.DataFrame,
-    dt_h: float,
-    cfg: WindBESSPlanConfig,
-    cap_max_mwh: float | None = None,
-    n_points: int = 30,
-) -> None:
-    """
-    绘制容量响应曲线：容量 vs 覆盖率/自用率。
-
-    Args:
-        df: 包含 Load_kW 和 Wind_kW 列的 DataFrame
-        dt_h: 时间步长 (h)
-        cfg: Wind+BESS 规划配置
-        cap_max_mwh: 最大容量 (MWh)，默认为 cap_max_mwh 的 1.3 倍
-        n_points: 采样点数
-    """
-    import matplotlib.pyplot as plt
-
-    load_kw = df["Load_kW"].to_numpy(float)
-    wind_kw = df["Wind_kW"].to_numpy(float)
-
-    if cap_max_mwh is None:
-        cap_max_mwh = 1.3 * cfg.cap_max_mwh
-
-    # 采样点（对数更密集，减少计算量但更能看陡峭区）
-    caps = np.unique(np.round(np.geomspace(1, cap_max_mwh, n_points), 1))
-    caps = np.insert(caps, 0, 0.0)
-
-    covs = []
-    selfs = []
-    for c in caps:
-        r = simulate_dispatch(load_kw, wind_kw, dt_h, float(c) * 1000.0, cfg)
-        covs.append(r["metrics"]["load_coverage"])
-        selfs.append(r["metrics"]["green_self_consumption"])
-
-    plt.figure()
-    plt.plot(caps, covs, marker="o", label="Load coverage")
-    plt.plot(caps, selfs, marker="o", label="Green self-consumption")
-    plt.axhline(cfg.min_load_coverage, linestyle="--", alpha=0.5, label=f"Coverage target ({cfg.min_load_coverage:.0%})")
-    plt.axhline(cfg.min_green_self_consumption, linestyle="--", alpha=0.5, label=f"Self-consumption target ({cfg.min_green_self_consumption:.0%})")
-    plt.xlabel("Capacity (MWh)")
-    plt.ylabel("Ratio")
-    plt.title("Capacity vs Coverage / Self-consumption")
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+def _read_timeseries(df: pd.DataFrame, time_col: str) -> pd.DataFrame:
+    """读取时间序列，确保时间列已解析。"""
+    df = df.copy()
+    df[time_col] = pd.to_datetime(df[time_col])
+    return df.sort_values(time_col).reset_index(drop=True)
