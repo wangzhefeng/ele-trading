@@ -1,7 +1,7 @@
 # Two-stage + CVaR 工程说明
 
 > 实现文件：`src/ele_trading/optimization/two_stage_cvar.py`
-> 入口脚本：`app/run_two_stage_skeleton.py`
+> 入口脚本：`app/optimization/run_two_stage_skeleton.py`
 > 参考文献：Conejo et al. (2010) *Decision Making Under Uncertainty in Electricity Markets*；Rockafellar & Uryasev (2000) CVaR 线性化
 
 ## 目标
