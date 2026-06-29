@@ -14,6 +14,20 @@ from .interfaces import (
     DistributedBESSDispatchPolicy,
     DistributedBESSDispatchResult,
     DistributedBESSNodeParams,
+    DistributedPVBESSDispatchInput,
+    DistributedPVBESSDispatchResult,
+    DistributedPVBESSNodeInput,
+    DistributedRenewableBESSDispatchInput,
+    DistributedRenewableBESSDispatchPolicy,
+    DistributedRenewableBESSDispatchResult,
+    DistributedRenewableBESSNodeInput,
+    DistributedRenewableExportConfig,
+    DistributedWindBESSDispatchInput,
+    DistributedWindBESSDispatchResult,
+    DistributedWindBESSNodeInput,
+    DistributedWindPVBESSDispatchInput,
+    DistributedWindPVBESSDispatchResult,
+    DistributedWindPVBESSNodeInput,
     MPCStepResult,
     UserSideBESSDispatchInput,
     UserSideBESSDispatchResult,
@@ -36,7 +50,7 @@ from .interfaces import (
     UserSideWindPVBESSDispatchResult,
 )
 from .bess_arbitrage import solve_bess_arbitrage
-from .distributed_bess_dispatch_class import (
+from .user_side_bess_distributed_dispatch_class import (
     DistributedBESSDispatcher,
     run_distributed_bess_dispatch,
 )
@@ -52,7 +66,12 @@ from .user_side_wind_pv_bess_dispatch import run_user_side_wind_pv_bess_dispatch
 
 # 延迟导入：cvxpy 是重型可选依赖，缺失时不应阻塞优化包的其他路径（PuLP / Pyomo）
 def __getattr__(name):
-    _DELAYED_CVXP = {"CVXP_PROFILES", "get_cvxp_profile", "run_cvxp_bess_dispatch"}
+    _DELAYED_CVXP = {
+        "CVXP_PROFILES",
+        "CvxpBESSDispatcher",
+        "get_cvxp_profile",
+        "run_cvxp_bess_dispatch",
+    }
     if name in _DELAYED_CVXP:
         from . import user_side_bess_dispatch_cvxpy as _cvxp
         attr = getattr(_cvxp, name)
@@ -66,6 +85,34 @@ def __getattr__(name):
 
         globals()[name] = run_user_side_renewable_bess_dispatch
         return run_user_side_renewable_bess_dispatch
+    if name == "run_user_side_renewable_bess_distributed_dispatch":
+        from .todo.user_side_renewable_bess_distributed_dispatch_class import (
+            run_user_side_renewable_bess_distributed_dispatch,
+        )
+
+        globals()[name] = run_user_side_renewable_bess_distributed_dispatch
+        return run_user_side_renewable_bess_distributed_dispatch
+    if name == "run_user_side_pv_bess_distributed_dispatch":
+        from .todo.user_side_pv_bess_distributed_dispatch import (
+            run_user_side_pv_bess_distributed_dispatch,
+        )
+
+        globals()[name] = run_user_side_pv_bess_distributed_dispatch
+        return run_user_side_pv_bess_distributed_dispatch
+    if name == "run_user_side_wind_bess_distributed_dispatch":
+        from .todo.user_side_wind_bess_distributed_dispatch import (
+            run_user_side_wind_bess_distributed_dispatch,
+        )
+
+        globals()[name] = run_user_side_wind_bess_distributed_dispatch
+        return run_user_side_wind_bess_distributed_dispatch
+    if name == "run_user_side_wind_pv_bess_distributed_dispatch":
+        from .todo.user_side_wind_pv_bess_distributed_dispatch import (
+            run_user_side_wind_pv_bess_distributed_dispatch,
+        )
+
+        globals()[name] = run_user_side_wind_pv_bess_distributed_dispatch
+        return run_user_side_wind_pv_bess_distributed_dispatch
     if name == "run_user_side_renewable_dispatch":
         from .user_side_renewable_dispatch_class import run_user_side_renewable_dispatch
 

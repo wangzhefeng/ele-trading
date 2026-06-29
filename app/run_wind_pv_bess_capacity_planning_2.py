@@ -25,7 +25,7 @@ from ele_trading.resource_simulation import (
     PVSimulator, SimulationResult,
     WindSimulator,
 )
-from ele_trading.capacity_planning.capacity_optimizer import (
+from ele_trading.capacity_planning.wind_pv_bess_capacity_optimizer import (
     CapacityOptimizer, CapacityPlanResult, simulate_operation,
 )
 from ele_trading.forecasting.pv_forecast import PVPowerForecaster

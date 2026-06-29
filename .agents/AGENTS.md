@@ -74,6 +74,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `configs/` 中的 YAML 文件必须与对应入口脚本的参数字段一一对应。
 - `dt` 参数在 15 分钟颗粒度场景下必须设为 0.25，并在配置中明确注释。
 - 新增环境变量或配置字段必须同步更新 `configs/README.md`。
+- 可复用求解/调度内核归属 `src/ele_trading/optimization/`；容量扫描、场景编排、收益测算和 CSV 导出归属 `src/ele_trading/capacity_planning/`。
 
 ### 数据边界
 

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ele_trading.capacity_planning.bess_capacity_planner import (
+from ele_trading.capacity_planning.wind_pv_bess_capacity_planner import (
     BESSPlanConfig,
     BESSCapacityResult,
     UnitsConfig,

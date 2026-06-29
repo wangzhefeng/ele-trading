@@ -23,7 +23,7 @@ for _thread_env_name in (
 import numpy as np
 import pandas as pd
 
-from ..optimization.distributed_bess_dispatch_class import DistributedBESSDispatcher
+from ..optimization.user_side_bess_distributed_dispatch_class import DistributedBESSDispatcher
 from ..optimization.interfaces import (
     DistributedBESSDemandChargeConfig,
     DistributedBESSDispatchInput as OptimizationDistributedBESSDispatchInput,

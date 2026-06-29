@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from . import bess_capacity_planner
+
 from .feasibility_analyzer import (
     FeasibilityAnalyzerConfig, FeasibilityResult,
     BESSFeasibilityAnalyzer,
@@ -17,11 +19,11 @@ from .pv_bess_planner import (
     plan_pv_bess_system, simulate_dispatch as simulate_pv_dispatch,
     calc_monthly_pv_metrics, plot_capacity_curve as plot_pv_capacity_curve,
 )
-from .capacity_optimizer import (
+from .wind_pv_bess_capacity_optimizer import (
     CapacityOptimizer, CapacityPlanResult, simulate_operation,
     simple_energy_sanity_check, curve_based_energy_check,
 )
-from .bess_capacity_planner import (
+from .wind_pv_bess_capacity_planner import (
     BESSPlanConfig, BESSCapacityResult, UnitsConfig,
     plan_energy_system, simulate_bess_operation,
 )
@@ -59,7 +61,7 @@ from .interfaces import (
     DistBESSDispatchInput,
     DistBESSDispatchResult,
 )
-from .dist_bess_dispatch import (
+from .distributed_bess_planner import (
     SimulationResult,
     SYSTEMS,
     PRESETS,
@@ -92,6 +94,7 @@ from .dist_bess_dispatch import (
 )
 
 __all__ = [
+    'bess_capacity_planner',
     'FeasibilityAnalyzerConfig', 'FeasibilityResult',
     'BESSFeasibilityAnalyzer',
     'BESSSizingConfig', 'CapacitySweepRow', 'NodeScanResult',

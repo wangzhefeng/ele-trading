@@ -14,7 +14,7 @@ import pandas as pd
 from ele_trading.utils.data_alignment import as_time_series, align_to_time
 from ele_trading.utils.time_index import infer_dt_hours, monthly_kwh
 
-from .dispatch_algo import dispatch_annual, _NUMBA_OK
+from .models.dispatch_algo import dispatch_annual, _NUMBA_OK
 
 
 @dataclass(slots=True)

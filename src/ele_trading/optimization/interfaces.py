@@ -446,3 +446,287 @@ class DistributedBESSDispatchResult:
     solver_status: str
     solver_name: str
     constraint_violations: dict[str, float]
+
+
+@dataclass(slots=True)
+class DistributedRenewableExportConfig:
+    allow_export: bool = True
+    sell_price: float = 0.0
+    sell_price_list: list[float] | None = None
+    export_limit: float | None = None
+    curtailment_cost_rate: float = 0.0
+
+
+@dataclass(slots=True)
+class DistributedRenewableBESSNodeInput:
+    name: str
+    transformer_capacity_kw: float
+    load_forecast: list[float]
+    renewable_forecast: list[float]
+    bess_power_kw: float
+    bess_capacity_kwh: float
+    soc_min_kwh: float
+    soc_max_kwh: float
+    charge_efficiency: float = 0.95
+    discharge_efficiency: float = 0.95
+
+
+@dataclass(slots=True)
+class DistributedRenewableBESSDispatchPolicy:
+    charge_allowed_hours: list[int] | None = None
+    discharge_allowed_hours: list[int] | None = None
+    discharge_mask_mode: str = "price_type"
+    cross_transformer_support: bool = True
+    renewable_cross_transformer_support: bool = True
+    renewable_cross_flow_penalty_rate: float = 0.0
+    bess_cross_flow_penalty_rate: float = 1e-6
+    smooth_penalty_weight: float = 0.0
+    ramp_rate_fraction_per_step: float | None = None
+    charge_target_penalty_weight: float = 0.0
+    discharge_target_penalty_weight: float = 0.0
+    terminal_soc_target_kwh: list[float] | None = None
+    terminal_soc_penalty_weight: float = 0.0
+
+
+@dataclass(slots=True)
+class DistributedRenewableBESSDispatchInput:
+    timestamps: list[Any]
+    nodes: list[DistributedRenewableBESSNodeInput]
+    buy_price: list[float]
+    price_type: list[str]
+    initial_soc_kwh: list[float]
+    step_hours: float
+    demand_charge_rate: float
+    demand_charge: DistributedBESSDemandChargeConfig = field(
+        default_factory=DistributedBESSDemandChargeConfig
+    )
+    export: DistributedRenewableExportConfig = field(
+        default_factory=DistributedRenewableExportConfig
+    )
+    policy: DistributedRenewableBESSDispatchPolicy | None = None
+    grid_import_formula: str = "park_baseline"
+    grid_import_nonneg: bool = False
+    cycle_cost_rate: float = 0.0
+    solver: str = "lp"
+
+
+@dataclass(slots=True)
+class DistributedRenewableBESSDispatchResult:
+    renewable_to_load_by_node: list[list[float]]
+    renewable_to_bess_by_node: list[list[float]]
+    renewable_to_grid_by_node: list[list[float]]
+    renewable_curtailment_by_node: list[list[float]]
+    grid_to_load_by_node: list[list[float]]
+    grid_to_bess_by_node: list[list[float]]
+    charge_power_by_node: list[list[float]]
+    discharge_power_by_node: list[list[float]]
+    net_bess_power_by_node: list[list[float]]
+    soc_by_node: list[list[float]]
+    grid_import_total: list[float]
+    transformer_import_by_node: list[list[float]]
+    transformer_export_by_node: list[list[float]]
+    renewable_allocation_by_source_target: list[list[list[float]]]
+    bess_allocation_by_source_target: list[list[list[float]]]
+    max_demand_kw: float
+    energy_cost: float
+    demand_cost: float
+    sell_revenue: float
+    curtailment_cost: float
+    cross_flow_cost: float
+    cycle_cost: float
+    smooth_cost: float
+    soc_target_cost: float
+    total_cost: float
+    solver_status: str
+    solver_name: str
+    constraint_violations: dict[str, float]
+
+
+@dataclass(slots=True)
+class DistributedPVBESSNodeInput:
+    name: str
+    transformer_capacity_kw: float
+    load_forecast: list[float]
+    pv_forecast: list[float]
+    bess_power_kw: float
+    bess_capacity_kwh: float
+    soc_min_kwh: float
+    soc_max_kwh: float
+    charge_efficiency: float = 0.95
+    discharge_efficiency: float = 0.95
+
+
+@dataclass(slots=True)
+class DistributedPVBESSDispatchInput:
+    timestamps: list[Any]
+    nodes: list[DistributedPVBESSNodeInput]
+    buy_price: list[float]
+    price_type: list[str]
+    initial_soc_kwh: list[float]
+    step_hours: float
+    demand_charge_rate: float
+    demand_charge: DistributedBESSDemandChargeConfig = field(
+        default_factory=DistributedBESSDemandChargeConfig
+    )
+    export: DistributedRenewableExportConfig = field(
+        default_factory=DistributedRenewableExportConfig
+    )
+    policy: DistributedRenewableBESSDispatchPolicy | None = None
+    grid_import_formula: str = "park_baseline"
+    grid_import_nonneg: bool = False
+    cycle_cost_rate: float = 0.0
+    solver: str = "lp"
+
+
+@dataclass(slots=True)
+class DistributedPVBESSDispatchResult:
+    pv_to_load_by_node: list[list[float]]
+    pv_to_bess_by_node: list[list[float]]
+    pv_to_grid_by_node: list[list[float]]
+    pv_curtailment_by_node: list[list[float]]
+    grid_to_load_by_node: list[list[float]]
+    grid_to_bess_by_node: list[list[float]]
+    charge_power_by_node: list[list[float]]
+    discharge_power_by_node: list[list[float]]
+    net_bess_power_by_node: list[list[float]]
+    soc_by_node: list[list[float]]
+    grid_import_total: list[float]
+    max_demand_kw: float
+    energy_cost: float
+    demand_cost: float
+    sell_revenue: float
+    curtailment_cost: float
+    cross_flow_cost: float
+    cycle_cost: float
+    smooth_cost: float
+    soc_target_cost: float
+    total_cost: float
+    constraint_violations: dict[str, float]
+
+
+@dataclass(slots=True)
+class DistributedWindBESSNodeInput:
+    name: str
+    transformer_capacity_kw: float
+    load_forecast: list[float]
+    wind_forecast: list[float]
+    bess_power_kw: float
+    bess_capacity_kwh: float
+    soc_min_kwh: float
+    soc_max_kwh: float
+    charge_efficiency: float = 0.95
+    discharge_efficiency: float = 0.95
+
+
+@dataclass(slots=True)
+class DistributedWindBESSDispatchInput:
+    timestamps: list[Any]
+    nodes: list[DistributedWindBESSNodeInput]
+    buy_price: list[float]
+    price_type: list[str]
+    initial_soc_kwh: list[float]
+    step_hours: float
+    demand_charge_rate: float
+    demand_charge: DistributedBESSDemandChargeConfig = field(
+        default_factory=DistributedBESSDemandChargeConfig
+    )
+    export: DistributedRenewableExportConfig = field(
+        default_factory=DistributedRenewableExportConfig
+    )
+    policy: DistributedRenewableBESSDispatchPolicy | None = None
+    grid_import_formula: str = "park_baseline"
+    grid_import_nonneg: bool = False
+    cycle_cost_rate: float = 0.0
+    solver: str = "lp"
+
+
+@dataclass(slots=True)
+class DistributedWindBESSDispatchResult:
+    wind_to_load_by_node: list[list[float]]
+    wind_to_bess_by_node: list[list[float]]
+    wind_to_grid_by_node: list[list[float]]
+    wind_curtailment_by_node: list[list[float]]
+    grid_to_load_by_node: list[list[float]]
+    grid_to_bess_by_node: list[list[float]]
+    charge_power_by_node: list[list[float]]
+    discharge_power_by_node: list[list[float]]
+    net_bess_power_by_node: list[list[float]]
+    soc_by_node: list[list[float]]
+    grid_import_total: list[float]
+    max_demand_kw: float
+    energy_cost: float
+    demand_cost: float
+    sell_revenue: float
+    curtailment_cost: float
+    cross_flow_cost: float
+    cycle_cost: float
+    smooth_cost: float
+    soc_target_cost: float
+    total_cost: float
+    constraint_violations: dict[str, float]
+
+
+@dataclass(slots=True)
+class DistributedWindPVBESSNodeInput:
+    name: str
+    transformer_capacity_kw: float
+    load_forecast: list[float]
+    pv_forecast: list[float]
+    wind_forecast: list[float]
+    bess_power_kw: float
+    bess_capacity_kwh: float
+    soc_min_kwh: float
+    soc_max_kwh: float
+    charge_efficiency: float = 0.95
+    discharge_efficiency: float = 0.95
+
+
+@dataclass(slots=True)
+class DistributedWindPVBESSDispatchInput:
+    timestamps: list[Any]
+    nodes: list[DistributedWindPVBESSNodeInput]
+    buy_price: list[float]
+    price_type: list[str]
+    initial_soc_kwh: list[float]
+    step_hours: float
+    demand_charge_rate: float
+    demand_charge: DistributedBESSDemandChargeConfig = field(
+        default_factory=DistributedBESSDemandChargeConfig
+    )
+    export: DistributedRenewableExportConfig = field(
+        default_factory=DistributedRenewableExportConfig
+    )
+    policy: DistributedRenewableBESSDispatchPolicy | None = None
+    grid_import_formula: str = "park_baseline"
+    grid_import_nonneg: bool = False
+    cycle_cost_rate: float = 0.0
+    solver: str = "lp"
+
+
+@dataclass(slots=True)
+class DistributedWindPVBESSDispatchResult:
+    pv_forecast_by_node: list[list[float]]
+    wind_forecast_by_node: list[list[float]]
+    renewable_forecast_by_node: list[list[float]]
+    renewable_to_load_by_node: list[list[float]]
+    renewable_to_bess_by_node: list[list[float]]
+    renewable_to_grid_by_node: list[list[float]]
+    renewable_curtailment_by_node: list[list[float]]
+    grid_to_load_by_node: list[list[float]]
+    grid_to_bess_by_node: list[list[float]]
+    charge_power_by_node: list[list[float]]
+    discharge_power_by_node: list[list[float]]
+    net_bess_power_by_node: list[list[float]]
+    soc_by_node: list[list[float]]
+    grid_import_total: list[float]
+    max_demand_kw: float
+    energy_cost: float
+    demand_cost: float
+    sell_revenue: float
+    curtailment_cost: float
+    cross_flow_cost: float
+    cycle_cost: float
+    smooth_cost: float
+    soc_target_cost: float
+    total_cost: float
+    constraint_violations: dict[str, float]

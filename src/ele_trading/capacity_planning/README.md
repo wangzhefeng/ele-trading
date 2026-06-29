@@ -139,7 +139,7 @@ PVBESSIRRConfig:
 
 ---
 
-### 4. capacity_optimizer.py - 风光储容量优化
+### 4. wind_pv_bess_capacity_optimizer.py - 风光储容量优化
 
 **功能**：网格搜索+细扫两阶段优化，寻找最低成本的风光储容量组合。
 
@@ -167,7 +167,7 @@ cost = wind_mw * 1000 * wind_yuan_per_kw / 10000  # 万元
 
 ---
 
-### 5. bess_capacity_planner.py - BESS 容量规划
+### 5. wind_pv_bess_capacity_planner.py - BESS 容量规划
 
 **功能**：离网风光储容量规划，搜索满足约束的最小储能容量。
 
@@ -308,7 +308,7 @@ WindPVBESSPlanConfig:
 
 | 规划器 | 优化目标 | 决策方向 |
 |---|---|---|
-| #4 `capacity_optimizer` | 满足消纳/覆盖约束的最低成本 | 风/光/储组合成本最小 |
+| #4 `wind_pv_bess_capacity_optimizer` | 满足消纳/覆盖约束的最低成本 | 风/光/储组合成本最小 |
 | #7 `wind_pv_bess_planner` | 满足约束的最小 BESS 容量 | 给定 PV 反求 BESS |
 | **本模块 IRR 目标型** | 满足 IRR 目标 + 约束的最低投资 | 三维联合 + 电价反推 |
 
@@ -836,7 +836,7 @@ annualized_capex = capex_per_kwh * Cap_rated * crf
 
 ---
 
-### 10. dist_bess_dispatch.py - 分布式储能测算
+### 10. distributed_bess_planner.py - 分布式储能测算
 
 **功能**：多变压器公共母线下的分布式储能调度优化。
 
@@ -942,13 +942,13 @@ PVBESSPlanConfig:
 | multi_node_scanner | ✅ | 100% | 完整实现，含衰减模型 |
 | pv_bess_irr_planner | ✅ | 100% | 完整实现，三段式收益模型 |
 | pv_bess_planner | ✅ | 100% | 完整实现，含平移充电模式 |
-| capacity_optimizer | ✅ | 100% | 完整实现，两阶段搜索 |
-| bess_capacity_planner | ✅ | 100% | 完整实现，含 Numba 加速 |
+| wind_pv_bess_capacity_optimizer | ✅ | 100% | 完整实现，两阶段搜索 |
+| wind_pv_bess_capacity_planner | ✅ | 100% | 完整实现，含 Numba 加速 |
 | wind_bess_planner | ✅ | 100% | 完整实现，含平移充电模式 |
 | wind_pv_bess_planner | ✅ | 100% | 完整实现，含能量门槛检查 |
 | wind_pv_bess_irr_planner | ✅ | 100% | 完整实现，IRR 目标型 |
 | bess_capacity_sizer | ✅ | 100% | 完整实现，MILP 联合优化 |
-| dist_bess_dispatch | ✅ | 100% | 完整实现，含 v1-v5 预设 |
+| distributed_bess_planner | ✅ | 100% | 完整实现，含 v1-v5 预设 |
 
 **总体评估**：模块实现完整度 **100%**（11个子模块全部实现）。
 

@@ -29,8 +29,11 @@ uv run python -m pytest tests/test_metrics.py::test_sharpe_finite -v
 | `test_user_side_pv_dispatch.py` | `optimization/user_side_pv_dispatch.py` | 用户侧光伏调度 |
 | `test_user_side_pv_bess_dispatch.py` | `optimization/user_side_pv_bess_dispatch.py` | 用户侧光储联合调度 |
 | `test_user_side_renewable_dispatch.py` | `optimization/user_side_renewable_dispatch_class.py` | 用户侧可再生能源调度 |
-| `test_capacity_optimizer.py` | `capacity_planning/capacity_optimizer.py` | 容量优化规划 |
-| `test_bess_capacity_planner.py` | `capacity_planning/bess_capacity_planner.py` | 储能容量规划 |
+| `test_user_side_renewable_bess_distributed_dispatch.py` | `optimization/todo/user_side_renewable_bess_distributed_dispatch_class.py` | 用户侧分布式可再生能源+BESS 调度暂存接口 |
+| `test_capacity_optimizer.py` | `capacity_planning/wind_pv_bess_capacity_optimizer.py` | 容量优化规划 |
+| `test_bess_capacity_planner.py` | `capacity_planning/wind_pv_bess_capacity_planner.py` | 储能容量规划 |
+| `test_single_node_bess_capacity_planner.py` | `capacity_planning/bess_capacity_planner.py` | 单节点 BESS 容量规划 |
+| `test_distributed_bess_dispatch.py` | `capacity_planning/distributed_bess_planner.py` | 分布式储能容量搜索与导出编排 |
 | `test_wind_pv_bess_irr_planner.py` | `capacity_planning/wind_pv_bess_irr_planner.py` | 风光储 IRR 规划 |
 | `test_wind_pv_bess_irr_summary_export.py` | `capacity_planning/wind_pv_bess_irr_tuning.py` | 风光储 IRR 汇总导出 |
 

@@ -12,7 +12,7 @@ from ele_trading.utils.data_alignment import as_time_series, align_to_time
 from ele_trading.utils.num_utils import inclusive_float_range
 from ele_trading.utils.time_index import infer_dt_hours
 from ele_trading.utils.log_util import logger
-from .dispatch_algo import dispatch_annual
+from .models.dispatch_algo import dispatch_annual
 
 
 @dataclass(slots=True)

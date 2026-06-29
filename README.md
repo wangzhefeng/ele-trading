@@ -43,7 +43,7 @@ ele-trading/
 ├── data/                         # 最小样例数据、legacy 兼容数据、研究数据
 ├── docs/                         # 架构说明与算法笔记
 ├── tests/                        # 单元测试和入口脚本冒烟测试
-├── LOG.md                        # append-only 状态、限制和待办记录
+├── LOG.md                        # append-only 状态、限制和后续工作记录
 ├── pyproject.toml                # 项目依赖与测试配置
 └── uv.lock                       # uv 锁文件
 ```
@@ -84,6 +84,7 @@ ele-trading/
 - `mpc_bess.py`：单窗口 MPC 与滚动 MPC。
 - `two_stage_cvar.py`：Two-stage + CVaR 可求解模型。
 - `user_side_bess_dispatch.py`：用户侧储能成本优化。
+- `user_side_bess_distributed_dispatch_class.py`：用户侧分布式储能调度共享内核。
 - `user_side_renewable_dispatch_class.py`：用户侧通用可再生能源无储能调度共享内核。
 - `user_side_renewable_bess_dispatch_class.py`：用户侧通用可再生能源+BESS 调度共享内核。
 - `user_side_pv_dispatch.py`、`user_side_pv_bess_dispatch.py`：用户侧 PV 场景适配入口。
@@ -94,10 +95,10 @@ ele-trading/
 
 容量规划模块覆盖 PV、风电、BESS 和组合系统：
 
-- 联合容量优化：`capacity_optimizer.py`。
+- 联合容量优化：`wind_pv_bess_capacity_optimizer.py`。
 - BESS / Wind+BESS / Wind+PV+BESS：`bess_capacity_planner.py`、`wind_bess_planner.py`、`wind_pv_bess_planner.py`。
 - 可行性、IRR 和多节点扫描：`feasibility_analyzer.py`、`pv_bess_irr_planner.py`、`multi_node_scanner.py`。
-- 分布式储能多柜容量搜索：`dist_bess_dispatch.py`（输入输出类型定义于同目录 `interfaces.py`）。
+- 分布式储能多柜容量搜索、收益测算和 CSV 导出：`distributed_bess_planner.py`；调度内核由 `optimization/user_side_bess_distributed_dispatch_class.py` 提供。
 
 ### `resource_simulation`
 
@@ -157,5 +158,6 @@ uv run python -m pytest -q
 ## 协作边界
 
 - 新算法实现放入 `src/ele_trading/`，入口脚本只负责组装配置、数据和日志输出。
+- 可复用求解/调度内核放在 `optimization/`；容量扫描、场景编排、收益测算和文件导出放在 `capacity_planning/`。
 - 通用工具函数放入 `src/ele_trading/utils/`，包括 IO、日志、时间处理、绘图等。
 - `LOG.md` 为 append-only 状态记录；过期历史不回写，追加新状态说明。

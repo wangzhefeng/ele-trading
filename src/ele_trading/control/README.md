@@ -6,7 +6,7 @@
 
 | 文件 | 职责 |
 |------|------|
-| `rolling_dispatch.py` | `run_bess_rolling_dispatch()`，复用 `optimization.mpc_storage.run_bess_mpc()` 生成滚动储能调度 |
+| `rolling_dispatch.py` | `run_bess_rolling_dispatch()`，复用 `optimization.mpc_bess.run_bess_mpc()` 生成滚动储能调度 |
 
 ## 上下游关系
 

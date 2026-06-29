@@ -8,6 +8,7 @@
 |------|------|
 | `interfaces.py` | 统一 dataclass 和枚举，包括储能、用户侧、CVXPY 输入输出 |
 | `bess_arbitrage.py` | 单市场储能套利和容量 sizing |
+| `user_side_bess_distributed_dispatch_class.py` | 用户侧分布式储能调度共享内核，多变压器/多储能节点联合优化 |
 | `mpc_bess.py` | 单窗口 MPC 和滚动 MPC |
 | `two_stage_cvar.py` | Two-stage + CVaR 场景优化模型 |
 | `user_side_bess_dispatch.py` | 用户侧储能调度，最小化购电、需量和循环成本 |
@@ -63,4 +64,4 @@
 
 ## 分布式储能调度
 
-分布式储能（多变压器、多储能柜容量搜索 + 调度模拟 + 收益评估）属于容量规划范畴，算法实现见 `capacity_planning/dist_bess_dispatch.py`；入口为 `app/run_dist_bess_dispatch.py`，配置为 `configs/dist_bess_dispatch.yaml`。其输入输出 dataclass（`DistBESSConfig`、`DistBESSSchedulerConfig`、`DistBESSDispatchInput` 等）定义在 `capacity_planning/interfaces.py`。
+`run_distributed_bess_dispatch()` 提供用户侧分布式储能调度内核，用 `DistributedBESSDispatchInput` 和 `DistributedBESSDispatchResult` 明确输入输出；实现文件为 `user_side_bess_distributed_dispatch_class.py`。容量搜索、收益测算和 CSV 导出仍由 `capacity_planning/distributed_bess_planner.py` 负责调用该内核。

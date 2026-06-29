@@ -34,7 +34,7 @@ uv sync
 | `run_user_side_pv_dispatch.py` | `configs/user_side_pv_dispatch.yaml` | 用户侧 PV-only 自用、上网、弃光和购电测算 |
 | `run_user_side_pv_bess_dispatch.py` | `configs/user_side_pv_bess_dispatch.yaml` | 用户侧 PV+storage 联合调度 |
 | `run_cvxp_bess_dispatch.py` | `configs/cvxp_bess_dispatch.yaml` | CVXPY 储能调度 demo，支持 profile 版本切换 |
-| `run_dist_bess_dispatch.py` | `configs/dist_bess_dispatch.yaml` | 分布式储能多柜容量搜索、调度模拟和收益汇总 |
+| `run_dist_bess_dispatch.py` | `configs/dist_bess_dispatch.yaml` | 分布式储能多柜容量搜索、调度内核调用、收益汇总和 CSV 导出 |
 | `run_bess_capacity_planning.py` | `configs/bess_capacity_planning.yaml` | 离网/绿电约束场景下 BESS 最小容量规划 |
 | `run_wind_bess_capacity_planning.py` | `configs/wind_bess_capacity_planning.yaml` | Wind+BESS 容量规划和可行性诊断 |
 | `run_wind_pv_bess_capacity_planning_1.py` | `configs/wind_pv_bess_capacity_planning.yaml` | Wind+PV+BESS 容量规划、配置驱动容量扫描 |
