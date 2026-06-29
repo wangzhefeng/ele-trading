@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from app.run_wind_pv_bess_irr_planning import _write_result_csv_with_cn_header
+from app.capacity_planning.run_wind_pv_bess_irr_planning import _write_result_csv_with_cn_header
 from ele_trading.capacity_planning.wind_pv_bess_irr_planner import WindPVBESSIRRResult
 from ele_trading.capacity_planning.wind_pv_bess_irr_tuning import _result_summary_row
 

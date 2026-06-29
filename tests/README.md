@@ -128,4 +128,5 @@ uv run python -m pytest tests/test_metrics.py::test_sharpe_finite -v
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+cache_dir = "tests/.pytest_cache"
 ```

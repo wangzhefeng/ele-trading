@@ -46,6 +46,7 @@ weather = [
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+cache_dir = "tests/.pytest_cache"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
