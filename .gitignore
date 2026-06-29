@@ -175,7 +175,7 @@ __marimo__/
 .cache/
 # .agents/
 # .claude/
-.hermes/
+# .hermes/
 .venv/
 data/
 logs/
