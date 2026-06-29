@@ -85,20 +85,20 @@ uv run python -m pytest tests/test_metrics.py::test_sharpe_finite -v
 
 | 入口脚本 | 验证内容 |
 |----------|----------|
-| `run_bess_arbitrage.py` | 退出码 + 输出非空 |
-| `run_mpc_demo.py` | 退出码 + 输出非空 |
-| `run_two_stage_skeleton.py` | 退出码 + 输出非空 |
-| `run_backtest.py` | 退出码 + 输出非空 |
-| `run_user_side_bess_dispatch.py` | 退出码 + 关键字匹配 |
-| `run_user_side_pv_dispatch.py` | 退出码 + 关键字匹配 |
-| `run_user_side_pv_bess_dispatch.py` | 退出码 + 关键字匹配 |
-| `run_wind_pv_legacy_profit_eval.py` | 退出码 + 关键字匹配 |
-| `run_wind_pv_legacy_market_trading.py` | 退出码 + 关键字匹配 |
-| `run_wind_pv_bess_irr_planning.py` | 退出码 + 关键字匹配 |
-| `run_pv_simulation_v1.py` | 退出码 + 关键字匹配（quick） |
-| `run_cvxp_bess_dispatch.py` | 退出码 + 关键字匹配（quick） |
-| `run_bess_capacity_planning.py` | 退出码验证（medium，timeout=180s） |
-| `run_wind_bess_capacity_planning.py` | 退出码验证（medium，timeout=180s） |
+| `optimization/run_bess_arbitrage.py` | 退出码 + 输出非空 |
+| `optimization/run_mpc_demo.py` | 退出码 + 输出非空 |
+| `optimization/run_two_stage_skeleton.py` | 退出码 + 输出非空 |
+| `evaluation/run_backtest.py` | 退出码 + 输出非空 |
+| `optimization/run_user_side_bess_dispatch.py` | 退出码 + 关键字匹配 |
+| `optimization/run_user_side_pv_dispatch.py` | 退出码 + 关键字匹配 |
+| `optimization/run_user_side_pv_bess_dispatch.py` | 退出码 + 关键字匹配 |
+| `legacy/run_wind_pv_legacy_profit_eval.py` | 退出码 + 关键字匹配 |
+| `legacy/run_wind_pv_legacy_market_trading.py` | 退出码 + 关键字匹配 |
+| `capacity_planning/run_wind_pv_bess_irr_planning.py` | 退出码 + 关键字匹配 |
+| `resource_simulation/run_pv_simulation_v1.py` | 退出码 + 关键字匹配（quick） |
+| `optimization/run_cvxp_bess_dispatch.py` | 退出码 + 关键字匹配（quick） |
+| `capacity_planning/run_bess_capacity_planning.py` | 退出码验证（medium，timeout=180s） |
+| `capacity_planning/run_wind_bess_capacity_planning.py` | 退出码验证（medium，timeout=180s） |
 
 **已注册但默认跳过的入口脚本（6 个）：**
 
@@ -106,12 +106,12 @@ uv run python -m pytest tests/test_metrics.py::test_sharpe_finite -v
 
 | 入口脚本 | 手动验收命令 | 跳过原因 |
 |----------|-------------|---------|
-| `run_pv_simulation_v2.py` | `uv run python app/run_pv_simulation_v2.py` | 需要 Open-Meteo 网络 API |
-| `run_wind_simulation_v1.py` | `uv run python app/run_wind_simulation_v1.py` | 需要 Open-Meteo 网络 API |
-| `run_wind_simulation_v2.py` | `uv run python app/run_wind_simulation_v2.py` | 需要 Open-Meteo 网络 API |
-| `run_wind_pv_bess_capacity_planning_1.py` | `uv run python app/run_wind_pv_bess_capacity_planning_1.py` | 运行时间 >30s |
-| `run_wind_pv_bess_capacity_planning_2.py` | `uv run python app/run_wind_pv_bess_capacity_planning_2.py` | 运行时间 >30s |
-| `run_dist_bess_dispatch.py` | `uv run python app/run_dist_bess_dispatch.py` | 需要外部 CSV 数据文件 |
+| `resource_simulation/run_pv_simulation_v2.py` | `uv run python app/resource_simulation/run_pv_simulation_v2.py` | 需要 Open-Meteo 网络 API |
+| `resource_simulation/run_wind_simulation_v1.py` | `uv run python app/resource_simulation/run_wind_simulation_v1.py` | 需要 Open-Meteo 网络 API |
+| `resource_simulation/run_wind_simulation_v2.py` | `uv run python app/resource_simulation/run_wind_simulation_v2.py` | 需要 Open-Meteo 网络 API |
+| `capacity_planning/run_wind_pv_bess_capacity_planning_1.py` | `uv run python app/capacity_planning/run_wind_pv_bess_capacity_planning_1.py` | 运行时间 >30s |
+| `capacity_planning/run_wind_pv_bess_capacity_planning_2.py` | `uv run python app/capacity_planning/run_wind_pv_bess_capacity_planning_2.py` | 运行时间 >30s |
+| `capacity_planning/run_dist_bess_dispatch.py` | `uv run python app/capacity_planning/run_dist_bess_dispatch.py` | 需要外部 CSV 数据文件 |
 
 ## 依赖说明
 

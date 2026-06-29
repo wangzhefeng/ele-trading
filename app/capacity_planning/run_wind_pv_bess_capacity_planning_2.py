@@ -1,6 +1,6 @@
 """风光储一体化容量规划运行脚本
 
-从 configs/capacity_planning.yaml 加载参数，演示三个应用场景：
+从 configs/capacity_planning/capacity_planning.yaml 加载参数，演示三个应用场景：
   A. 风光储联合优化（北京工业用户，默认参数）
   B. PV-only 最小投资（南方园区，无风电资源）
   C. 高绿电率碳中和方案（出口型企业）
@@ -13,7 +13,7 @@ import copy
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / 'src'
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
@@ -33,7 +33,7 @@ from ele_trading.forecasting.wind_forecast import WindPowerForecaster
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 
-CONFIG_PATH = PROJECT_ROOT / 'configs' / 'capacity_planning.yaml'
+CONFIG_PATH = PROJECT_ROOT / 'configs' / 'capacity_planning' / 'capacity_planning.yaml'
 
 
 # ─────────────────────────────────────────────

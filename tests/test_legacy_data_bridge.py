@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 def test_prepare_legacy_temp_data_uses_cached_outputs(tmp_path: Path):
     import sys
     from pathlib import Path as _Path
-    _app_dir = str(_Path(__file__).resolve().parents[1] / "app")
+    _app_dir = str(_Path(__file__).resolve().parents[1] / "app" / "legacy")
     if _app_dir not in sys.path:
         sys.path.insert(0, _app_dir)
     from run_legacy_data_preparation import (
@@ -101,7 +101,7 @@ def test_prepare_legacy_temp_data_uses_cached_outputs(tmp_path: Path):
 
 
 def test_bridge_config_file_exists_and_defaults_to_cached():
-    config_path = PROJECT_ROOT / 'configs' / 'wind_pv_es_calc_data_bridge.yaml'
+    config_path = PROJECT_ROOT / 'configs' / 'legacy' / 'wind_pv_es_calc_data_bridge.yaml'
     assert config_path.exists()
 
     config = read_yaml(config_path)

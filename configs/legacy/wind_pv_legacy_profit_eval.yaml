@@ -1,5 +1,5 @@
 data:
-  bridge_config_path: configs/wind_pv_es_calc_data_bridge.yaml
+  bridge_config_path: configs/legacy/wind_pv_es_calc_data_bridge.yaml
   refresh_before_run: false
   df_2025_path: data/wind_pv_es_calc/temp/df_2025.csv
   df_pv_2025_path: data/wind_pv_es_calc/temp/df_pv_2025.csv

@@ -316,7 +316,7 @@ WindPVBESSPlanConfig:
 
 #### 8.2 算法测试运行流程
 
-入口脚本：`app/run_wind_pv_bess_irr_planning.py`。端到端流程分为 6 步：
+入口脚本：`app/capacity_planning/run_wind_pv_bess_irr_planning.py`。端到端流程分为 6 步：
 
 | 步骤 | 动作 | 输入 | 输出 | 典型耗时 |
 |---|---|---|---|---|
@@ -333,7 +333,7 @@ WindPVBESSPlanConfig:
 - 气象数据缓存于 `weather_cache.csv`（避免重复调用 Open-Meteo）
 - 任一缓存命中即跳过仿真，仅做读 CSV → 索引对齐
 
-**配置加载**：YAML 路径 `configs/wind_pv_bess_irr_planning.yaml`，通过 `_to_config()` 装配为 `WindPVBESSIRRPlanConfig` dataclass。
+**配置加载**：YAML 路径 `configs/capacity_planning/wind_pv_bess_irr_planning.yaml`，通过 `_to_config()` 装配为 `WindPVBESSIRRPlanConfig` dataclass。
 
 #### 8.3 算法原理（数学建模）
 

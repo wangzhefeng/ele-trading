@@ -1,6 +1,6 @@
 """Wind+BESS 容量规划运行脚本
 
-从 configs/wind_bess_capacity_planning.yaml 加载参数，
+从 configs/capacity_planning/wind_bess_capacity_planning.yaml 加载参数，
 演示离网风储场景下的最小储能容量搜索（支持 shift 策略）。
 
 流程：合成数据 → 风电出力模拟 → Wind+BESS 容量规划 → 输出结果
@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / 'src'
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
@@ -26,7 +26,7 @@ from ele_trading.resource_simulation import WindSimulator, SimulationResult
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 
-CONFIG_PATH = PROJECT_ROOT / 'configs' / 'wind_bess_capacity_planning.yaml'
+CONFIG_PATH = PROJECT_ROOT / 'configs' / 'capacity_planning' / 'wind_bess_capacity_planning.yaml'
 
 
 # ─────────────────────────────────────────────

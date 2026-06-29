@@ -1,16 +1,16 @@
-"""离网 BESS 容量规划运行脚本
+"""Wind+PV+BESS 容量规划运行脚本
 
-从 configs/bess_capacity_planning.yaml 加载参数，
-演示离网风光储场景下的最小储能容量搜索。
+从 configs/capacity_planning/wind_pv_bess_capacity_planning.yaml 加载参数，
+演示离网风光储场景下的最优容量搜索（PV + BESS 联合搜索）。
 
-流程：合成气象 → 光伏/风电出力模拟 → BESS 容量规划 → 输出结果
+流程：合成气象 → 光伏/风电出力模拟 → Wind+PV+BESS 容量规划 → 输出结果
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / 'src'
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
@@ -19,7 +19,8 @@ import numpy as np
 import pandas as pd
 
 from ele_trading.capacity_planning import (
-    plan_energy_system, BESSPlanConfig, UnitsConfig,
+    WindPVBEssPlanConfig, WindPVBEssResult,
+    plan_wind_pv_bess,
 )
 from ele_trading.resource_simulation import (
     PVSimulator, SimulationResult,
@@ -28,7 +29,7 @@ from ele_trading.resource_simulation import (
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 
-CONFIG_PATH = PROJECT_ROOT / 'configs' / 'bess_capacity_planning.yaml'
+CONFIG_PATH = PROJECT_ROOT / 'configs' / 'capacity_planning' / 'wind_pv_bess_capacity_planning.yaml'
 
 
 # ─────────────────────────────────────────────
@@ -40,6 +41,9 @@ def _fmt_mw(v: float) -> str:
 
 def _fmt_mwh(v: float) -> str:
     return f'{v:.1f} MWh'
+
+def _fmt_kwp(v: float) -> str:
+    return f'{v:.0f} kWp'
 
 def _fmt_kwh(v: float) -> str:
     return f'{v:.0f} kWh'
@@ -113,7 +117,9 @@ def main():
     cst = config['constraints']
     bess = config["bess"]
     cost = config['cost']
-    search = config['search']
+    pv_search = config['pv_search']
+    bess_search = config['bess_search']
+    gate_cfg = config['gate_check']
     cap = config['capacity']
 
     n_hours = sc['n_hours']
@@ -125,7 +131,7 @@ def main():
 
     # ── Step 1: 生成合成数据 ──────────────────
     logger.info('=' * 60)
-    logger.info('离网 BESS 容量规划')
+    logger.info('Wind+PV+BESS 容量规划')
     logger.info('=' * 60)
     logger.info('Step 1  生成合成数据')
 
@@ -155,11 +161,10 @@ def main():
 
     # ── Step 4: 构造输入 DataFrame ────────────
     logger.info('Step 4  构造输入数据')
-    # 光伏功率曲线（kW）= 单位出力(kW/kW) × 装机(kWp)
-    pv_kw_series = pv_result.power_series / 1000.0 * cap['pv_kwp']
+    # 光伏单位出力曲线（kW/kWp）= 单位出力(kW/kW)
     df_pv = pd.DataFrame({
-        'Time': pv_kw_series.index,
-        'pv_kw': pv_kw_series.values,
+        'Time': pv_result.power_series.index,
+        'pv_unit_kw': pv_result.power_series.values / 1000.0,
     })
 
     # 风电功率曲线（MW）= 单位出力(kW/kW) × 装机(MW)
@@ -171,12 +176,13 @@ def main():
 
     logger.info(f'  负荷: {len(df_load)} 点, 光伏: {len(df_pv)} 点, 风电: {len(df_wind)} 点')
 
-    # ── Step 5: BESS 容量规划 ─────────────────
-    logger.info('Step 5  BESS 容量规划')
+    # ── Step 5: Wind+PV+BESS 容量规划 ─────────
+    logger.info('Step 5  Wind+PV+BESS 容量规划')
     logger.info(f'  约束: 自消纳率 ≥ {_fmt_pct(cst["self_use_ratio_min"])}，'
                 f'覆盖率 ≥ {_fmt_pct(cst["load_cover_ratio_min"])}')
 
-    cfg = BESSPlanConfig(
+    cfg = WindPVBEssPlanConfig(
+        pv_capex_yuan_per_kwp=cost['pv_capex_yuan_per_kwp'],
         bess_capex_yuan_per_kwh=cost['bess_capex_yuan_per_kwh'],
         eta_roundtrip=bess['eta_roundtrip'],
         c_rate=bess['c_rate'],
@@ -185,37 +191,53 @@ def main():
         soc_max_frac=bess['soc_max_frac'],
         self_use_ratio_min=cst['self_use_ratio_min'],
         load_cover_ratio_min=cst['load_cover_ratio_min'],
-        batt_hi_max_kwh=search['batt_hi_max_kwh'],
-        search_points=search['search_points'],
+        pv_step_coarse_kwp=pv_search['pv_step_coarse_kwp'],
+        pv_step_fine_kwp=pv_search['pv_step_fine_kwp'],
+        pv_refine_window_kwp=pv_search['pv_refine_window_kwp'],
+        pv_min_kwp=pv_search['pv_min_kwp'],
+        enable_bess=bess_search['enable_bess'],
+        batt_hi_init_kwh=bess_search['batt_hi_init_kwh'],
+        batt_hi_max_kwh=bess_search['batt_hi_max_kwh'],
+        batt_bisect_iter=bess_search['batt_bisect_iter'],
+        batt_tol_kwh=bess_search['batt_tol_kwh'],
+        enable_gate_check=gate_cfg['enable'],
+        gate_target_ratio=gate_cfg['target_ratio'],
+        switch_gap_hours=config.get('switch_gap_hours', 0.0),
     )
-    units = UnitsConfig(load_power='kW', wind_power='MW')
 
-    result = plan_energy_system(
+    result = plan_wind_pv_bess(
         df_load,
-        pv_power=df_pv,
+        pv_unit_kw=df_pv,
         wind_input=df_wind,
-        time_col='Time',
         load_col='P_kw',
+        time_col='Time',
         cfg=cfg,
-        units=units,
+        wind_unit='MW',
     )
 
     # ── Step 6: 输出结果 ─────────────────────
     logger.info('─' * 40)
-    if result.feasible:
+    if result.status == 'ok':
         logger.info('  【规划结果】')
-        logger.info(f'  可行:              是')
-        logger.info(f'  最小储能容量:      {_fmt_kwh(result.bess_kwh)}')
-        logger.info(f'  储能投资:          {_fmt_wan(result.cost_yuan)}')
+        logger.info(f'  状态:              {result.status}')
+        logger.info(f'  光伏容量:          {_fmt_kwp(result.pv_kwp)}')
+        logger.info(f'  储能容量:          {_fmt_kwh(result.bess_kwh)}')
+        logger.info(f'  光伏投资:          {_fmt_wan(result.pv_capex_yuan)}')
+        logger.info(f'  储能投资:          {_fmt_wan(result.bess_capex_yuan)}')
+        logger.info(f'  总投资:            {_fmt_wan(result.total_capex_yuan)}')
         logger.info(f'  新能源自消纳率:    {_fmt_pct(result.self_use_ratio)}')
         logger.info(f'  负荷覆盖率:        {_fmt_pct(result.load_cover_ratio)}')
-        logger.info(f'  总发电量:          {result.gen_kwh / 1e6:.2f} GWh')
-        logger.info(f'  总用电量:          {result.load_kwh / 1e6:.2f} GWh')
-        logger.info(f'  有效供电量:        {result.used_kwh / 1e6:.2f} GWh')
+        logger.info(f'  光伏年发电量:      {result.pv_gen_kwh_annual / 1e6:.2f} GWh')
+        logger.info(f'  风电年发电量:      {result.wind_gen_kwh_annual / 1e6:.2f} GWh')
         logger.info(f'  调度引擎:          {result.engine}')
+    elif result.status == 'gate_failed':
+        logger.info('  【规划结果】能量门槛未通过')
+        logger.info(f'  {result.message}')
+        if result.gate:
+            logger.info(f'  发电量占比: {result.gate["gen_ratio"]:.3f}')
     else:
         logger.info('  【规划结果】不可行')
-        logger.info(f'  原因: {result.diagnosis}')
+        logger.info(f'  原因: {result.message}')
 
     logger.info('=' * 60)
     logger.info('运行完成。')

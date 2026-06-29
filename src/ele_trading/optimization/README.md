@@ -43,7 +43,7 @@
 - 第二阶段：各场景下充放电、SOC、偏差和收益。
 - 风险项：CVaR 线性化，目标兼顾期望收益和尾部风险。
 
-演示入口为 `app/run_two_stage_skeleton.py`。
+演示入口为 `app/optimization/run_two_stage_skeleton.py`。
 
 ## 用户侧模型
 
@@ -60,7 +60,7 @@
 
 ## CVXPY 储能调度
 
-`run_cvxp_bess_dispatch()` 提供 CVXPY 版本储能调度实现，用 `CvxpBESSDispatchInput` 和 `CvxpBESSDispatchResult` 明确输入输出。入口为 `app/run_cvxp_bess_dispatch.py`。
+`run_cvxp_bess_dispatch()` 提供 CVXPY 版本储能调度实现，用 `CvxpBESSDispatchInput` 和 `CvxpBESSDispatchResult` 明确输入输出。入口为 `app/optimization/run_cvxp_bess_dispatch.py`。
 
 ## 分布式储能调度
 

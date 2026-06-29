@@ -58,7 +58,7 @@ def test_cvxp_dispatch_charges_from_grid_before_high_price_discharge():
 
 def test_cvxp_result_power_outputs_are_non_negative_business_values():
     """输出给业务侧的充电和放电功率应清理求解器容差噪声。"""
-    config = read_yaml("configs/cvxp_bess_dispatch.yaml")
+    config = read_yaml("configs/optimization/cvxp_bess_dispatch.yaml")
     dispatch_input = build_cvxp_bess_dispatch_input(config)
 
     result = run_cvxp_bess_dispatch(dispatch_input)

@@ -7,7 +7,7 @@
 从项目根目录运行，并使用项目 `.venv`：
 
 ```bash
-uv run python app/<script_name>.py
+uv run python app/<category>/<script_name>.py
 ```
 
 依赖安装：
@@ -24,28 +24,36 @@ uv sync
 
 ## 当前入口脚本
 
+入口脚本按职责分为：
+
+- `optimization/`：储能套利、MPC、Two-stage、用户侧调度和 CVXPY 调度 demo。
+- `capacity_planning/`：BESS、Wind+BESS、Wind+PV+BESS、IRR 和分布式储能容量规划。
+- `resource_simulation/`：PV 和 Wind 物理仿真。
+- `evaluation/`：回测和评估入口。
+- `legacy/`：旧风光储兼容数据链路入口。
+
 | 脚本 | 配置 | 作用 |
 |------|------|------|
-| `run_bess_arbitrage.py` | 默认样例数据（`data/raw/`） | 单市场储能套利 demo，输出目标值、充放电功率和 SOC |
-| `run_mpc_demo.py` | 默认样例数据（`data/raw/`） | 储能 MPC 滚动优化 demo |
-| `run_two_stage_skeleton.py` | 内置最小场景 | Two-stage + CVaR 4 时段、3 场景求解演示 |
-| `run_backtest.py` | 默认样例数据 | 最小回测，串联滚动调度、收益结算和指标汇总 |
-| `run_user_side_bess_dispatch.py` | `configs/user_side_bess_dispatch.yaml` | 用户侧储能成本优化，含能量电费和需量电费 |
-| `run_user_side_pv_dispatch.py` | `configs/user_side_pv_dispatch.yaml` | 用户侧 PV-only 自用、上网、弃光和购电测算 |
-| `run_user_side_pv_bess_dispatch.py` | `configs/user_side_pv_bess_dispatch.yaml` | 用户侧 PV+storage 联合调度 |
-| `run_cvxp_bess_dispatch.py` | `configs/cvxp_bess_dispatch.yaml` | CVXPY 储能调度 demo，支持 profile 版本切换 |
-| `run_dist_bess_dispatch.py` | `configs/dist_bess_dispatch.yaml` | 分布式储能多柜容量搜索、调度内核调用、收益汇总和 CSV 导出 |
-| `run_bess_capacity_planning.py` | `configs/bess_capacity_planning.yaml` | 离网/绿电约束场景下 BESS 最小容量规划 |
-| `run_wind_bess_capacity_planning.py` | `configs/wind_bess_capacity_planning.yaml` | Wind+BESS 容量规划和可行性诊断 |
-| `run_wind_pv_bess_capacity_planning_1.py` | `configs/wind_pv_bess_capacity_planning.yaml` | Wind+PV+BESS 容量规划、配置驱动容量扫描 |
-| `run_wind_pv_bess_capacity_planning_2.py` | `configs/capacity_planning.yaml` | Wind+PV+BESS 容量规划、三个应用场景（能量门槛/运行评估/组合） |
-| `run_wind_pv_bess_irr_planning.py` | `configs/wind_pv_bess_irr_planning.yaml` | IRR 目标型 Wind+PV+BESS 容量规划、PPA 反推和综合电价约束 |
-| `run_pv_simulation_v1.py` | `configs/pv_simulation_v1.yaml` | PV 物理仿真 v1（pvlib） |
-| `run_pv_simulation_v2.py` | `configs/pv_simulation_v2.yaml` | PV 物理仿真 v2（pvlib） |
-| `run_wind_simulation_v1.py` | `configs/wind_simulation_v1.yaml` | 风电物理仿真 v1（windpowerlib） |
-| `run_wind_simulation_v2.py` | `configs/wind_simulation_v2.yaml` | 风电物理仿真 v2（windpowerlib） |
-| `run_wind_pv_legacy_profit_eval.py` | `configs/wind_pv_legacy_profit_eval.yaml` | 基于 legacy 兼容数据做年度收益拆分 |
-| `run_wind_pv_legacy_market_trading.py` | `configs/wind_pv_legacy_market_trading.yaml` | 基于 legacy 兼容数据运行用户侧风光储交易调度 |
+| `optimization/run_bess_arbitrage.py` | 默认样例数据（`data/raw/`） | 单市场储能套利 demo，输出目标值、充放电功率和 SOC |
+| `optimization/run_mpc_demo.py` | 默认样例数据（`data/raw/`） | 储能 MPC 滚动优化 demo |
+| `optimization/run_two_stage_skeleton.py` | 内置最小场景 | Two-stage + CVaR 4 时段、3 场景求解演示 |
+| `evaluation/run_backtest.py` | 默认样例数据 | 最小回测，串联滚动调度、收益结算和指标汇总 |
+| `optimization/run_user_side_bess_dispatch.py` | `configs/optimization/user_side_bess_dispatch.yaml` | 用户侧储能成本优化，含能量电费和需量电费 |
+| `optimization/run_user_side_pv_dispatch.py` | `configs/optimization/user_side_pv_dispatch.yaml` | 用户侧 PV-only 自用、上网、弃光和购电测算 |
+| `optimization/run_user_side_pv_bess_dispatch.py` | `configs/optimization/user_side_pv_bess_dispatch.yaml` | 用户侧 PV+storage 联合调度 |
+| `optimization/run_cvxp_bess_dispatch.py` | `configs/optimization/cvxp_bess_dispatch.yaml` | CVXPY 储能调度 demo，支持 profile 版本切换 |
+| `capacity_planning/run_dist_bess_dispatch.py` | `configs/capacity_planning/dist_bess_dispatch.yaml` | 分布式储能多柜容量搜索、调度内核调用、收益汇总和 CSV 导出 |
+| `capacity_planning/run_bess_capacity_planning.py` | `configs/capacity_planning/bess_capacity_planning.yaml` | 离网/绿电约束场景下 BESS 最小容量规划 |
+| `capacity_planning/run_wind_bess_capacity_planning.py` | `configs/capacity_planning/wind_bess_capacity_planning.yaml` | Wind+BESS 容量规划和可行性诊断 |
+| `capacity_planning/run_wind_pv_bess_capacity_planning_1.py` | `configs/capacity_planning/wind_pv_bess_capacity_planning.yaml` | Wind+PV+BESS 容量规划、配置驱动容量扫描 |
+| `capacity_planning/run_wind_pv_bess_capacity_planning_2.py` | `configs/capacity_planning/capacity_planning.yaml` | Wind+PV+BESS 容量规划、三个应用场景（能量门槛/运行评估/组合） |
+| `capacity_planning/run_wind_pv_bess_irr_planning.py` | `configs/capacity_planning/wind_pv_bess_irr_planning.yaml` | IRR 目标型 Wind+PV+BESS 容量规划、PPA 反推和综合电价约束 |
+| `resource_simulation/run_pv_simulation_v1.py` | `configs/resource_simulation/pv_simulation_v1.yaml` | PV 物理仿真 v1（pvlib） |
+| `resource_simulation/run_pv_simulation_v2.py` | `configs/resource_simulation/pv_simulation_v2.yaml` | PV 物理仿真 v2（pvlib） |
+| `resource_simulation/run_wind_simulation_v1.py` | `configs/resource_simulation/wind_simulation_v1.yaml` | 风电物理仿真 v1（windpowerlib） |
+| `resource_simulation/run_wind_simulation_v2.py` | `configs/resource_simulation/wind_simulation_v2.yaml` | 风电物理仿真 v2（windpowerlib） |
+| `legacy/run_wind_pv_legacy_profit_eval.py` | `configs/legacy/wind_pv_legacy_profit_eval.yaml` | 基于 legacy 兼容数据做年度收益拆分 |
+| `legacy/run_wind_pv_legacy_market_trading.py` | `configs/legacy/wind_pv_legacy_market_trading.yaml` | 基于 legacy 兼容数据运行用户侧风光储交易调度 |
 
 ## 使用边界
 

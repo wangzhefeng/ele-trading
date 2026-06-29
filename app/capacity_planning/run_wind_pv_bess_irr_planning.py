@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
@@ -311,7 +311,7 @@ def _build_optimal_solution_df(result: WindPVBESSIRRResult) -> pd.DataFrame:
 
 def main() -> None:
     # 加载配置
-    CONFIG_PATH = PROJECT_ROOT / 'configs' / 'wind_pv_bess_irr_planning.yaml'
+    CONFIG_PATH = PROJECT_ROOT / 'configs' / 'capacity_planning' / 'wind_pv_bess_irr_planning.yaml'
     config = read_yaml(CONFIG_PATH)
     # 数据目录
     data_dir = PROJECT_ROOT / "data" / "profit_calc" / "wind_pv_bess" / "v1"

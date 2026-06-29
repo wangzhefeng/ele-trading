@@ -23,7 +23,7 @@
 ## 上下游关系
 
 - 上游：`optimization`、`control` 输出调度功率、SOC、申报量等结果。
-- 下游：`app/run_backtest.py`、测试、收益测算脚本和后续报告消费评估结果。
+- 下游：`app/evaluation/run_backtest.py`、测试、收益测算脚本和后续报告消费评估结果。
 
 ## 使用边界
 

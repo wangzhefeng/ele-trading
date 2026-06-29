@@ -1,10 +1,10 @@
 """分布式储能容量搜索运行脚本
 
-从 configs/dist_bess_dispatch.yaml 加载参数，
+从 configs/capacity_planning/dist_bess_dispatch.yaml 加载参数，
 运行分布式储能容量搜索算法。
 
 用法:
-    python app/run_dist_bess_dispatch.py
+    python app/capacity_planning/run_dist_bess_dispatch.py
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / 'src'
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
@@ -22,7 +22,7 @@ from ele_trading.capacity_planning import run_dist_bess_dispatch
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 
-CONFIG_PATH = PROJECT_ROOT / 'configs' / 'dist_bess_dispatch.yaml'
+CONFIG_PATH = PROJECT_ROOT / 'configs' / 'capacity_planning' / 'dist_bess_dispatch.yaml'
 
 
 def main() -> None:

@@ -1,4 +1,4 @@
-# AGENTS.md
+# CLAUDE.md
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 ## 1. Think Before Coding
@@ -43,41 +43,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
-## 5. 电力交易项目特有约束
+---
 
-以下为本项目的硬边界规则，违反会导致不可运行或错误结果。
-
-### 求解器要求
-
-- Two-stage + CVaR 模型需系统安装 `glpk`（`brew install glpk`）或 `cbc`。
-- 调度/优化模型统一通过建模框架构建（PuLP+CBC 为调度类默认，Pyomo+SCIP 用于容量 sizing 类，CVXPY 用于凸规划变体），禁止直接调用底层求解器 C API。
-- `cvxpy` 是可选依赖：CVXPY 路径通过 `__getattr__` 延迟导入，缺失时 PuLP/Pyomo 路径正常可用，不阻塞项目主链路。
-- 入口脚本需使用 `app/` 目录下的 `run_*.py`，不得在测试或 notebook 中直接调用求解器。
-
-### 场景模块兼容
-
-- 场景采样默认使用 LHS（`method='lhs'`），新代码必须保留 `method='mc'` 向后兼容参数。
-- 场景缩减使用 Kantorovich/Wasserstein L1 后向缩减，不得简单 Top-K 剔除。
-
-### 扩展指标参数
-
-- `compute_extended_metrics()` 调用必须传入正确的 `e_cap`（储能容量）参数，否则 EFC 计算无意义。
-- 雨流退化核算 `compute_rainflow_degradation()` 需传入完整 SOC 序列和 `deg_cost_per_cycle`。
-
-### 偏差考核参数
-
-- `compute_deviation_penalty()` 的 `dead_band_pct`、`tier1_threshold_pct` 参数必须与 `configs/market_*.yaml` 保持一致。
-- 禁止在代码中硬编码市场参数（如罚款系数、价格限幅）。
-
-### 配置与数据一致性
-
-- `configs/` 中的 YAML 文件必须与对应入口脚本的参数字段一一对应。
-- `dt` 参数在 15 分钟颗粒度场景下必须设为 0.25，并在配置中明确注释。
-- 新增环境变量或配置字段必须同步更新 `configs/README.md`。
-- 可复用求解/调度内核归属 `src/ele_trading/optimization/`；容量扫描、场景编排、收益测算和 CSV 导出归属 `src/ele_trading/capacity_planning/`。
-- 项目级 agent 规则只维护在 `.agents/AGENTS.md` 和 `.claude/CLAUDE.md`；不要恢复或新建根目录 `AGENTS.md` / `CLAUDE.md`。
-
-### 数据边界
-
-- `data/` 中的样例数据仅用于接口验证、demo 和回归测试，不代表真实市场数据，不能直接用于生产策略评估。
-- 生产数据通过 `data_provider` 统一接入，禁止 app 脚本直接硬编码文件路径。
+> 本项目特有约束（求解器要求、场景模块兼容、偏差考核参数等）见 `.agents/AGENTS.md` 第 5 节「电力交易项目特有约束」。
+> 项目级 agent 规则只维护在 `.agents/AGENTS.md` 和 `.claude/CLAUDE.md`；不要恢复或新建根目录 `AGENTS.md` / `CLAUDE.md`。

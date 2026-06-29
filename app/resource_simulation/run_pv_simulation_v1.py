@@ -1,6 +1,6 @@
 """光伏仿真 v1 运行脚本（clear-sky 模式）
 
-从 configs/pv_simulation_v1.yaml 加载参数，
+从 configs/resource_simulation/pv_simulation_v1.yaml 加载参数，
 使用 pvlib clear-sky 模型生成光伏出力时序。
 """
 from __future__ import annotations
@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / 'src'
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
@@ -23,7 +23,7 @@ from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 
 
-DEFAULT_CONFIG_PATH = PROJECT_ROOT / 'configs' / 'pv_simulation_v1.yaml'
+DEFAULT_CONFIG_PATH = PROJECT_ROOT / 'configs' / 'resource_simulation' / 'pv_simulation_v1.yaml'
 
 
 def _resolve_path(path_value: str | Path) -> Path:

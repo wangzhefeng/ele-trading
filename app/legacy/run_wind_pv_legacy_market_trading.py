@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src"
 APP_ROOT = PROJECT_ROOT / "app"
 if str(SRC_ROOT) not in sys.path:
@@ -30,7 +30,7 @@ from run_legacy_data_preparation import (
 )
 
 
-CONFIG_PATH = PROJECT_ROOT / 'configs' / 'wind_pv_legacy_market_trading.yaml'
+CONFIG_PATH = PROJECT_ROOT / 'configs' / 'legacy' / 'wind_pv_legacy_market_trading.yaml'
 
 
 def _resolve_path(path_value: str | Path) -> Path:

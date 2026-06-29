@@ -5,7 +5,7 @@ import sys
 
 import pandas as pd
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
@@ -21,7 +21,7 @@ from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 
 
-CONFIG_PATH = PROJECT_ROOT / 'configs' / 'cvxp_bess_dispatch.yaml'
+CONFIG_PATH = PROJECT_ROOT / 'configs' / 'optimization' / 'cvxp_bess_dispatch.yaml'
 
 
 if __name__ == "__main__":

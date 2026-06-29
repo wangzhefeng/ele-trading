@@ -15,7 +15,7 @@ from ele_trading.utils.io import read_yaml
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_PATH = PROJECT_ROOT / 'configs' / 'user_side_pv_bess_dispatch.yaml'
+CONFIG_PATH = PROJECT_ROOT / 'configs' / 'optimization' / 'user_side_pv_bess_dispatch.yaml'
 
 
 def test_user_side_pv_bess_dispatch_config_can_be_loaded():

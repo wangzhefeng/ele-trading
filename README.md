@@ -125,14 +125,14 @@ uv sync --extra dev
 常用入口：
 
 ```bash
-uv run python app/run_bess_arbitrage.py
-uv run python app/run_mpc_demo.py
-uv run python app/run_two_stage_skeleton.py
-uv run python app/run_backtest.py
-uv run python app/run_user_side_bess_dispatch.py
-uv run python app/run_user_side_pv_dispatch.py
-uv run python app/run_user_side_pv_bess_dispatch.py
-uv run python app/run_wind_pv_bess_capacity_planning_1.py
+uv run python app/optimization/run_bess_arbitrage.py
+uv run python app/optimization/run_mpc_demo.py
+uv run python app/optimization/run_two_stage_skeleton.py
+uv run python app/evaluation/run_backtest.py
+uv run python app/optimization/run_user_side_bess_dispatch.py
+uv run python app/optimization/run_user_side_pv_dispatch.py
+uv run python app/optimization/run_user_side_pv_bess_dispatch.py
+uv run python app/capacity_planning/run_wind_pv_bess_capacity_planning_1.py
 ```
 
 更完整的入口清单见 `app/README.md`。
@@ -157,6 +157,7 @@ uv run python -m pytest -q
 
 ## 协作边界
 
+- Agent 规则入口只维护在 `.agents/AGENTS.md` 和 `.claude/CLAUDE.md`，根目录 `AGENTS.md` / `CLAUDE.md` 刻意不保留。
 - 新算法实现放入 `src/ele_trading/`，入口脚本只负责组装配置、数据和日志输出。
 - 可复用求解/调度内核放在 `optimization/`；容量扫描、场景编排、收益测算和文件导出放在 `capacity_planning/`。
 - 通用工具函数放入 `src/ele_trading/utils/`，包括 IO、日志、时间处理、绘图等。
