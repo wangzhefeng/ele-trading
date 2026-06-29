@@ -35,15 +35,17 @@ ele-trading/
 │   ├── optimization/             # 储能、用户侧、CVXPY、Two-stage 优化
 │   ├── control/                  # 滚动调度封装
 │   ├── evaluation/               # 结算、偏差考核、指标、回测、仿真
-│   ├── capacity_planning/        # PV/风电/BESS/风光储容量规划
+│   ├── capacity_planning/        # BESS/PV/Wind/风光储容量规划（含 models/ 共享引擎）
 │   ├── resource_simulation/      # 风光资源物理仿真与 profile 构造
 │   ├── demand/                   # 最大需量计算
 │   └── utils/                    # IO、日志、时间、数据对齐、绘图工具
-├── app/                          # 可直接运行的 demo/流程入口
-├── configs/                      # YAML 配置样例
-├── data/                         # 最小样例数据、legacy 兼容数据、研究数据
+├── app/                          # 可直接运行的入口（按 optimization/evaluation/capacity_planning/resource_simulation/legacy 分目录）
+├── configs/                      # YAML 配置（按 market/optimization/capacity_planning/resource_simulation/legacy 分目录）
+├── data/                         # 最小样例数据、legacy 兼容数据
 ├── docs/                         # 架构说明与算法笔记
 ├── tests/                        # 单元测试和入口脚本冒烟测试
+├── AGENTS.md                     # 项目 agent 规则唯一权威（含项目硬约束）
+├── CLAUDE.md                     # 指向 AGENTS.md 的短指针
 ├── LOG.md                        # append-only 状态、限制和后续工作记录
 ├── pyproject.toml                # 项目依赖与测试配置
 └── uv.lock                       # uv 锁文件
@@ -94,12 +96,16 @@ ele-trading/
 
 ### `capacity_planning`
 
-容量规划模块覆盖 PV、风电、BESS 和组合系统：
+容量规划模块覆盖 BESS、PV+BESS、Wind+BESS、Wind+PV+BESS 四类场景，共 10 个 planner + 3 个共享调度引擎：
 
-- 联合容量优化：`wind_pv_bess_capacity_optimizer.py`。
-- BESS / Wind+BESS / Wind+PV+BESS：`bess_capacity_operating_planner.py`、`wind_bess_planner.py`、`wind_pv_bess_planner.py`。
-- 可行性、IRR 和多节点扫描：`feasibility_analyzer.py`、`pv_bess_irr_planner.py`、`multi_node_scanner.py`。
-- 分布式储能多柜容量搜索、收益测算和 CSV 导出：`bess_capacity_distributed_planner.py`；调度内核由 `optimization/user_side_bess_distributed_dispatch_class.py` 提供。
+- **第一组 BESS sizing**：`bess_capacity_distributed_planner.py`（多节点 LP）、`bess_capacity_economic_planner.py`（MILP 联合优化）、`bess_capacity_operating_planner.py`（CVXPY 运营优化）。
+- **第二组 PV+BESS**：`pv_bess_planner.py`（二分搜索最小容量）、`pv_bess_irr_planner.py`（三段式 IRR 扫描）。
+- **第三组 Wind+BESS**：`wind_bess_planner.py`（二分搜索）、`wind_bess_irr_planner.py`（两段式 IRR 扫描）。
+- **第四组 Wind+PV+BESS 联合**：`wind_pv_bess_capacity_optimizer.py`（最低成本）、`wind_pv_bess_capacity_planner.py`（最小储能）、`wind_pv_bess_irr_planner.py`（IRR 目标型 + 电价反推）。
+- **共享引擎**（`models/`）：`dispatch_algo.py`（Numba 贪心年度调度）、`resource_bess_planner_core.py`（单源 PV/Wind 贪心 + 二分搜索）、`simulation_model.py`（策略回放仿真）。
+- **辅助**：`feasibility_analyzer.py`（电价-负荷匹配评分）、`multi_node_scanner.py`（多节点 MILP 扫描）。
+
+详见 `src/ele_trading/capacity_planning/README.md`。
 
 ### `resource_simulation`
 
@@ -159,7 +165,7 @@ uv run python -m pytest -q
 
 ## 协作边界
 
-- Agent 规则入口只维护在 `.agents/AGENTS.md` 和 `.claude/CLAUDE.md`，根目录 `AGENTS.md` / `CLAUDE.md` 刻意不保留。
+- Agent 规则的唯一权威是根目录 `AGENTS.md`（含通用准则 + 第 5 节项目硬约束），根目录 `CLAUDE.md` 是指向它的短指针。不要在 `.agents/`、`.claude/`、`.hermes/` 等子目录重建指令副本。
 - 新算法实现放入 `src/ele_trading/`，入口脚本只负责组装配置、数据和日志输出。
 - 可复用求解/调度内核放在 `optimization/`；容量扫描、场景编排、收益测算和文件导出放在 `capacity_planning/`。
 - 通用工具函数放入 `src/ele_trading/utils/`，包括 IO、日志、时间处理、绘图等。
