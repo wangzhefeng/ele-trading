@@ -76,7 +76,7 @@ def _normalize_ele_price(
     time_col: str,
 ) -> tuple[np.ndarray, list[str], pd.DataFrame]:
     if ele_price is None:
-        raise ValueError("ele_price is required for bess_capacity_planner")
+        raise ValueError("ele_price is required for bess_capacity_operating_planner")
 
     price_series = as_time_series(
         ele_price,
@@ -325,7 +325,7 @@ def plan_energy_system(
 ) -> BESSCapacityResult:
     _ = pv_power, wind_input
     if ele_price is None:
-        raise ValueError("ele_price is required for bess_capacity_planner")
+        raise ValueError("ele_price is required for bess_capacity_operating_planner")
 
     best: dict[str, Any] | None = None
     for bess_kwh in np.linspace(0.0, cfg.batt_hi_max_kwh, cfg.search_points):

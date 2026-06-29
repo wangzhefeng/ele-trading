@@ -64,4 +64,4 @@
 
 ## 分布式储能调度
 
-`run_distributed_bess_dispatch()` 提供用户侧分布式储能调度内核，用 `DistributedBESSDispatchInput` 和 `DistributedBESSDispatchResult` 明确输入输出；实现文件为 `user_side_bess_distributed_dispatch_class.py`。容量搜索、收益测算和 CSV 导出仍由 `capacity_planning/distributed_bess_planner.py` 负责调用该内核。
+`run_distributed_bess_dispatch()` 提供用户侧分布式储能调度内核，用 `DistributedBESSDispatchInput` 和 `DistributedBESSDispatchResult` 明确输入输出；实现文件为 `user_side_bess_distributed_dispatch_class.py`。容量搜索、收益测算和 CSV 导出仍由 `capacity_planning/bess_capacity_distributed_planner.py` 负责调用该内核。

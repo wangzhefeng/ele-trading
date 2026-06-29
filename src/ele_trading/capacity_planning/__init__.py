@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from . import bess_capacity_planner
+from . import bess_capacity_operating_planner
 
 from .feasibility_analyzer import (
     FeasibilityAnalyzerConfig, FeasibilityResult,
@@ -46,7 +46,7 @@ from .wind_pv_bess_irr_tuning import (
     iter_resource_scenarios,
     run_wind_pv_bess_irr_resource_tuning,
 )
-from .bess_capacity_sizer import CapacitySizingResult, solve_capacity_sizing
+from .bess_capacity_economic_planner import CapacitySizingResult, solve_capacity_sizing
 from .interfaces import (
     DIST_BESS_CABINET_CAPACITY_KWH,
     DIST_BESS_CABINET_POWER_KW,
@@ -61,7 +61,7 @@ from .interfaces import (
     DistBESSDispatchInput,
     DistBESSDispatchResult,
 )
-from .distributed_bess_planner import (
+from .bess_capacity_distributed_planner import (
     SimulationResult,
     SYSTEMS,
     PRESETS,
@@ -94,7 +94,7 @@ from .distributed_bess_planner import (
 )
 
 __all__ = [
-    'bess_capacity_planner',
+    'bess_capacity_operating_planner',
     'FeasibilityAnalyzerConfig', 'FeasibilityResult',
     'BESSFeasibilityAnalyzer',
     'BESSSizingConfig', 'CapacitySweepRow', 'NodeScanResult',

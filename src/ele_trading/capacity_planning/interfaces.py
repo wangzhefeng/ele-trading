@@ -1,6 +1,6 @@
 """分布式储能（多变压器、多储能柜）测算的输入输出与调度配置类型。
 
-本模块为 capacity_planning 包内 distributed_bess_planner 的数据契约，
+本模块为 capacity_planning 包内 bess_capacity_distributed_planner 的数据契约，
 从 optimization/interfaces.py 迁入，归属分布式储能测算域。
 """
 from __future__ import annotations

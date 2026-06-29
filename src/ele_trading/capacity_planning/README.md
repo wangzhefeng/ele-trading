@@ -800,7 +800,7 @@ $$
 
 ---
 
-### 9. bess_capacity_sizer.py - 储能容量+调度联合优化
+### 9. bess_capacity_economic_planner.py - 储能容量+调度联合优化
 
 **功能**：MILP 联合优化储能容量与调度策略，最大化净套利收益。
 
@@ -836,7 +836,7 @@ annualized_capex = capex_per_kwh * Cap_rated * crf
 
 ---
 
-### 10. distributed_bess_planner.py - 分布式储能测算
+### 10. bess_capacity_distributed_planner.py - 分布式储能测算
 
 **功能**：多变压器公共母线下的分布式储能调度优化。
 
@@ -947,8 +947,8 @@ PVBESSPlanConfig:
 | wind_bess_planner | ✅ | 100% | 完整实现，含平移充电模式 |
 | wind_pv_bess_planner | ✅ | 100% | 完整实现，含能量门槛检查 |
 | wind_pv_bess_irr_planner | ✅ | 100% | 完整实现，IRR 目标型 |
-| bess_capacity_sizer | ✅ | 100% | 完整实现，MILP 联合优化 |
-| distributed_bess_planner | ✅ | 100% | 完整实现，含 v1-v5 预设 |
+| bess_capacity_economic_planner | ✅ | 100% | 完整实现，MILP 联合优化 |
+| bess_capacity_distributed_planner | ✅ | 100% | 完整实现，含 v1-v5 预设 |
 
 **总体评估**：模块实现完整度 **100%**（11个子模块全部实现）。
 

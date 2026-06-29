@@ -36,6 +36,7 @@ ele-trading/
 │   ├── control/                  # 滚动调度封装
 │   ├── evaluation/               # 结算、偏差考核、指标、回测、仿真
 │   ├── capacity_planning/        # PV/风电/BESS/风光储容量规划
+│   ├── resource_simulation/      # 风光资源物理仿真与 profile 构造
 │   ├── demand/                   # 最大需量计算
 │   └── utils/                    # IO、日志、时间、数据对齐、绘图工具
 ├── app/                          # 可直接运行的 demo/流程入口
@@ -96,16 +97,17 @@ ele-trading/
 容量规划模块覆盖 PV、风电、BESS 和组合系统：
 
 - 联合容量优化：`wind_pv_bess_capacity_optimizer.py`。
-- BESS / Wind+BESS / Wind+PV+BESS：`bess_capacity_planner.py`、`wind_bess_planner.py`、`wind_pv_bess_planner.py`。
+- BESS / Wind+BESS / Wind+PV+BESS：`bess_capacity_operating_planner.py`、`wind_bess_planner.py`、`wind_pv_bess_planner.py`。
 - 可行性、IRR 和多节点扫描：`feasibility_analyzer.py`、`pv_bess_irr_planner.py`、`multi_node_scanner.py`。
-- 分布式储能多柜容量搜索、收益测算和 CSV 导出：`distributed_bess_planner.py`；调度内核由 `optimization/user_side_bess_distributed_dispatch_class.py` 提供。
+- 分布式储能多柜容量搜索、收益测算和 CSV 导出：`bess_capacity_distributed_planner.py`；调度内核由 `optimization/user_side_bess_distributed_dispatch_class.py` 提供。
 
 ### `resource_simulation`
 
-风光资源仿真模块覆盖物理出力模拟和 profile 构造：
+风光资源物理出力仿真，输出统一 `SimulationResult`（kW 时序），PV/风电各两版：
 
-- PV/风电物理仿真：`pv_simulation.py`、`wind_simulation.py`。
-- profile 构造与缓存：`pv_profile.py`、`wind_profile.py`。
+- 光伏：`pv_simulation_v1.py`（配置驱动，清晰天空/气象/回放，含缓存）、`pv_simulation_v2.py`（PVSimulator 类）。
+- 风电：`wind_simulation_v1.py`（配置驱动，自动获取气象 + FLH 校准）、`wind_simulation_v2.py`（WindSimulator 类）。
+- 共用模型：`models.py`（`SimulationResult`）。
 
 ### `evaluation`、`control`、`demand`、`utils`
 
