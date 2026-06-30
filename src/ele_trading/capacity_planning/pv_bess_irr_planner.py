@@ -11,7 +11,7 @@ from dataclasses import dataclass, asdict
 import numpy as np
 import pandas as pd
 
-from ..evaluation.metrics import compute_irr
+from .irr_finance import evaluate_levelized_irr
 
 
 @dataclass(slots=True)
@@ -130,13 +130,14 @@ def _compute_single_irr(
     )
 
     om = annual_energy * 1000 * cfg.o_and_m_per_kwh
-    annual_cf = annual_gain - om - cfg.platform_fee_yuan_per_year
-
     bess_capex = bess_mwh * 1000 * cfg.bess_capex_per_kwh
     total_capex = cfg.pv_capex_yuan + bess_capex
-
-    cashflows = [-total_capex] + [annual_cf] * cfg.life_years
-    irr = compute_irr(cashflows)
+    finance = evaluate_levelized_irr(
+        total_capex_yuan=total_capex,
+        annual_revenue_yuan=annual_gain,
+        annual_opex_yuan=om + cfg.platform_fee_yuan_per_year,
+        life_years=cfg.life_years,
+    )
 
     return PVBESSIRRRow(
         bess_mwh=bess_mwh,
@@ -144,9 +145,9 @@ def _compute_single_irr(
         annual_revenue_yuan=round(annual_gain, 2),
         annual_energy_mwh=round(annual_energy, 2),
         annual_om_yuan=round(om, 2),
-        annual_cf_yuan=round(annual_cf, 2),
+        annual_cf_yuan=round(finance.annual_cashflow_yuan, 2),
         total_capex_yuan=round(total_capex, 2),
-        irr_percent=round(irr * 100, 2) if irr > 0 else None,
+        irr_percent=round(finance.irr * 100, 2) if finance.irr > 0 else None,
     )
 
 

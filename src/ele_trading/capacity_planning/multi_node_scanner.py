@@ -20,8 +20,8 @@ from pulp import (
     value,
 )
 
-from ..evaluation.metrics import compute_irr
 from ..utils import check_pulp_status
+from .irr_finance import evaluate_degraded_irr
 
 
 @dataclass(slots=True)
@@ -178,21 +178,20 @@ def _evaluate_with_degradation(
     capex = cap_mwh * 1000.0 * cfg.capex_per_kwh
     opex_y1 = cap_mwh * 1000.0 * cfg.opex_per_kwh_year
 
+    finance = evaluate_degraded_irr(
+        capex_yuan=capex,
+        annual_revenue_y1_yuan=annual_revenue_1,
+        annual_opex_y1_yuan=opex_y1,
+        life_years=cfg.life_years,
+        capacity_end_ratio=cfg.capacity_end_ratio,
+    )
+
     Y = cfg.life_years
     if Y > 1:
         step = (1.0 - cfg.capacity_end_ratio) / (Y - 1)
     else:
         step = 0.0
     year_ratios = [max(cfg.capacity_end_ratio, 1.0 - step * y) for y in range(Y)]
-
-    revenues = [annual_revenue_1 * r for r in year_ratios]
-    opexes = [opex_y1 * r for r in year_ratios]
-    cash_flows = [-capex] + [revenues[y] - opexes[y] for y in range(Y)]
-
-    irr = compute_irr(cash_flows)
-    life_revenue = sum(revenues)
-    life_net = sum(revenues[y] - opexes[y] for y in range(Y))
-
     life_charge = sum(charge_mwh_y1 * r for r in year_ratios)
     life_discharge = sum(discharge_mwh_y1 * r for r in year_ratios)
 
@@ -212,10 +211,10 @@ def _evaluate_with_degradation(
         capacity_mwh=cap_mwh,
         power_mw=round(p_max, 2),
         c_rate_effective=round(c_rate_eff, 3),
-        irr_percent=round(irr * 100, 2),
-        annual_revenue_wan=wan(revenues[0] - opexes[0]),
-        life_revenue_wan=wan(life_revenue),
-        life_net_wan=wan(life_net),
+        irr_percent=round(finance.irr * 100, 2),
+        annual_revenue_wan=wan(finance.annual_revenues_yuan[0] - finance.annual_opexes_yuan[0]),
+        life_revenue_wan=wan(finance.life_revenue_yuan),
+        life_net_wan=wan(finance.life_net_yuan),
         charge_mwh_year1=round(charge_mwh_y1, 2),
         discharge_mwh_year1=round(discharge_mwh_y1, 2),
         utilization=round(utilization, 4),

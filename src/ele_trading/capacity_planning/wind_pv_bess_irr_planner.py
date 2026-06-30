@@ -1,17 +1,21 @@
 """IRR 目标型 Wind+PV+BESS 容量规划。"""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from ele_trading.evaluation.metrics import compute_irr
 from ele_trading.utils.data_alignment import as_time_series, align_to_time
 from ele_trading.utils.num_utils import inclusive_float_range
 from ele_trading.utils.time_index import infer_dt_hours
 from ele_trading.utils.log_util import logger
+from .irr_finance import (
+    backsolve_green_ppa_price,
+    compute_target_irr_gap_metrics,
+    evaluate_levelized_irr,
+)
 from .models.dispatch_algo import dispatch_annual
 
 
@@ -158,35 +162,29 @@ def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[
     # ------------------------------
     # 3.绿电价格/PPA 价格约束
     # ------------------------------
-    # 电网购电量
-    grid_buy_kwh = max(load - used, 0.0)
-    # 反推绿电价格
-    green_price = (
-        cfg.target_owner_price_yuan_per_kwh * load
-        - cfg.grid_buy_price_yuan_per_kwh * grid_buy_kwh
-    ) / used
-    # PPA 价格再扣除绿电附加价
-    ppa_price = green_price - cfg.green_price_adder_yuan_per_kwh
-    # 业主综合电价 = (绿电用电量×绿电价 + 电网购电量×电网电价) / 总用电量
-    owner_avg_price = (
-        green_price * used + cfg.grid_buy_price_yuan_per_kwh * grid_buy_kwh
-    ) / load
+    price = backsolve_green_ppa_price(
+        load_kwh=load,
+        green_used_kwh=used,
+        target_owner_price_yuan_per_kwh=cfg.target_owner_price_yuan_per_kwh,
+        grid_buy_price_yuan_per_kwh=cfg.grid_buy_price_yuan_per_kwh,
+        green_price_adder_yuan_per_kwh=cfg.green_price_adder_yuan_per_kwh,
+    )
 
     row = {
         "wind_mw": wind_mw,
         "pv_mw": pv_mw,
         "bess_mwh": bess_mwh,
-        "green_price": float(green_price),
-        "ppa_price": float(ppa_price),
-        "owner_avg_price": float(owner_avg_price),
+        "green_price": float(price.green_price_yuan_per_kwh),
+        "ppa_price": float(price.ppa_price_yuan_per_kwh),
+        "owner_avg_price": float(price.owner_avg_price_yuan_per_kwh),
         "annual_green_used_kwh": float(used),
-        "annual_grid_buy_kwh": float(grid_buy_kwh),
+        "annual_grid_buy_kwh": float(price.annual_grid_buy_kwh),
         "self_use_ratio": float(self_use),
         "load_cover_ratio": float(cover),
         "curtail_kwh": float(st.get("curtail_kwh", 0.0)),
     }
     # 候选组合被标记为 non_positive_ppa，不会作为可行解，但会进入 diagnostics
-    if green_price <= 0.0 or ppa_price <= 0.0:
+    if price.green_price_yuan_per_kwh <= 0.0 or price.ppa_price_yuan_per_kwh <= 0.0:
         return {**row, "reason": "non_positive_ppa", "irr": np.nan, "irr_gap": np.inf}
     # ------------------------------
     # 5.经济模型和 IRR
@@ -197,21 +195,20 @@ def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[
         + pv_mw * 1000.0 * cfg.pv_capex_yuan_per_kwp
         + bess_mwh * 1000.0 * cfg.bess_capex_yuan_per_kwh
     )
-    # PPA 口径年收入
-    annual_revenue = ppa_price * used
-    # 年运维
-    annual_opex = total_capex * cfg.annual_opex_ratio
-    # 年现金流
-    annual_cf = annual_revenue - annual_opex
-    # 输入现金流序列，计算 IRR
-    irr = compute_irr([-total_capex] + [annual_cf] * int(cfg.life_years))
+    finance = evaluate_levelized_irr(
+        total_capex_yuan=total_capex,
+        annual_revenue_yuan=price.ppa_price_yuan_per_kwh * used,
+        annual_opex_yuan=total_capex * cfg.annual_opex_ratio,
+        life_years=int(cfg.life_years),
+    )
+    irr = finance.irr
     irr_gap = abs(irr - cfg.target_irr)
 
     row.update({
-        "total_capex_yuan": float(total_capex),
-        "annual_revenue_yuan": float(annual_revenue),
-        "annual_opex_yuan": float(annual_opex),
-        "annual_cashflow_yuan": float(annual_cf),
+        "total_capex_yuan": float(finance.total_capex_yuan),
+        "annual_revenue_yuan": float(finance.annual_revenue_yuan),
+        "annual_opex_yuan": float(finance.annual_opex_yuan),
+        "annual_cashflow_yuan": float(finance.annual_cashflow_yuan),
         "irr": float(irr),
         "irr_gap": float(irr_gap),
     })
@@ -243,16 +240,6 @@ def _capacity_candidates(min_value: float, max_value: float, step: float) -> lis
     if max_value <= 1e-9:
         return [0.0]
     return [float(x) for x in inclusive_float_range(float(min_value), float(max_value), float(step))]
-
-
-def _required_level_cashflow(total_capex_yuan: float, target_irr: float, life_years: int) -> float:
-    """给定初始投资和目标 IRR，反推等额年度净现金流。"""
-    if total_capex_yuan <= 0 or life_years <= 0:
-        return 0.0
-    if abs(target_irr) <= 1e-12:
-        return total_capex_yuan / life_years
-    factor = target_irr / (1.0 - (1.0 + target_irr) ** (-life_years))
-    return total_capex_yuan * factor
 
 
 def _summary_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -296,41 +283,18 @@ def _target_gap_metrics(row: dict[str, Any] | None, cfg: WindPVBESSIRRPlanConfig
     if row is None:
         return None
 
-    total_capex = float(row.get("total_capex_yuan", 0.0) or 0.0)
-    annual_cf = float(row.get("annual_cashflow_yuan", 0.0) or 0.0)
-    annual_opex = float(row.get("annual_opex_yuan", 0.0) or 0.0)
-    used = float(row.get("annual_green_used_kwh", 0.0) or 0.0)
-    grid_buy = float(row.get("annual_grid_buy_kwh", 0.0) or 0.0)
-    load = used + grid_buy
-
-    required_cf = _required_level_cashflow(total_capex, cfg.target_irr, int(cfg.life_years))
-    required_green_price = (required_cf + annual_opex) / used if used > 1e-9 else np.nan
-    required_ppa_price = required_green_price - cfg.green_price_adder_yuan_per_kwh if used > 1e-9 else np.nan
-    required_owner_avg_price = (
-        (required_green_price * used + cfg.grid_buy_price_yuan_per_kwh * grid_buy) / load
-        if used > 1e-9 and load > 1e-9
-        else np.nan
-    )
-    max_capex_for_target = (
-        annual_cf / _required_level_cashflow(1.0, cfg.target_irr, int(cfg.life_years))
-        if annual_cf > 0
-        else 0.0
-    )
-    capex_reduction = max(total_capex - max_capex_for_target, 0.0)
-
-    return {
-        "target_irr": float(cfg.target_irr),
-        "required_annual_cashflow_yuan": float(required_cf),
-        "actual_annual_cashflow_yuan": float(annual_cf),
-        "annual_cashflow_gap_yuan": float(required_cf - annual_cf),
-        "required_green_price_yuan_per_kwh": float(required_green_price),
-        "required_ppa_price_yuan_per_kwh": float(required_ppa_price),
-        "required_owner_avg_price_yuan_per_kwh": float(required_owner_avg_price),
-        "owner_avg_price_delta_yuan_per_kwh": float(required_owner_avg_price - cfg.target_owner_price_yuan_per_kwh),
-        "max_capex_for_target_irr_yuan": float(max_capex_for_target),
-        "capex_reduction_needed_yuan": float(capex_reduction),
-        "capex_reduction_needed_ratio": float(capex_reduction / total_capex) if total_capex > 1e-9 else 0.0,
-    }
+    return asdict(compute_target_irr_gap_metrics(
+        total_capex_yuan=float(row.get("total_capex_yuan", 0.0) or 0.0),
+        annual_cashflow_yuan=float(row.get("annual_cashflow_yuan", 0.0) or 0.0),
+        annual_opex_yuan=float(row.get("annual_opex_yuan", 0.0) or 0.0),
+        green_used_kwh=float(row.get("annual_green_used_kwh", 0.0) or 0.0),
+        grid_buy_kwh=float(row.get("annual_grid_buy_kwh", 0.0) or 0.0),
+        target_irr=float(cfg.target_irr),
+        life_years=int(cfg.life_years),
+        grid_buy_price_yuan_per_kwh=float(cfg.grid_buy_price_yuan_per_kwh),
+        green_price_adder_yuan_per_kwh=float(cfg.green_price_adder_yuan_per_kwh),
+        target_owner_price_yuan_per_kwh=float(cfg.target_owner_price_yuan_per_kwh),
+    ))
 
 
 def _build_diagnostic_summary(total_combinations: int, reason_counts: dict[str, int], evaluated_rows: list[dict[str, Any]], cfg: WindPVBESSIRRPlanConfig) -> dict[str, Any]:
