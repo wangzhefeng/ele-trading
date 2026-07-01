@@ -406,3 +406,341 @@ V1 列为“后续扩展”的合同，V2 按是否在 V2 落地重新归类：
 - **新增**：每个兼容 shim 须注明 sunset（计划移除的版本/条件）。
 - **新增**：修改任一调度路径的物理常数（效率/SOC 口径/需量口径），须同步 canonical 合同与 golden/oracle，不得仅改本地。
 - **新增**：V2 内容为本维护规则的当前权威；V1 仅作历史。后续小修订直接改 V2；下一个完整基线再新增 `## V3`。
+
+## V3 - 源码核实修正：物理常数收敛、调度碎片化全景与导入阻断修复
+
+> **构建信息（provenance）**
+> - 构建代理（Agent）：Machine-C（MC，Hermes coder profile，主会话直接构建）
+> - 构建模型（Model）：glm-5.2（1M context）
+> - 构建日期：2026-07-02
+> - 构建依据：通读 `capacity_planning` 全部 31 个文件（`.py` + `.md`）及 `app/capacity_planning/` 全部 runner、`tests/` 相关测试、`src/ele_trading/utils/` 公共 helper、`src/ele_trading/evaluation/`。所有论断附源码行号，可逐条复核。
+> - 补充修订（同日，同代理/模型）：在源码二次核实基础上增补 6 个 V3 变更摘要表未覆盖的结构维度（PV 单位命名、计算复杂度、运行时数据质量、中间结果持久化、planner 迁移状态、config schema 校验），对应补充诊断 G–L、第一性原理准则 4 条、对抗式审查 4 条、实施项 P4-d 至 P4-i、维护规则 3 条。
+> - 与 V1/V2 的关系：V3 是 V1+V2 的完整修订基线。V1/V2 保留为历史与变更溯源。V3 直接继承 V2 的核心架构决策（canonical 物理核、仿真→结算 seam、TimeIndex、双视角 KPI、行为优先验证），并修正 V2 中因源码核实不完整导致的诊断缺口、实施顺序矛盾和遗漏的阻断级 bug。自 V3 起所有新增规划以 V3 为准。
+
+### V2 → V3 变更摘要
+
+| 维度 | V2 立场 | V3 修正 | 触发依据（源码行号） |
+|---|---|---|---|
+| 效率口径碎片化 | 3 种口径（`eta_rt**0.5` / 0.95 / 0.92） | 实测 **5 种并存**，含 0.92/0.95 混合口径 | `dispatch_algo.py:70-71`；`resource_bess_planner_core.py:41-42`；`interfaces.py:109-110,156-157`；`bess_capacity_economic_planner.py:49-50`；`bess_capacity_operating_planner.py:36-37`；`bess_capacity_distributed_planner.py:163`；`wind_pv_bess_capacity_planner.py:46,109` |
+| 调度路径数量 | 5 条 | 实测 **6 条**，漏了 `wind_pv_bess_capacity_planner.py` 内嵌的独立 `_dispatch_numba` | `wind_pv_bess_capacity_planner.py:82-145`（与 `dispatch_algo.py:24-155` 几乎同构但独立维护） |
+| cvxpy 延迟导入 | 未提及（V1/V2 均遗漏） | **P0 阻断级 bug**：顶层 `import cvxpy` 违反 AGENTS.md 硬约束，阻塞整个 `capacity_planning` 包 | `cvxp_bess_dispatch.py:3`；`distributed_bess_dispatch.py:3`；经 `bess_capacity_distributed_planner.py:26` → `__init__.py:68` 链式触发 |
+| data/ 硬编码 | "实测仅 1 处"（`run_wind_pv_bess_irr_planning.py:317`） | 实测 **≥2 处**直接硬编码 + 多处经配置间接指向 `data/` | `run_wind_pv_bess_irr_planning.py:317`；`run_wind_bess_capacity_planning.py:173`；`run_dist_bess_dispatch.py:31`（经 `cfg['data']['base_dir']`） |
+| 实施顺序 | P0-b 先录 golden，P1-a 后收敛效率口径 | **顺序反转**：效率口径未收敛时录的 golden 在 P1-a 后全部失效 | 逻辑矛盾：golden 依赖物理常数，物理常数在 P1-a 变更 |
+| canonical 核建设量 | "优先改造现有路径" | 实测**无任何现有路径能同时产出逐时步+SOC+月净负荷峰值**，接近重写 | `dispatch_annual` 只输出标量；`resource_core` 无 net_load/月峰值；`cvxp/distributed` 无月峰值汇总 |
+| Python fallback | "须等价或显式失败" | 当前 fallback **静默产出错误数值**（`bess_dis=0`，弃电量推导物理错误），不是"简化" | `dispatch_algo.py:183-200`；`wind_pv_bess_capacity_planner.py:167-171` |
+| SOC 单位冲突 | "分数 vs kWh" | 实质是**输出序列 SOC 单位不统一**（分数/kWh/无序列三种），非输入端冲突 | `resource_core` 输出分数(`:112`)；`cvxp/distributed` 输出 kWh；`dispatch_annual` 不输出 SOC 序列 |
+| simulation_model 定位 | 仅 V1 诊断表提了一句 | 补入 V3：其 `revenue_calculation()` 含独立需量计算逻辑，与规划中的 `settlement.py` 直接职责重叠 | `simulation_model.py:154-205`（`revenue_calculation`，含 `:200-203` 月度需量折算） |
+| "搜索 vs 优化"范围 | 仅覆盖风/光定址 | 延伸到 **BESS sizing**：同一决策变量（储能容量）有三种方法论（网格搜索/二分搜索/MILP） | `wind_pv_bess_irr_planner.py:390-394`（网格）；`resource_core:340-399`（二分）；`bess_capacity_economic_planner.py:44-256`（PuLP MILP） |
+| 代码残留 | 未提及 | `resource_bess_planner_core.py:134` 有 `cfg.soc/WESS` 语法残留（被 `if False` 短路掩盖） | `resource_bess_planner_core.py:134` |
+
+### 补充诊断：V3 新增维度（源码二次核实）
+
+V2→V3 变更摘要表已覆盖物理常数、调度路径、导入阻断等核心发现。以下 6 个维度是 V3 变更摘要表未覆盖、但同样影响投资测算可信度的结构性问题，作为 V3 的补充诊断。
+
+#### 维度 G：PV 容量单位命名掩盖物理含义（命名 bug）
+
+`wind_pv_bess_irr_planner.py` 的 `pv_mw` 字段（`:69`）名义单位是 MW，但实际语义是 **MWp（峰值装机容量）**：CAPEX 计算 `pv_mw * 1000.0 * cfg.pv_capex_yuan_per_kwp`（`:195`）隐含了 MWp→kWp 换算，调度缩放 `pv_unit_arr * float(pv_mw) * 1000.0`（`:393`）同样隐含此换算。同一仓库内 `wind_pv_bess_planner.py` 在不同函数中混用 `pv_mw`（`:216`）和 `pv_kwp`（`:371`），语义不一致。
+
+物理上 `pv_mw=1.0`（MWp）与 `pv_kwp=1000` 等价，但读者会把 `pv_mw` 当成功率（MW），与确为功率单位的 `wind_mw` 混淆。这不是纯命名问题——它掩盖了光伏装机（MWp，峰值容量）与风电装机（MW，额定功率）的物理语义差异。
+
+**V3 处置**：P4 级。IRR planner 的 PV 字段统一为 `pv_mwp` 或 `pv_kwp`，消除 `× 1000.0` 隐含换算。`WindPVBESSIRRResult` 和 `WindPVBESSIRRPlanConfig` 的字段名同步更新，旧名保留为 property alias 至 sunset。
+
+#### 维度 H：网格扫描计算复杂度未标注
+
+典型 3D 网格扫描规模：wind（29 点） × pv（15 点） × bess（201 点） = 87,435 次 dispatch 调用 × 8760 时步/调用。numba 路径 ≈0.9s；Python fallback（当前静默错误）>10s。叠加 `wind_pv_bess_irr_tuning` 的 coarse/fine 嵌套后，单次运行可达分钟级。当前无任何复杂度标注，用户无法预判运行时间。
+
+**V3 处置**：P4 级。每个 scanner/planner 的 docstring 必须标注组合规模公式和预期 wall-clock 时间（numba / Python 两路径）。超过 60s 的扫描必须支持并行化或已有级联粗-细搜索。
+
+#### 维度 I：运行时数据质量检查缺失
+
+当前无机制检测输入数据的静默错误：时间戳空洞、负价格、分辨率与 `dt` 不匹配、负荷/发电/价格序列长度不一致。TimeIndex canonization（P2-b）解决时间轴结构层一致性，但不覆盖数值层检查（负值、异常值、全零序列）。
+
+**V3 处置**：P4 级。在 canonical 核入口或 planner 的 `_normalize_inputs()` 阶段插入运行时断言：非负性（价格允许负但需特殊标注）、序列同长、全零检测。失败时 `raise ValueError` 明确原因，而非静默产出错误指标。
+
+#### 维度 J：中间结果无持久化
+
+当前 dispatch 结果仅在内存中传递。CPU 密集型扫描（87K 组合）失败后，所有中间结果丢失，无法事后审计。canonical 核建成后，逐时步 + 月度结算的完整输出也不落盘，无法支持 IRR 结果的事后复算。
+
+**V3 处置**：P4 级。canonical dispatch + settlement 结果支持写入 parquet（`results/<run_id>/`），作为可选项。golden-output 基线（P3-a）是此能力的首个消费者。
+
+#### 维度 K：现有 planner 缺逐个迁移状态标注
+
+V3 已在"搜索 vs 优化"小节声明了 BESS sizing 的三种方法论，但现有 8 个 planner 入口（`plan_wind_pv_bess_for_target_irr`、`plan_wind_pv_bess`、`plan_wind_bess_system`、`plan_pv_bess_system`、`evaluate_fixed_wind_pv_bess_capacity`、`scan_pv_bess_irr`、`scan_wind_bess_irr`、`run_capacity_search`）尚未逐个标注 V3 迁移状态（保留/改造/冻结/弃用）和 sunset 时间。
+
+**V3 处置**：P4 级。补充 planner 迁移状态表（见下方"planner 迁移状态"小节）。
+
+#### 维度 L：config YAML 加载无 schema 校验
+
+`read_yaml()` 仅做 YAML 解析，不校验字段存在性和类型。配置缺字段时，错误在 runner 深处（如 `_to_config()` 的 `KeyError`）才暴露，排查成本高。
+
+**V3 处置**：P4 级。config 加载后做 schema 检查（字段存在性 + 类型），在 runner 启动时即报错。
+
+### 目标
+
+V3 继承 V2"可证伪优先 + canonical 唯一"的核心目标，但把**阻断级修复**提到一切计划之前。V3 的核心判断是：在物理常数（效率/SOC 口径）未收敛、cvxpy 导入未解耦之前，任何 golden 基线、canonical 核改造和月度结算建设都建立在流沙上。
+
+V3 的交付优先级：
+
+1. **P0-阻断修复**（不解决则后续全部无效）：cvxpy 延迟导入；效率口径收敛到单一合同。
+2. **P1-物理可证伪基础**：canonical 物理核（基于 `resource_core` 重写，非改造）；24h 手算 oracle。
+3. **P2-结算链**：`settlement.py`（含需量计算）；`年=Σ月=Σ时步` 不变量。
+4. **P3-验证基础设施**：golden-output 回归（在 P1 完成后录制）；TimeIndex canonization。
+5. **P4-收敛与清理**：data/ 硬编码路径修复；死代码清理（内嵌 `_dispatch_numba`、`simulation_model` 需量逻辑归属）；BESS sizing 方法论声明。
+
+### P0-阻断修复（V3 新增，最高优先级）
+
+#### P0-1 cvxpy 延迟导入修复
+
+**问题**：AGENTS.md 硬约束明确要求"`cvxpy` 是可选依赖：CVXPY 路径通过 `__getattr__` 延迟导入，缺失时 PuLP/Pyomo 路径正常可用，不阻塞项目主链路"。当前实现违反此约束：
+
+- `models/cvxp_bess_dispatch.py:3` — `import cvxpy as cp`（顶层）
+- `models/distributed_bess_dispatch.py:3` — `import cvxpy as cp`（顶层）
+- `bess_capacity_distributed_planner.py:26` — `from .models.distributed_bess_dispatch import DistributedBESSDispatcher`（顶层，触发 cvxpy 导入）
+- `__init__.py:68` — `from .bess_capacity_distributed_planner import ...`（顶层，链式触发）
+
+后果：`import ele_trading.capacity_planning` 即触发 cvxpy 导入。cvxpy 缺失时，整个包不可用——包括不依赖 cvxpy 的 PuLP sizing、Pyomo 路径、IRR planner、贪心调度。
+
+**修复方案**：
+- `cvxp_bess_dispatch.py` 和 `distributed_bess_dispatch.py` 内部改为函数级 `import cvxpy as cp`（在 `solve()` / `_solve_lp()` 内部导入）。
+- `bess_capacity_distributed_planner.py` 对 `DistributedBESSDispatcher` 的导入改为 `__getattr__` 延迟加载或 TYPE_CHECKING 守卫。
+- `__init__.py` 中 cvxpy 相关的导出项走 `__getattr__` 机制。
+- 验证：`pip uninstall cvxpy` 后 `import ele_trading.capacity_planning` 成功，PuLP/IRR 路径正常可用。
+
+#### P0-2 效率口径收敛
+
+**现状全景**（V3 实测，5 种并存）：
+
+| 路径 | 充电效率 | 放电效率 | 往返效率 | 源码行号 |
+|---|---|---|---|---|
+| `dispatch_algo._dispatch_annual_numba` | `eta_rt**0.5` | `eta_rt**0.5` | `eta_rt`（调用方传 0.92）→ 单边 ≈0.959 | `dispatch_algo.py:70-71` |
+| `wind_pv_bess_capacity_planner._dispatch_numba` | `eta**0.5` | `eta**0.5` | `eta`（配置传 0.92）→ 单边 ≈0.959 | `wind_pv_bess_capacity_planner.py:109-110` |
+| `resource_bess_planner_core` | 0.92 | 0.92 | **0.8464** | `resource_bess_planner_core.py:41-42` |
+| `cvxp_bess_dispatch` / `distributed_bess_dispatch` | 0.95 | 0.95 | **0.9025** | `interfaces.py:109-110,156-157` |
+| `bess_capacity_economic_planner` | 0.95 | 0.95 | **0.9025** | `bess_capacity_economic_planner.py:49-50` |
+| `bess_capacity_operating_planner` | **0.92** | **0.95** | **0.874**（混合！） | `bess_capacity_operating_planner.py:36-37` |
+| `bess_capacity_distributed_planner.build_devices_info` | **0.92** | **0.95** | **0.874**（混合！） | `bess_capacity_distributed_planner.py:163` |
+
+同一项目内，储能往返效率从 0.8464 到 0.9025 跨越 5.6 个百分点，直接改变 IRR 和 sizing 结论。
+
+**收敛方案**：
+- 定义唯一物理常数合同 `BESSPhysicsContract`（dataclass），字段：`eta_charge`、`eta_discharge`、`soc_unit`（"kwh" | "fraction"）、`c_rate_definition`。
+- 所有调度路径从该合同读取效率参数，禁止局部默认值。
+- 过渡期：各路径现有默认值保留为 fallback，但新增 `deprecation_warning` 指向合同。
+- V3 不预设具体效率数值（0.92/0.95 还是其他），由 wang zf 在合同定义时确定；V3 只负责收敛到单一来源。
+
+### 调度路径全景分类（V3 修正，6 条）
+
+V2 列了 5 条调度路径，V3 实测有 6 条。新增的第 6 条是 `wind_pv_bess_capacity_planner.py:82-145` 内嵌的 `_dispatch_numba`——它与 `dispatch_algo.py` 的 `_dispatch_annual_numba` 几乎同构（同为贪心 surplus→charge / deficit→discharge），但独立维护，签名不同、无 `switch_gap_steps`、无 `other_kw`、Python fallback 也不同。这是比 V2 认知更严重的代码重复。
+
+| # | 路径 | 物理模型 | 输出粒度 | SOC 输出 | 效率口径 | V3 定位 |
+|---|---|---|---|---|---|---|
+| 1 | `dispatch_algo.dispatch_annual` | 贪心平衡（wind+pv+other+BESS） | **仅年度标量** | 无序列 | `eta_rt**0.5` | canonical 演进底座候选；补时步/SOC/月峰值后升级 |
+| 2 | `wind_pv_bess_capacity_planner._dispatch_numba` | 贪心平衡（wind+pv+BESS） | **仅年度标量** | 无序列 | `eta**0.5` | **与 #1 重复**，V3 标记为死代码候选，统一到 #1 |
+| 3 | `resource_bess_planner_core.simulate_dispatch` | 贪心平衡（单源+BESS） | **逐时步** | 分数 | 0.92/0.92 | canonical 核重写底座（输出最接近目标，但无 net_load/月峰值） |
+| 4 | `cvxp_bess_dispatch.CvxpBESSDispatcher` | CVXPY 凸规划（单节点） | **逐时步** | kWh | 0.95/0.95 | 异范围模型（运营调度），不作投资测算结算上游 |
+| 5 | `distributed_bess_dispatch.DistributedBESSDispatcher` | CVXPY 凸规划（多变压器） | **逐时步** | kWh | 0.95/0.95 | 异范围模型；其 sliding_window 需量逻辑作为 canonical 月峰值实现参考 |
+| 6 | `bess_capacity_economic_planner.solve_capacity_sizing` | PuLP MILP（sizing+调度联合优化） | **逐时步** | kWh | 0.95/0.95 | sizing 优化器；与 canonical 关系：sizing 结果再经 canonical 复算结算 |
+
+### canonical 物理核（V3 修正建设量评估）
+
+V2 说"优先以现有能产出逐时步 + SOC + 每月净负荷峰值的路径为底座改造"。V3 实测：**没有任何一条现有路径能同时产出这三个输出**。
+
+| 输出项 | dispatch_annual | resource_core | cvxp | distributed |
+|---|---|---|---|---|
+| 逐时步序列 | ✗（仅标量） | ✓ | ✓ | ✓ |
+| SOC 序列 | ✗ | ✓（分数） | ✓（kWh） | ✓（kWh） |
+| 月净负荷峰值 | ✗ | ✗（无 net_load） | ✗（有 net_load 但无月峰值汇总） | ✗（有 sliding_window 但无月峰值输出字段） |
+| net_load 序列 | ✗ | ✗ | ✗ | ✓ |
+
+**V3 结论**：canonical 核应基于 `resource_core.simulate_dispatch` 的循环结构**重写**（而非"改造"），因为：
+- `resource_core` 输出逐时步 + SOC，离目标最近；
+- 但需新增 net_load 计算、月度峰值聚合、metadata 输出；
+- 且需从"单源"扩展到"多源（wind+pv+other）"。
+
+canonical 核不新建目录，放 `models/canonical_dispatch.py`（继承 V2 命名）。核心函数签名：
+
+```python
+def canonical_dispatch(
+    load_kw: np.ndarray,
+    generation_kw: dict[str, np.ndarray],  # {"wind": ..., "pv": ..., "other": ...}
+    bess: BESSPhysicsContract,
+    bess_capacity_kwh: float,
+    time_index: TimeIndex,
+    switch_gap_steps: int = 0,
+) -> DispatchSimulationResult
+```
+
+### Python fallback 问题（V3 显式升级为 bug）
+
+V2 保留 V1 的"numba/Python 须等价否则失败"规则。V3 实测发现：当前 Python fallback 不是"简化"，而是**静默产出物理错误数值**：
+
+- `dispatch_algo.py:183-200`：Python fallback 设 `bess_dis = 0.0`（不模拟充放电），然后通过 `curtail_e = max(surplus_e - (gen_e - used_e - bess_dis), 0.0)` 推导弃电量。在有 BESS 配置时，这条路径返回的弃电量和消纳量都是错误的。
+- `wind_pv_bess_capacity_planner.py:167-171`：同样设 `b = 0.0`。
+
+**V3 处置**：在 P1 canonical 核建设中，Python fallback 必须实现与 numba 等价的完整 BESS 仿真（贪心逻辑不复杂，纯 Python 可承受）。在 canonical 核落地前，现有 fallback 路径加 `RuntimeError("Python fallback does not simulate BESS; results are physically incorrect when batt_kwh > 0")`，而非静默返回错误数值。
+
+### 仿真→结算 seam 合同（继承 V2，补 net_load 强制性）
+
+继承 V2 的 `DispatchSimulationResult` 字段定义，V3 新增约束：
+
+- `net_load_kwh`（逐时步净负荷 = load - generation + charge - discharge）为**必填字段**，不可缺失。需量电费计算依赖此序列的月内峰值，不可由月度电量聚合反推。
+- `monthly_net_load_peak_kw` 由 canonical 核在仿真时直接计算（按结算周期和滑窗口径），不从 `net_load_kwh` 事后聚合（避免口径二次分裂）。
+
+`MonthlySettlementResult` 继承 V2 字段定义，不修改。
+
+### 目标分层与模块分布（V3 修正）
+
+| 目标层 | V3 落地动作 | 命名 | 与 V2 的差异 |
+|---|---|---|---|
+| 物理常数合同 | **V3 新增 P0 层**：定义 `BESSPhysicsContract` | `models/physics_contract.py` 或 `interfaces.py` 内 | V2 无此层 |
+| 运行仿真 | 落地 canonical 核（基于 resource_core **重写**） | `models/canonical_dispatch.py` | V2 说"改造"，V3 修正为"重写" |
+| 死代码清理 | **V3 新增**：删除 `wind_pv_bess_capacity_planner._dispatch_numba`，统一到 canonical | 原地清理 | V2 未发现此重复 |
+| 需量计算归属 | **V3 新增**：`simulation_model.revenue_calculation()` 的需量逻辑迁入 `settlement.py` | `simulation_model.py:200-203` → `settlement.py` | V2 完全遗漏 simulation_model 的需量计算 |
+| 结算 | 新建（V3 必交付） | `settlement.py` | 同 V2 |
+| 财务 | 扩展 `irr_finance.py` | 保留 | 同 V2 |
+| 案例聚合 | 仅定合同 | 合同先行 | 同 V2 |
+| 编排入口 | 保留现有入口 | 不动 | 同 V2 |
+
+文件/目录搬家 V3 **不做**，继承 V2 规则。
+
+### "搜索 vs 优化" canonical 声明（V3 扩展到 BESS sizing）
+
+继承 V2 对风/光定址的方法论声明要求，V3 扩展到 BESS sizing：
+
+当前 BESS 容量决策有三种方法论并存：
+
+| 路径 | 方法论 | 决策变量类型 | 源码 |
+|---|---|---|---|
+| `wind_pv_bess_irr_planner` | 网格搜索（`_capacity_candidates` 枚举） | 离散（步长 10MWh） | `wind_pv_bess_irr_planner.py:232-242,390-394` |
+| `resource_core.find_min_capacity_bisect` | 二分搜索 | 连续（容差 0.1MWh） | `resource_bess_planner_core.py:340-399` |
+| `bess_capacity_economic_planner.solve_capacity_sizing` | PuLP MILP 联合优化 | 连续（Cap_rated 为 LpVariable） | `bess_capacity_economic_planner.py:141,44-256` |
+
+V3 要求编码前声明：
+- BESS sizing 的 canonical 方法论：是 (a) 经 canonical 物理核复算的网格搜索，还是 (b) MILP 联合优化后经 canonical 复算？
+- 网格搜索路径须标注网格分辨率与对 IRR 的敏感性。
+- 二分搜索路径须标注适用前提（覆盖率/自用率对容量的单调性假设）。
+- MILP 路径须标注其内部调度模型与 canonical 的关系（sizing 结果必须经 canonical 复算结算，不可直接用 MILP 内部目标值做 IRR 上游）。
+
+### planner 迁移状态（V3 补充，对应维度 K）
+
+现有 8 个 planner 入口的 V3 迁移状态：
+
+| planner 入口 | V3 状态 | 动作 | sunset |
+|---|---|---|---|
+| `plan_wind_pv_bess_for_target_irr` | 改造 | 内部迁移到 canonical + settlement 流水线；外部入口和返回字段不变 | — |
+| `plan_wind_pv_bess` | 改造 | 同上；PV 搜索沿用现有 coarse/fine | — |
+| `plan_wind_bess_system` / `plan_pv_bess_system` | 改造 | 资源特定路径，内部 `resource_core` 迁移到 canonical 核 | — |
+| `evaluate_fixed_wind_pv_bess_capacity` | 保留 | 已适配 canonical；无 BESS 时 `dispatch_annual` 保留为兼容 | — |
+| `scan_pv_bess_irr` / `scan_wind_bess_irr` | 冻结 | 仅修复阻断级 bug（效率合同、cvxpy 导入），不新增功能 | 2027-01（或下一完整基线） |
+| `solve_capacity_sizing`（PuLP MILP） | 保留 | sizing 优化器；与 canonical 的关系见上方声明（sizing 结果经 canonical 复算结算） | — |
+| `run_capacity_search`（分布式） | 保留 | 分布式场景，使用 `DistributedBESSDispatcher`；不作投资测算结算上游 | — |
+
+### 第一性原理判断准则（V3 增订）
+
+继承 V2 全部准则，增订：
+
+- **阻断优先**：cvxpy 延迟导入和效率口径收敛是前置阻断项，未解决前不投入 golden/canonical 建设。
+- **物理常数单一来源**：所有调度路径的效率/SOC 口径从 `BESSPhysicsContract` 读取，禁止局部默认值。新增路径不接入合同则审查否决。
+- **fallback 不可静默错误**：Python fallback 在 BESS 配置 > 0 时必须模拟充放电，或在无法等价时显式 `raise`，禁止返回 `bess_dis=0` 的错误数值。
+- **重复调度核零容忍**：项目内同一物理模型（贪心平衡）只允许一份实现。新增第二份须证明输入/输出/约束有本质差异。
+- **单位语义精确**：装机容量（MWp/kWp）与额定功率（MW/kW）不可混用同一字段名。`pv_mw` 实为 MWp 须更名，隐含单位换算（`× 1000.0`）须消除。
+- **复杂度透明**：网格/二分/MILP 扫描入口必须标注组合规模公式和预期 wall-clock 时间，用户可预判运行成本。
+- **输入数据先验检查**：dispatch 前须检测时间轴连续性、序列同长、异常值（全零、负价格未标注），失败早于仿真。
+- **中间结果可追溯**：CPU 密集型扫描的 dispatch/settlement 中间结果须可持久化，支持事后审计和 IRR 复算。
+
+### 对抗式审查（V3 增订）
+
+继承 V2 全部审查条目，增订：
+
+- 若 `import ele_trading.capacity_planning` 在 cvxpy 缺失时失败，审查否决。
+- 若任一调度路径使用未从 `BESSPhysicsContract` 读取的效率参数，审查否决。
+- 若 Python fallback 在 `batt_kwh > 0` 时返回 `bess_dis = 0` 且未 raise，审查否决。
+- 若存在两份独立的贪心调度 numba 实现（如 `dispatch_annual` 与 `wind_pv_bess_capacity_planner._dispatch_numba`），审查否决——除非证明本质差异。
+- 若 golden-output 回归基线在效率口径收敛之前录制，审查否决（基线会在物理常数变更后失效）。
+- 若 BESS sizing 结果（来自网格/二分/MILP 任一路径）未经 canonical 物理核复算结算就进入 IRR 计算，审查否决。
+- **新增**：若新增/修改的 planner 或 dataclass 字段名隐含单位换算（如 `pv_mw` 实为 MWp 且内部 `× 1000.0`），审查否决——须显式命名（`pv_mwp` / `pv_kwp`）。
+- **新增**：若扫描入口未标注组合规模和预期 wall-clock 时间，审查否决。
+- **新增**：若输入数据未通过运行时质量检查（时间轴连续、序列同长、异常值检测）就进入 dispatch，审查否决。
+- **新增**：若 planner 入口未在本文档"planner 迁移状态"表中登记其 V3 状态（保留/改造/冻结/弃用），审查否决。
+
+### 实施顺序（V3 修正）
+
+V2 实施顺序的核心问题是 P0-b（golden 基线）在 P1-a（效率收敛）之前——物理常数未定时录的 golden 在常数变更后全部失效。V3 把效率收敛和 cvxpy 修复提到最前。
+
+1. **P0-1**：修复 cvxpy 延迟导入（函数级导入 + `__getattr__`）。→ 验证：`pip uninstall cvxpy; python -c "import ele_trading.capacity_planning"` 成功，PuLP/IRR 路径正常。
+2. **P0-2**：定义 `BESSPhysicsContract`，收敛全部 6 条调度路径的效率参数到单一合同。→ 验证：6 条路径效率参数同源；golden 偏差记录归档（此时允许偏差，因修 bug 必然变化）。
+3. **P0-3**：修复 `resource_bess_planner_core.py:134` 代码残留（`cfg.soc/WESS`）。→ 验证：`compileall` 通过。
+4. **P1-a**：建立 24h 手算 oracle（固定发/荷/价/效率，手算守恒与收益）。→ 验证：oracle 用例与手算值落盘。
+5. **P1-b**：建设 canonical 物理核（基于 `resource_core` 循环结构重写，补 net_load/月峰值/metadata）。→ 验证：canonical 通过 24h oracle。
+6. **P1-c**：删除 `wind_pv_bess_capacity_planner._dispatch_numba`（死代码），其调用方改用 canonical 核。→ 验证：该文件调度结果不变（或变化已解释）。
+7. **P1-d**：现有 Python fallback 加显式 `raise`（在 `batt_kwh > 0` 时）。→ 验证：无 numba + BESS 场景显式失败。
+8. **P2-a**：落地 `settlement.py`（含需量计算，迁移 `simulation_model.revenue_calculation` 的需量逻辑）。→ 验证：`年=Σ月=Σ时步` 不变量测试通过。
+9. **P2-b**：落地 TimeIndex canonization 与对齐测试。→ 验证：每次 run 对齐测试通过。
+10. **P3-a**：建立 golden-output 回归基线（**此时**物理常数已收敛、canonical 已通过 oracle）。→ 验证：基线落盘且可复现。
+11. **P3-b**：为 canonical/结算 adapter 指定 V3 消费者（IRR planner 私有路径 + oracle 测试）。→ 验证：adapter 有真实调用方。
+12. **P4-a**：修复 data/ 硬编码路径（≥2 处 runner 改为接受显式输入参数）。→ 验证：相关 runner 不默认读 `data/`。
+13. **P4-b**：声明 BESS sizing canonical 方法论（网格/二分/MILP 择一为主，其余标注关系）。→ 验证：声明写入文档且代码一致。
+14. **P4-c**：场景缩减算法与 `InvestmentPlanningCase` 结构一并确定。→ 验证：二者在同一 PR 定稿。
+15. **P4-d**：PV 单位命名修正——IRR planner 的 `pv_mw` → `pv_mwp`，消除 `× 1000.0` 隐含换算；`WindPVBESSIRRResult` / `WindPVBESSIRRPlanConfig` 字段同步，旧名 property alias。→ 验证：修改前后物理值不变（pv_mw=1.0 → pv_mwp=1.0，CAPEX 不变）。
+16. **P4-e**：扫描入口复杂度标注——每个 scanner/planner 的 docstring 标注组合规模公式和预期 wall-clock（numba/Python 两路径）。→ 验证：docstring 可查。
+17. **P4-f**：运行时数据质量检查——在 canonical 核入口或 `_normalize_inputs()` 插入断言（时间轴连续、序列同长、异常值检测）。→ 验证：畸形输入在 dispatch 前即 `raise ValueError`。
+18. **P4-g**：中间结果持久化——canonical dispatch + settlement 结果支持写 parquet（`results/<run_id>/`），golden-output（P3-a）作为首个消费者。→ 验证：`results/<run_id>/` 目录可写且可读回复算。
+19. **P4-h**：config schema 校验——`read_yaml()` 后做字段存在性 + 类型检查。→ 验证：缺字段 config 在 runner 启动时报错。
+20. **P4-i**：planner 迁移状态登记——现有 8 个 planner 入口在"planner 迁移状态"表标注 V3 状态（保留/改造/冻结/弃用）。→ 验证：表已填写完整。
+
+### 验证要求（V3，阻断优先 + 行为优先）
+
+V3 验证分两级：阻断级（P0）和行为级（P1+）。
+
+**阻断级验证**（P0 完成后必须通过）：
+
+```bash
+# cvxpy 延迟导入验证
+pip uninstall cvxpy -y
+python -c "from ele_trading.capacity_planning import plan_wind_pv_bess_for_target_irr; print('OK')"
+python -c "from ele_trading.capacity_planning import solve_capacity_sizing; print('OK')"
+pip install cvxpy  # 恢复
+```
+
+```bash
+# 效率口径单一性验证（6 路径同源）
+python -c "
+from ele_trading.capacity_planning.models.dispatch_algo import dispatch_annual
+# ... 逐路径检查效率参数来源
+"
+```
+
+**行为级验证**（继承 V2，顺序修正）：
+
+- 24h 手算 oracle（canonical 核 + 结算层）。
+- `年=Σ月=Σ时步` 不变量。
+- PPA 反推后业主综合电价回到目标值（容差内）。
+- 双视角 KPI 同点共存。
+- canonical 核 numba/Python 等价。
+- TimeIndex 对齐测试每次 run 通过。
+- 正式 runner 不默认读 `data/`。
+
+文档自检命令（沿用 V2）：
+
+```bash
+rg -n "^## V[0-9]+|对抗式审查|第一性原理|canonical|golden|oracle|TimeIndex|月度结算|阻断|BESSPhysicsContract" src/ele_trading/capacity_planning/PLAN.md
+```
+
+### 后续扩展方向（V3 重新归类）
+
+V2 列为"后续扩展"的合同，V3 按阻断/行为/延后重新归类：
+
+- **V3 内落地**：`BESSPhysicsContract`（P0-2）、canonical 物理核（P1-b）、`settlement.py`（P2-a）、`DispatchSimulationResult`/`MonthlySettlementResult`/`TimeIndex`（随 P1/P2 落地）。
+- **V3 仅定合同、不强制实现**：`InvestmentPlanningCase`、`PlanningInputBundle`、`SettlementInput`、`ProjectCashflowResult`。
+- **明确延后且须成对定稿**：场景采样（LHS/mc）与场景缩减（Kantorovich/Wasserstein L1）须与 case 结构在同一变更中确定。
+
+### 维护规则（V3 增订）
+
+- 继承 V1/V2 全部维护规则。
+- **新增**：V3 内容为本维护规则的当前权威；V1/V2 仅作历史。后续小修订直接改 V3；下一个完整基线再新增 `## V4`。
+- **新增**：修改任一调度路径的物理常数（效率/SOC 口径），须同步 `BESSPhysicsContract`、canonical 核和 golden/oracle，不得仅改本地默认值。
+- **新增**：新增调度路径须在本文档"调度路径全景分类"表中登记，并标注与 canonical 的关系。
+- **新增**：cvxpy/pulp/pyomo 导入必须延迟化（函数级或 `__getattr__`），顶层导入物理常数类（numpy/pandas）以外的第三方求解器依赖会被审查否决。
+- **新增**：装机容量（MWp/kWp）与额定功率（MW/kW）字段名不可混用；新增字段隐含单位换算（如 `pv_mw` 内部 `× 1000.0`）会被审查否决。
+- **新增**：每个 scanner/planner 入口须在 docstring 标注组合规模公式和预期 wall-clock 时间。
+- **新增**：每个 planner 入口须在本文档"planner 迁移状态"表登记其当前版本状态（保留/改造/冻结/弃用）和 sunset。
