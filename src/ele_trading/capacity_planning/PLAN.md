@@ -223,3 +223,186 @@ rg -n "^## V[0-9]+|对抗式审查|第一性原理|基础输入层|运行仿真�
 ```bash
 rg -n "optimization_interfaces|user_side_bess_dispatch_cvxpy|user_side_bess_distributed_dispatch_class|ele_trading\.optimization|\.\.optimization" src/ele_trading/capacity_planning --glob '!PLAN.md'
 ```
+
+## V2 - 第一性原理修正：canonical 物理+结算链与可证伪验证
+
+> **构建信息（provenance）**
+> - 构建代理（Agent）：Claude Code（CLI，主会话直接构建，未派生子代理/工作流）
+> - 构建模型（Model）：glm-5.2（1M context）
+> - 构建日期：2026-07-02
+> - 构建依据：V1 第一性原理审查（P0–P4），并经实际通读 `capacity_planning` 全部 `.py` 核实（行号见各条）。
+> - 与 V1 的关系：V2 是 V1 的完整修订基线。V1 保留为历史与变更溯源；自 V2 起所有新增规划以 V2 为准。V1 中仍成立的内容（六层分层、跨域引用已清零、`__init__`/CSV/中文表头稳定性规则等）V2 直接继承；V1 的逻辑矛盾、根因误判、过度设计与验证缺口，V2 逐条修正。本新增符合 V1 维护规则（204 行）关于“形成新的完整基线时新增下一个二级版本”的约定。
+
+### V1 → V2 变更摘要
+
+| 维度 | V1 立场 | V2 修正 | 触发依据 |
+|---|---|---|---|
+| 范围定性 | “不新增业务功能” | 承认 V2 必须新建 canonical 时序调度 + 月度结算，这是新增能力，不再伪装成纯重构 | V1 第 8 行与 117/197 行自相矛盾 |
+| 月度结算 | 列为“后续扩展” | 提升为 V2 核心交付，否则可追溯验证无法成立 | 无法验证系统算不出的性质 |
+| 调度多路径 | “加一致性测试”对齐 | 指定一条 canonical 物理核，其余分类为弃用/异范围 | N 条冗余需 O(N²) 测试；异构模型本就不该“一致” |
+| 需量电费 | 合同当作可由月度推导 | 强制仿真→结算 seam 携带月内净负荷峰值/15min 分辨率 | 需量不可由月度电量反推 |
+| 验证对象 | rg 关键词 + compileall（验证文档） | golden-output 回归 + 24h 手算 oracle（验证行为） | 验证应是重构结果而非文档 |
+| 时间轴 | “对齐时序”为既有能力，无不变量 | 新增顶层 TimeIndex 合同与每次 run 对齐测试 | 时间错位是头号静默 bug |
+| data 边界 | 推 PlanningInputBundle 作强制边界 | 仅修 1 个硬编码 runner；PlanningInputBundle 延后 | 实测仅 1/6 runner 硬编码路径 |
+| 场景缩减 | 钉死 LHS+Kantorovich 算法 | 算法随 case 结构一并确定（前置结构或后置算法） | 算法定、结构未定为最差组合 |
+| 业主 KPI | 节费率散落在目标/后续扩展 | savings/savings_ratio 提为结算结果一等字段 | 两方 KPI 对立，须同点共存 |
+| 效率口径 | 笼统“不统一” | 列为显式 bug：0.92/0.95/sqrt 拆分并存须收敛 | 实测物理口径冲突，直接影响 IRR |
+
+### 目标
+
+V2 保留 V1“解释清楚三个问题”的目标，但把**可证伪性**提到第一位。每个候选方案必须通过两道外部验证：
+
+1. **物理守恒**：发电、消纳、购网、弃电、充放电、SOC 逐时步守恒，且能对 24h 手算 oracle 复算。
+2. **结算可汇总**：年度收入、业主综合电价、IRR 输入必须由 12 个月（或实际结算周期）的月度结算汇总复算，差额在容差内。
+
+财务成立性（投资方 IRR 与业主节费率）作为 V2 的**双视角一等 KPI**，二者必须来自同一组结算结果，并在结果对象中同时携带（不再只携带被求解的那一方）。
+
+V2 不再宣称“不新增业务功能”。V2 的核心交付是**一条 canonical 物理+结算链**（时序调度 → 月度结算 → 财务评价），其余能力围绕它归类、收敛或弃用。
+
+### 当前结构收敛状态（V1 已完成项，V2 继承）
+
+V1 已落地、V2 直接继承的事实基线（不重做）：
+
+- 风光资源仿真归属 `capacity_planning/resource_simulation/`，定位为基础输入层。
+- `capacity_planning` 的 `.py` 源码对 `ele_trading.optimization` / `..optimization` 的引用已**清零**（实测 0 处 import），跨域边界已达成，V2 仅守。
+- 公共合同并入 `interfaces.py`；`optimization_interfaces.py` 等临时副本已删。
+- 单节点/分布式 BESS 调度模型收敛到 `models/cvxp_bess_dispatch.py` 与 `models/distributed_bess_dispatch.py`。
+
+V2 在此基础上**新增**两条必须先固化的事实：
+
+- **储能效率口径冲突（显式 bug）**：`dispatch_algo.py` 用 `eta_rt**0.5` 对称拆分（`:70-71`）；`cvxp_bess_dispatch.py`/`distributed_bess_dispatch.py`/`bess_capacity_economic_planner.py` 用非对称 0.95；`resource_bess_planner_core.py:41-42,105` 用非对称 **0.92**。同一项目里储能效率差 3 个百分点，直接改变 IRR。V2 必须先收敛到单一效率合同再谈一致性。
+- **SOC 单位冲突**：`dispatch_algo` 与 `resource_core` 用分数，CVXPY/分布式/PuLP 用 kWh。canonical 核须选定一种并在文档/代码标注换算。
+
+### canonical 物理核与路径分类
+
+V2 指定**唯一一条 canonical 小时级物理核**作为结算与财务的唯一上游：
+
+- 候选 canonical：在 `models/` 内确立一个 canonical dispatch，**优先以现有能产出逐时步 + SOC + 每月净负荷峰值的路径为底座改造**，而非新写。
+- canonical 核强制输出：逐时步 `generation/direct_used/charge/discharge/soc/grid_buy/curtail/net_load`，外加**每月 net_load 峰值序列**（供需量电费结算），以及 `metadata`（效率、分辨率、时间轴指纹）。
+- canonical 核的 Python/numba 双路径**必须等价**；若不可等价，则在无 numba 且需 BESS 结果时**显式失败**（V1 已立此规则，V2 落地为测试）。
+
+其余 4 条现有调度路径按下表分类，**不再要求与 canonical “一致”**，只要求关系被写清：
+
+| 路径 | V2 定位 | 处置 |
+|---|---|---|
+| `dispatch_annual`（贪心，仅年度标量） | canonical 的演进底座 | 补逐时步/SOC/月峰值输出后升为 canonical；在此之前不得作为结算上游 |
+| `cvxp_bess_dispatch`（单节点 CVXPY） | 异范围模型（运营调度） | 保留为运营场景 dispatcher；不作投资测算结算上游；写明与 canonical 的输入/输出差异 |
+| `distributed_bess_dispatch`（分布式 CVXPY） | 异范围模型（多变压器） | 同上；其 sliding_window 需量逻辑作为 canonical 月峰值实现的设计参考 |
+| `resource_bess_planner_core`（0.92） | 候选生成/可行性 helper | 收敛效率到 canonical 合同；定位为诊断/可行性，不作结算上游 |
+| `bess_capacity_economic_planner`（PuLP sizing） | sizing 优化器 | 保留；与 canonical 的关系（sizing 结果再经 canonical 复算结算）须写清 |
+
+### 仿真→结算 seam 合同（V2 最关键的新增）
+
+第一性原理：**需量电费不可由月度电量聚合反推**。因此 V2 规定 `DispatchSimulationResult`（adapter 目标）字段必须包含：
+
+- 逐时步序列：`timestamps`、`generation_kwh`、`direct_used_kwh`、`charge_kwh`、`discharge_kwh`、`soc_kwh`、`grid_buy_kwh`、`curtail_kwh`、`load_kwh`、`net_load_kwh`；
+- **月度结算前置量**：`monthly_net_load_peak_kw`（每月净负荷峰值，按结算周期与滑窗口径），供 `MonthlySettlementResult.demand_charge_yuan` 计算；
+- `monthly_summary`、`annual_summary`（由月度汇总得到，不可独立推导）、`metadata`（含效率、分辨率、时间轴指纹）。
+
+`MonthlySettlementResult` 字段：`month`、`green_used_kwh`、`grid_buy_kwh`、`curtail_kwh`、`energy_charge_yuan`、`demand_charge_yuan`（由 `monthly_net_load_peak_kw` 计算）、`ppa_revenue_yuan`、`owner_avg_price_yuan_per_kwh`、`baseline_price_yuan_per_kwh`、`savings_yuan`、`savings_ratio`。
+
+**不变量**：`annual_summary` ≡ Σ `monthly_summary`，且二者 ≡ Σ 逐时步（容差内）。该不变量由测试强制。
+
+### 时间轴 canonization（V2 新增顶层合同）
+
+- 唯一 `TimeIndex`：固定分辨率（15min 场景 `dt=0.25`，与 `AGENTS.md` 一致）、时区、日历完整性（无空洞）、资源/负荷/价格/SOC 五序列同轴。
+- 每次 run 须通过时间轴对齐测试：分辨率一致、长度一致、时间戳一致、跨年/闰年处理一致。
+- 时间轴指纹写入 `metadata`，便于回归比对。
+
+### 目标分层与模块分布（继承 V1，收敛命名）
+
+V2 保留 V1 六层分层（基础输入 / 运行仿真 / 结算 / 财务 / 案例聚合 / 编排入口），但把“是否在 V2 落地”明确化，消除 V1“大量目录搬家推到以后”的文档冗余：
+
+| 目标层 | V2 落地动作 | 命名 |
+|---|---|---|
+| 运行仿真 | 落地 canonical 核（改造现有路径，非新建目录） | `models/canonical_dispatch.py`（或选定底座） |
+| 结算 | 新建（V2 必交付） | `settlement.py` |
+| 财务 | 扩展 `irr_finance.py`，输入取自结算结果 | 保留 `irr_finance.py` |
+| 案例聚合 | V2 仅定合同 `InvestmentPlanningCase`，不强制建目录 | 合同先行 |
+| 编排入口 | 保留现有 `*_planner.py` 入口与字段 | 不动外部名 |
+
+文件/目录搬家（`inputs/`、`dispatch/`、`planners/`）V2 **不做**，待 adapter、兼容导入、回归测试齐备后再议（继承 V1 第 157 行规则）。
+
+### 第一性原理判断准则（V2 修订）
+
+在 V1 准则基础上增订/改订：
+
+- **可证伪优先**：任何结论须能被 golden 或 oracle 证伪；内部自洽测试不够（可能一起错）。
+- **canonical 唯一**：结算与财务的上游物理模型有且仅有一条；异范围模型写明关系，不强求一致。
+- **seam 携带结算所需分辨率**：仿真→结算 seam 须携带需量计算所需的月内峰值/15min 序列，不可只传月度电量。
+- **每个兼容 shim 有 sunset**：旧 dataclass、旧年度散字段、`method='mc'` 等兼容项须注明计划移除点，不接受永久并存。
+- **诊断结构隔离**：`resource_tuning` 等诊断输出类型须与 planner 目标函数输入类型不兼容（结构上喂不进去），而非仅靠命名。
+- **两方 KPI 同点共存**：结果对象同时携带投资方 IRR 与业主节费率，二者来自同一结算。
+- **adapter 必须带消费者**：无 V2 内消费者的内部合同不建。
+- 继承 V1：单向数据流、生产输入不经 `data/`、资源调参为诊断、月度结算是财务来源。
+
+### 对抗式审查（V2 修订）
+
+V1 审查条目中，以下在 V2 被改写或新增：
+
+- V1“numba/Python 须等价否则失败”——V2 保留，并落地为 canonical 核的强制测试（非仅文档）。
+- V1“年汇总 PPA 不能证明月度”——V2 不再仅“规划月度结算”，而是**交付**月度结算并强制 `年=Σ月` 测试。
+- V1“app runner 硬编码 data/profit_calc”——V2 修正为：实测仅 `run_wind_pv_bess_irr_planning.py:317` 一处；V2 直接改为接受显式输入参数（一行级修复），不引入 `PlanningInputBundle` 重机器。
+- V1“等额年现金流只能作基准”——V2 保留为基准口径，并要求 `evaluate_levelized_irr()` 的年收入/OPEX 从结算结果提取。
+- **新增**：若 canonical 核与任一异范围模型被要求“对齐结果”，审查应否决——异范围模型只对齐“输入合同与物理常数”，不对齐“输出数值”。
+- **新增**：若结算层从月度电量推导需量电费，审查应否决。
+- **新增**：若新增 adapter 无任何 V2 内消费者，审查应否决。
+- **新增**：若储能效率（0.92/0.95/sqrt）未收敛到单一合同，审查应否决任何“一致性”声明。
+
+### 关于“搜索 vs 优化”的 canonical 声明（V2 新增）
+
+V1 通篇用“搜索/扫描”描述风/光定址、BESS 却用 PuLP MILP，方法论不自洽。V2 要求编码前声明：
+
+- 被最大化的 canonical 目标：投资方 IRR（受业主综合电价/PPA 约束），业主节费率作为对立面 KPI 同点报告。
+- 风/光定址：明确是 (a) 网格搜索（接受假精度，须标注网格分辨率与敏感性），还是 (b) 优化（连续/MINLP）。二者择一并写入文档；不允许“coarse-fine resource tuning”隐式充当资源不确定性代理（与诊断定位冲突）。
+- 8 个现有 planner：逐一标注其目标函数、输入边界、输出字段、是否含财务口径；目标函数与 canonical 一致的保留为兼容入口，其余标注为诊断或弃用。
+
+### 实施顺序（V2）
+
+1. **P0-a**：固化 V2 合同字段（`DispatchSimulationResult`/`MonthlySettlementResult`/`TimeIndex`）与字段映射表，不删旧 dataclass。→ 验证：合同字段表评审通过。
+2. **P0-b**：建立 golden-output 回归基线——对现有 runner 录一组输出。→ 验证：基线落盘且可复现。
+3. **P0-c**：建立 24h 手算 oracle（固定发/荷/价，手算收益与守恒）。→ 验证：oracle 用例与手算值落盘。
+4. **P1-a**：收敛储能效率与 SOC 单位到单一合同。→ 验证：5 条路径效率参数同源；golden 偏差记录归档。
+5. **P1-b**：选定并改造 canonical 物理核，补逐时步/SOC/月净负荷峰值输出。→ 验证：canonical 通过 24h oracle。
+6. **P1-c**：落地 `settlement.py`，`年=Σ月=Σ时步` 不变量测试。→ 验证：不变量测试通过。
+7. **P2-a**：落地 TimeIndex canonization 与对齐测试。→ 验证：每次 run 对齐测试通过。
+8. **P2-b**：为 canonical/结算 adapter 指定 V2 消费者（IRR planner 私有路径 + oracle 测试）。→ 验证：adapter 有真实调用方。
+9. **P3-a**：修复 `run_wind_pv_bess_irr_planning.py:317` 硬编码路径为显式输入。→ 验证：该 runner 不再默认读 `data/`。
+10. **P3-b**：场景缩减算法与 `InvestmentPlanningCase` 结构一并确定（前置结构或后置算法）。→ 验证：二者在同一 PR 定稿。
+11. **P4**：财务输入从结算结果提取；savings/savings_ratio 提为结算一等字段；诊断输出做结构隔离；声明 canonical 目标函数（见上）。→ 验证：双视角 KPI 同点共存测试通过。
+
+### 验证要求（V2，行为优先）
+
+V2 验证以**行为**而非文档关键词为准：
+
+- **golden-output 回归**：现有 runner 输出在每步重构后比对，IRR 偏差须记录归档（允许因 bug 修复而变化，但须解释）。
+- **24h 手算 oracle**：canonical 核与结算层须对固定 24h 用例复算手算值（发电=消纳+弃电+储能净变化；负荷=绿电+购网；收入=Σ月度）。
+- `年=Σ月=Σ时步` 不变量。
+- PPA 反推后业主综合电价回到目标值（容差内）。
+- 双视角 KPI 同点共存：同一结算结果同时产出 IRR 与 savings_ratio。
+- canonical 核 numba/Python 等价。
+- 效率/SOC 合同单一性检查（5 路径同源）。
+- TimeIndex 对齐测试每次 run 通过。
+- 正式 runner 不默认读 `data/`（修复 `run_wind_pv_bess_irr_planning.py` 一处后即满足）。
+
+文档自检命令仍保留（沿用 V1），但不再作为重构完成的判据：
+
+```bash
+rg -n "^## V[0-9]+|对抗式审查|第一性原理|canonical|golden|oracle|TimeIndex|月度结算" src/ele_trading/capacity_planning/PLAN.md
+```
+
+### 后续扩展方向（V2 收敛）
+
+V1 列为“后续扩展”的合同，V2 按是否在 V2 落地重新归类：
+
+- **V2 内落地**：`DispatchSimulationResult`、`MonthlySettlementResult`、`TimeIndex`、canonical 物理核、`settlement.py`。
+- **V2 仅定合同、不强制实现**：`InvestmentPlanningCase`、`PlanningInputBundle`、`SettlementInput`、`ProjectCashflowResult`（逐年现金流/融资/税费/更换/退化/残值）。
+- **明确延后且须成对定稿**：场景采样（LHS/mc）与场景缩减（Kantorovich/Wasserstein L1）须与 case 结构在同一变更中确定，不接受“算法已定、结构未定”。
+
+### 维护规则（V2 增订）
+
+- 继承 V1 全部维护规则（版本组织、英文机读字段、中文仅导出边界、修改测算口径先改合同与测试再迁 planner 等）。
+- **新增**：每次新增/修改 adapter，须在 PR 内指明其 V2 消费者；无消费者不予合入。
+- **新增**：每个兼容 shim 须注明 sunset（计划移除的版本/条件）。
+- **新增**：修改任一调度路径的物理常数（效率/SOC 口径/需量口径），须同步 canonical 合同与 golden/oracle，不得仅改本地。
+- **新增**：V2 内容为本维护规则的当前权威；V1 仅作历史。后续小修订直接改 V2；下一个完整基线再新增 `## V3`。
