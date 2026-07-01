@@ -22,7 +22,7 @@ from ele_trading.capacity_planning import (
     WindBESSPlanConfig, ShiftPolicy, WindBESSResult,
     plan_wind_bess_system,
 )
-from ele_trading.resource_simulation import WindSimulator, SimulationResult
+from ele_trading.capacity_planning.resource_simulation import WindSimulator, SimulationResult
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 

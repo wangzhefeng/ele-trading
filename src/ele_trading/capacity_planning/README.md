@@ -1,6 +1,8 @@
 # Capacity Planning 容量规划模块
 
-`capacity_planning` 负责容量搜索、场景编排、收益测算和 CSV/表格结果组织。可复用求解/调度内核归 `src/ele_trading/optimization/`；本目录下的 `models/` 是容量规划流程内复用的仿真与搜索 helper，不作为跨模块求解器边界。
+`capacity_planning` 负责容量搜索、场景编排、收益测算和 CSV/表格结果组织。容量规划专用的 BESS 调度内核副本已归入本目录；`optimization/` 仍保留交易/调度侧原始内核。`models/` 是容量规划流程内复用的仿真与搜索 helper。
+
+风光资源物理仿真归属本目录下的 `resource_simulation/` 子包，用于容量规划输入曲线构造，也可被 forecasting 的物理预测模式复用。
 
 入口脚本应位于 `app/capacity_planning/run_*.py`。测试或 notebook 不应绕过入口脚本直接调用底层求解器。
 
@@ -15,11 +17,14 @@ capacity_planning/*.py
   - 风/光/储资源场景编排
   - 收益、IRR、诊断和导出
         |
-        +--> optimization/*
-        |      - PuLP/CVXPY/分布式 BESS 调度求解器
+        +--> capacity_planning/interfaces.py
+        |      - 容量规划公共合同
         |
         +--> capacity_planning/models/*
-               - 规划流程内的贪心仿真、单源 BESS 搜索、策略回放
+        |      - 规划流程内的贪心仿真、BESS 调度、单源 BESS 搜索、策略回放
+        |
+        +--> capacity_planning/resource_simulation/*
+               - PV/Wind 物理出力仿真与 profile 构造
 ```
 
 ## 当前脚本索引
@@ -29,6 +34,9 @@ capacity_planning/*.py
 | `bess_capacity_distributed_planner.py` | 多变压器/多节点分布式 BESS | `run_dist_bess_dispatch()`, `run_capacity_search()`, `optimize_combo()` | 机柜组合枚举 + 按月分段调用 `DistributedBESSDispatcher` |
 | `bess_capacity_economic_planner.py` | 单节点 BESS 容量和调度联合 sizing | `solve_capacity_sizing()` | PuLP MILP，容量 `Cap_rated` 与充放电策略联合优化 |
 | `bess_capacity_operating_planner.py` | 给定容量候选的运营收益测算 | `plan_energy_system()`, `simulate_bess_operation()` | 容量线性扫描 + CVXPY 调度 + `EssSimulationModel` 回放 |
+| `interfaces.py` | 容量规划公共合同 | `DistBESSDispatchInput`, `UserSideBESSParams`, `CvxpBESSDispatchInput`, `DistributedBESSDispatchInput` | 合并容量规划实际使用的容量搜索与调度合同 |
+| `models/cvxp_bess_dispatch.py` | 单节点 BESS CVXPY 调度 | `CvxpBESSDispatcher`, `get_cvxp_profile()` | 容量规划本地调度模型 |
+| `models/distributed_bess_dispatch.py` | 多节点分布式 BESS 调度 | `DistributedBESSDispatcher` | 容量规划本地调度模型 |
 | `pv_bess_planner.py` | 固定 PV 装机，求满足消纳约束的最小 BESS | `plan_pv_bess_system()` | 单源共享内核 + 二分搜索 |
 | `wind_bess_planner.py` | 固定 Wind 装机，求满足消纳约束的最小 BESS | `plan_wind_bess_system()` | 单源共享内核 + 二分搜索 |
 | `pv_bess_irr_planner.py` | 光储前期 IRR 敏感性 | `scan_pv_bess_irr()` | 月度/时段聚合三段式收益公式 + BESS x 电价网格扫描 |
@@ -40,6 +48,7 @@ capacity_planning/*.py
 | `wind_pv_bess_irr_tuning.py` | 风光储 IRR 资源敏感性诊断 | `run_wind_pv_bess_irr_resource_tuning()` | 多资源场景 coarse/fine 调参诊断 |
 | `multi_node_scanner.py` | 多电价节点 BESS 容量扫描 | `scan_single_node()`, `scan_multiple_nodes()` | 单容量 MILP 调度 + 退化/寿命经济性评估 |
 | `feasibility_analyzer.py` | BESS 规划前置可行性诊断 | `BESSFeasibilityAnalyzer.analyze()` | 电价、负荷、变压器裕度和策略可执行性评分 |
+| `resource_simulation/` | 风光资源曲线构造 | `PVProfileConfig`, `WindProfileConfig`, `PVSimulator`, `WindSimulator` | PV/Wind 物理仿真、等效小时数校准和缓存 |
 
 ## BESS 容量规划
 
@@ -195,7 +204,8 @@ PV 与 Wind 的差异主要在输入列、单位缩放、月度统计和成本�
 - `resource_bess_planner_core.py`、`bess_capacity_economic_planner.py`、`bess_capacity_operating_planner.py` 使用充放分离效率。
 - `pv_bess_irr_planner.py` / `wind_bess_irr_planner.py` 是聚合收益模型，不产生充放电时序，不能与逐时步调度结果直接逐点对账。
 - `wind_pv_bess_capacity_optimizer.py` 和 `wind_pv_bess_capacity_planner.py` 各自内联贪心仿真；修改共享口径时需要同步审视这些脚本。
-- `capacity_planning/models/` 是规划层 helper。若要新增可复用求解器，应放入 `optimization/` 并在本目录中只做编排和测算调用。
+- `capacity_planning/interfaces.py`、`models/cvxp_bess_dispatch.py` 和 `models/distributed_bess_dispatch.py` 是容量规划公共合同与本地调度模型；修改调度口径时需要同步审视 `optimization/` 中的原始交易/调度侧内核，避免两边语义漂移。
+- `capacity_planning/models/` 是规划层 helper。新增容量规划专用求解器可放在本目录；跨业务复用的交易/调度内核仍应优先放入 `optimization/`。
 
 ## 文档校验
 

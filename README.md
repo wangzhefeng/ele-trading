@@ -35,8 +35,7 @@ ele-trading/
 │   ├── optimization/             # 储能、用户侧、CVXPY、Two-stage 优化
 │   ├── control/                  # 滚动调度封装
 │   ├── evaluation/               # 结算、偏差考核、指标、回测、仿真
-│   ├── capacity_planning/        # BESS/PV/Wind/风光储容量规划（含 models/ 共享引擎）
-│   ├── resource_simulation/      # 风光资源物理仿真与 profile 构造
+│   ├── capacity_planning/        # BESS/PV/Wind/风光储容量规划（含资源仿真与 models/ 共享引擎）
 │   ├── demand/                   # 最大需量计算
 │   └── utils/                    # IO、日志、时间、数据对齐、绘图工具
 ├── app/                          # 可直接运行的入口（按 optimization/evaluation/capacity_planning/resource_simulation/legacy 分目录）
@@ -87,29 +86,31 @@ ele-trading/
 - `mpc_bess.py`：单窗口 MPC 与滚动 MPC。
 - `two_stage_cvar.py`：Two-stage + CVaR 可求解模型。
 - `user_side_bess_dispatch.py`：用户侧储能成本优化。
-- `user_side_bess_distributed_dispatch_class.py`：用户侧分布式储能调度共享内核。
+- 分布式 BESS 调度共享内核：用户侧多节点储能调度。
 - `user_side_renewable_dispatch_class.py`：用户侧通用可再生能源无储能调度共享内核。
 - `user_side_renewable_bess_dispatch_class.py`：用户侧通用可再生能源+BESS 调度共享内核。
 - `user_side_pv_dispatch.py`、`user_side_pv_bess_dispatch.py`：用户侧 PV 场景适配入口。
 - `user_side_wind_dispatch.py`、`user_side_wind_bess_dispatch.py`、`user_side_wind_pv_bess_dispatch.py`：用户侧 Wind / Wind+BESS / Wind+PV+BESS 场景适配入口。
-- `user_side_bess_dispatch_cvxpy.py`：用户侧 BESS 调度的 CVXPY 版本 profile。
+- CVXPY BESS 调度 profile：用户侧 BESS 调度的凸优化版本。
 
 ### `capacity_planning`
 
-容量规划模块覆盖 BESS、PV+BESS、Wind+BESS、Wind+PV+BESS 四类场景，共 10 个 planner + 3 个共享调度引擎：
+容量规划模块覆盖 BESS、PV+BESS、Wind+BESS、Wind+PV+BESS 四类场景，共 10 个 planner + 资源仿真子包 + 3 个共享调度引擎：
 
 - **第一组 BESS sizing**：`bess_capacity_distributed_planner.py`（多节点 LP）、`bess_capacity_economic_planner.py`（MILP 联合优化）、`bess_capacity_operating_planner.py`（CVXPY 运营优化）。
 - **第二组 PV+BESS**：`pv_bess_planner.py`（二分搜索最小容量）、`pv_bess_irr_planner.py`（三段式 IRR 扫描）。
 - **第三组 Wind+BESS**：`wind_bess_planner.py`（二分搜索）、`wind_bess_irr_planner.py`（两段式 IRR 扫描）。
 - **第四组 Wind+PV+BESS 联合**：`wind_pv_bess_capacity_optimizer.py`（最低成本）、`wind_pv_bess_capacity_planner.py`（最小储能）、`wind_pv_bess_irr_planner.py`（IRR 目标型 + 电价反推）。
-- **共享引擎**（`models/`）：`dispatch_algo.py`（Numba 贪心年度调度）、`resource_bess_planner_core.py`（单源 PV/Wind 贪心 + 二分搜索）、`simulation_model.py`（策略回放仿真）。
+- **资源仿真**（`resource_simulation/`）：PV/Wind 物理出力仿真，供容量规划和物理预测模式复用。
+- **容量规划公共合同**：`interfaces.py` 合并容量规划实际使用的分布式容量搜索配置、单节点 BESS CVXPY 调度合同和分布式 BESS 调度合同，用于避免 capacity planning 反向依赖 `optimization/`。
+- **共享引擎**（`models/`）：`cvxp_bess_dispatch.py`（单节点 BESS CVXPY 调度）、`distributed_bess_dispatch.py`（多节点分布式 BESS 调度）、`dispatch_algo.py`（Numba 贪心年度调度）、`resource_bess_planner_core.py`（单源 PV/Wind 贪心 + 二分搜索）、`simulation_model.py`（策略回放仿真）。
 - **辅助**：`feasibility_analyzer.py`（电价-负荷匹配评分）、`multi_node_scanner.py`（多节点 MILP 扫描）。
 
 详见 `src/ele_trading/capacity_planning/README.md`。
 
-### `resource_simulation`
+### `capacity_planning.resource_simulation`
 
-风光资源物理出力仿真，输出统一 `SimulationResult`（kW 时序），PV/风电各两版：
+风光资源物理出力仿真现归属 `capacity_planning` 子包，输出统一 `SimulationResult`（kW 时序），PV/风电各两版：
 
 - 光伏：`pv_simulation_v1.py`（配置驱动，清晰天空/气象/回放，含缓存）、`pv_simulation_v2.py`（PVSimulator 类）。
 - 风电：`wind_simulation_v1.py`（配置驱动，自动获取气象 + FLH 校准）、`wind_simulation_v2.py`（WindSimulator 类）。
@@ -167,6 +168,6 @@ uv run python -m pytest -q
 
 - Agent 规则的唯一权威是根目录 `AGENTS.md`（含通用准则 + 第 5 节项目硬约束），根目录 `CLAUDE.md` 是指向它的短指针。不要在 `.agents/`、`.claude/`、`.hermes/` 等子目录重建指令副本。
 - 新算法实现放入 `src/ele_trading/`，入口脚本只负责组装配置、数据和日志输出。
-- 可复用求解/调度内核放在 `optimization/`；容量扫描、场景编排、收益测算和文件导出放在 `capacity_planning/`。
+- 交易/调度侧通用内核放在 `optimization/`；容量规划专用内核、副本、容量扫描、场景编排、收益测算和文件导出放在 `capacity_planning/`。
 - 通用工具函数放入 `src/ele_trading/utils/`，包括 IO、日志、时间处理、绘图等。
 - `LOG.md` 为 append-only 状态记录；过期历史不回写，追加新状态说明。

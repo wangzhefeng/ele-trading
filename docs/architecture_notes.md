@@ -10,8 +10,7 @@
 | `forecasting` | 价格预测、PV/风电功率预测、天气特征工程 |
 | `scenario` | 价格场景采样（LHS/MC）与缩减（Kantorovich 后向缩减） |
 | `optimization` | 储能套利、MPC、Two-stage+CVaR、用户侧调度和分布式储能调度内核等优化建模（CVXPY 路径为延迟导入可选依赖，缺失时不影响 PuLP/Pyomo 主链路） |
-| `capacity_planning` | PV/风电/BESS/风光储容量规划、分布式储能多柜容量搜索与导出、可行性分析、IRR 测算、多节点扫描 |
-| `resource_simulation` | 风光资源物理仿真与 profile 构造 |
+| `capacity_planning` | PV/风电/BESS/风光储容量规划、风光资源物理仿真、容量规划公共合同、本地调度模型、分布式储能多柜容量搜索与导出、可行性分析、IRR 测算、多节点扫描 |
 | `control` | 基于 MPC 的滚动调度封装 |
 | `evaluation` | 收益结算、偏差考核、IRR、回测、仿真评估 |
 | `demand` | 固定窗口/滑动窗口最大需量和需量电费计算 |
@@ -25,7 +24,7 @@
 4. `optimization` / `capacity_planning` 执行调度优化或容量规划建模。
 5. `control` 封装滚动执行逻辑。
 6. `evaluation` / `demand` 输出收益、回测指标及需量电费核算。
-7. `resource_simulation` 为风光资源提供物理仿真支撑。
+7. `capacity_planning.resource_simulation` 为风光资源提供物理仿真支撑。
 
 ## 设计原则
 
@@ -33,5 +32,5 @@
 - 先支持单资产储能，再扩展风光储联合调度。
 - 先用统一接口，避免 app 脚本直接依赖底层求解细节。
 - 新算法实现放入 `src/ele_trading/`，入口脚本只负责组装配置、数据和日志输出。
-- 可复用求解/调度内核放在 `optimization/`；容量扫描、场景编排、收益测算和文件导出放在 `capacity_planning/`。
+- 交易/调度侧通用内核放在 `optimization/`；容量规划实际使用的公共合同、资源输入、规划专用调度模型、容量扫描、场景编排、收益测算和文件导出放在 `capacity_planning/`。
 - 重型可选依赖（cvxpy）通过延迟导入（`__getattr__`）降低耦合，缺失时主链路不受阻。

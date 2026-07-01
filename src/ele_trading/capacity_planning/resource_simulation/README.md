@@ -1,4 +1,4 @@
-# 新能源出力仿真算法说明 (resource_simulation)
+# 新能源出力仿真算法说明 (`capacity_planning.resource_simulation`)
 
 ## 1. 概述
 
@@ -18,7 +18,7 @@
 ## 2. 目录结构
 
 ```
-resource_simulation/
+capacity_planning/resource_simulation/
 ├── models.py                 # 共用数据模型 SimulationResult
 ├── pv_simulation_v1.py       # 光伏 v1: 配置驱动，多模式入口
 ├── pv_simulation_v2.py       # 光伏 v2: PVSimulator 类
@@ -273,7 +273,7 @@ class SimulationResult:
 ### 光伏 v1（配置驱动）
 
 ```python
-from ele_trading.resource_simulation import PVProfileConfig, load_or_build_pv_profile
+from ele_trading.capacity_planning.resource_simulation import PVProfileConfig, load_or_build_pv_profile
 
 config = PVProfileConfig(
     latitude=30.5928,
@@ -296,7 +296,7 @@ result = load_or_build_pv_profile(
 ### 光伏 v2（仿真器类）
 
 ```python
-from ele_trading.resource_simulation import PVSimulator
+from ele_trading.capacity_planning.resource_simulation import PVSimulator
 
 sim = PVSimulator(latitude=30.5928, longitude=114.3055)
 result = sim.simulate(
@@ -309,7 +309,7 @@ result = sim.simulate(
 ### 风电 v1（配置驱动）
 
 ```python
-from ele_trading.resource_simulation import WindProfileConfig, load_or_build_wind_profile
+from ele_trading.capacity_planning.resource_simulation import WindProfileConfig, load_or_build_wind_profile
 
 config = WindProfileConfig(
     year=2024,
@@ -334,7 +334,7 @@ result = load_or_build_wind_profile(config=config)
 ### 风电 v2（仿真器类）
 
 ```python
-from ele_trading.resource_simulation import WindSimulator
+from ele_trading.capacity_planning.resource_simulation import WindSimulator
 
 sim = WindSimulator(hub_height=100.0)
 result = sim.simulate(

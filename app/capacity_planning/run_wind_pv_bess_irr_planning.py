@@ -101,7 +101,7 @@ def _build_wind_unit_curve(config: dict, cache_path: Path) -> pd.Series:
 
     如果 cache_path 已存在则直接读取，否则仿真后保存。
     """
-    from ele_trading.resource_simulation import WindProfileConfig, load_or_build_wind_profile
+    from ele_trading.capacity_planning.resource_simulation import WindProfileConfig, load_or_build_wind_profile
     from ele_trading.data_provider.resource_weather import fetch_weather_open_meteo
 
     # 读取缓存
@@ -150,7 +150,7 @@ def _build_pv_unit_curve(config: dict, time_index: pd.DatetimeIndex, cache_path:
 
     如果 cache_path 已存在则直接读取，否则仿真后保存。
     """
-    from ele_trading.resource_simulation import PVProfileConfig, load_or_build_pv_profile
+    from ele_trading.capacity_planning.resource_simulation import PVProfileConfig, load_or_build_pv_profile
 
     # 读取缓存
     if cache_path.exists():

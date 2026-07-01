@@ -66,7 +66,7 @@ class PVPowerForecaster:
             capacity_mw: Installed capacity (MW).
             equiv_hours: Annual equivalent full-load hours for calibration.
         """
-        from ele_trading.resource_simulation.pv_simulation_v2 import PVSimulator
+        from ele_trading.capacity_planning.resource_simulation.pv_simulation_v2 import PVSimulator
         tilt = self.tilt if self.tilt is not None else self.latitude * 0.9
         sim = PVSimulator(
             latitude=self.latitude,

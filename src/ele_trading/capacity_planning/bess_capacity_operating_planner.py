@@ -8,8 +8,8 @@ import pandas as pd
 
 from ele_trading.utils.data_alignment import as_time_series, normalize_time_and_load
 from ele_trading.utils.time_index import infer_dt_hours
-from ele_trading.optimization.interfaces import UserSideBESSParams, CvxpBESSDispatchInput
-from ele_trading.optimization.user_side_bess_dispatch_cvxpy import (
+from .interfaces import UserSideBESSParams, CvxpBESSDispatchInput
+from .models.cvxp_bess_dispatch import (
     CvxpBESSDispatcher,
     get_cvxp_profile,
 )

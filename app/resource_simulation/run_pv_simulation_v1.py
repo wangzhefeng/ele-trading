@@ -18,7 +18,7 @@ import argparse
 
 import pandas as pd
 
-from ele_trading.resource_simulation import PVProfileConfig, load_or_build_pv_profile
+from ele_trading.capacity_planning.resource_simulation import PVProfileConfig, load_or_build_pv_profile
 from ele_trading.utils.io import read_yaml
 from ele_trading.utils.log_util import logger
 

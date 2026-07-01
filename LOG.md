@@ -449,3 +449,36 @@ docs/
 - `tests/`：33 个 test_*.py + README
 - `app/`：20 个入口脚本 + README
 - `docs/`：3 个文档文件
+
+## 2026-07-01
+
+### 状态对齐 024 — capacity_planning 投资测算 PLAN、资源仿真归属与本地调度模型边界
+
+#### 变更清单
+
+**T1 — 新增 V1 投资测算体系 PLAN**
+- 新增 `src/ele_trading/capacity_planning/PLAN.md`
+- 按基础输入层、运行仿真层、财务测算层、输入边界条件对标当前算法能力与缺口
+- 将当前重构方案直接作为 `## V1 - 现有算法体系重构与口径固化`，后续小修订在 V1 内继续维护
+
+**T2 — 资源仿真归入 capacity_planning**
+- `src/ele_trading/resource_simulation/` 移动到 `src/ele_trading/capacity_planning/resource_simulation/`
+- 更新 capacity planning runner、resource simulation runner、forecasting 物理预测模式和相关测试的导入
+- 文档中将风光资源物理仿真定位为投资测算基础输入层能力
+
+**T3 — capacity_planning 本地调度合同与模型收敛**
+- 容量规划实际使用的公共合同并入 `capacity_planning/interfaces.py`
+- 新增 `capacity_planning/models/cvxp_bess_dispatch.py` 与 `capacity_planning/models/distributed_bess_dispatch.py`
+- 删除临时副本 `optimization_interfaces.py`、`user_side_bess_dispatch_cvxpy.py`、`user_side_bess_distributed_dispatch_class.py`
+- `capacity_planning` 源码不再直接引用 `ele_trading.optimization` 或 `..optimization`
+
+**T4 — 文档与 agent 规则同步**
+- 更新根 `README.md`、`AGENTS.md`、`docs/architecture_notes.md`、`data/README.md` 和 `capacity_planning/README.md`
+- 当前边界：交易/调度侧通用内核留在 `optimization/`；容量规划实际使用的公共合同、资源输入、规划专用调度模型、容量扫描、场景编排、收益测算和导出归属 `capacity_planning/`
+
+#### 当前测试状态
+
+- `python3 -m compileall src/ele_trading/capacity_planning app/capacity_planning`：通过
+- `uv run pytest tests/test_bess_capacity_operating_planner.py tests/test_distributed_bess_dispatch.py tests/test_bess_capacity_planner.py -q`：25 passed
+- `uv run pytest tests/test_data_layer_generalization.py tests/test_bess_capacity_planner.py tests/test_wind_pv_bess_irr_planner.py tests/test_wind_pv_bess_irr_summary_export.py -q`：34 passed
+- `uv run pytest tests/test_forecasting.py -q`：18 passed, 2 warnings

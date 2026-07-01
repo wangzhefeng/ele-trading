@@ -22,7 +22,7 @@ from ele_trading.capacity_planning import (
     WindPVBEssPlanConfig, WindPVBEssResult,
     plan_wind_pv_bess,
 )
-from ele_trading.resource_simulation import (
+from ele_trading.capacity_planning.resource_simulation import (
     PVSimulator, SimulationResult,
     WindSimulator,
 )
