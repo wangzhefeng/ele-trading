@@ -95,7 +95,7 @@ ele-trading/
 
 ### `capacity_planning`
 
-容量规划模块覆盖 BESS、PV+BESS、Wind+BESS、Wind+PV+BESS 四类场景，共 10 个 planner + 资源仿真子包 + 3 个共享调度引擎：
+容量规划模块覆盖 BESS、PV+BESS、Wind+BESS、Wind+PV+BESS 四类场景，共 10 个 planner + 资源仿真子包 + 5 个规划 helper：
 
 - **第一组 BESS sizing**：`bess_capacity_distributed_planner.py`（多节点 LP）、`bess_capacity_economic_planner.py`（MILP 联合优化）、`bess_capacity_operating_planner.py`（CVXPY 运营优化）。
 - **第二组 PV+BESS**：`pv_bess_planner.py`（二分搜索最小容量）、`pv_bess_irr_planner.py`（三段式 IRR 扫描）。
@@ -105,6 +105,8 @@ ele-trading/
 - **容量规划公共合同**：`interfaces.py` 合并容量规划实际使用的分布式容量搜索配置、单节点 BESS CVXPY 调度合同和分布式 BESS 调度合同，用于避免 capacity planning 反向依赖 `optimization/`。
 - **共享引擎**（`models/`）：`cvxp_bess_dispatch.py`（单节点 BESS CVXPY 调度）、`distributed_bess_dispatch.py`（多节点分布式 BESS 调度）、`dispatch_algo.py`（Numba 贪心年度调度）、`resource_bess_planner_core.py`（单源 PV/Wind 贪心 + 二分搜索）、`simulation_model.py`（策略回放仿真）。
 - **辅助**：`feasibility_analyzer.py`（电价-负荷匹配评分）、`multi_node_scanner.py`（多节点 MILP 扫描）。
+
+长期建设计划维护在 `src/ele_trading/capacity_planning/PLAN.md`，当前 V1 以投资测算体系为目标，先固化输入、仿真、结算、财务和诊断的模块边界，再执行源码级重构。
 
 详见 `src/ele_trading/capacity_planning/README.md`。
 

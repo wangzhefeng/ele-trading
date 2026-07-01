@@ -482,3 +482,22 @@ docs/
 - `uv run pytest tests/test_bess_capacity_operating_planner.py tests/test_distributed_bess_dispatch.py tests/test_bess_capacity_planner.py -q`：25 passed
 - `uv run pytest tests/test_data_layer_generalization.py tests/test_bess_capacity_planner.py tests/test_wind_pv_bess_irr_planner.py tests/test_wind_pv_bess_irr_summary_export.py -q`：34 passed
 - `uv run pytest tests/test_forecasting.py -q`：18 passed, 2 warnings
+
+### 状态对齐 025 — capacity_planning PLAN V1 细化与文档收尾
+
+#### 变更清单
+
+**T1 — 细化 PLAN V1 模块重构计划**
+- 更新 `src/ele_trading/capacity_planning/PLAN.md`
+- 新增“模块命名与分布诊断”“目标模块分布”“第一性原理判断准则”“可直接编码的重构步骤”
+- 明确 V1 不先做大规模文件搬迁，优先固化输入、仿真、月度结算、财务和诊断合同
+
+**T2 — README 指针同步**
+- 更新根 `README.md` 的 capacity planning 概览，将共享引擎数量改为当前 5 个规划 helper
+- 在 `capacity_planning/README.md` 中增加 `PLAN.md` 指针，说明当前 V1 的重构边界
+
+#### 当前验证状态
+
+- `rg -n "模块命名与分布诊断|目标模块分布|可直接编码的重构步骤|第一性原理|基础输入层|运行仿真层|财务测算层|输入边界条件" src/ele_trading/capacity_planning/PLAN.md`：通过
+- `python3 -m compileall src/ele_trading/capacity_planning`：通过
+- `rg -n "optimization_interfaces|user_side_bess_dispatch_cvxpy|user_side_bess_distributed_dispatch_class|ele_trading\.optimization|\.\.optimization" src/ele_trading/capacity_planning --glob '!PLAN.md'`：无命中

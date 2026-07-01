@@ -26,6 +26,38 @@ V1 不新增业务功能，先把当前已有能力整理成可维护的投资�
 - 原本只用于优化模块通用入口的 wrapper 函数不进入 `capacity_planning` 本地模型，避免把“容量测算所需算法”误扩展成“优化模块 API 副本”。
 - `models/dispatch_algo.py`、`models/resource_bess_planner_core.py`、`models/simulation_model.py` 仍是当前规划流程内的贪心调度、单源 BESS 搜索和策略回放 helper；BESS CVXPY/分布式调度模型是新增收敛到 `models/` 的同层 helper。
 
+### 模块命名与分布诊断
+
+从第一性原理看，投资测算模块名应回答“这个模块处在输入、仿真、结算、财务、边界诊断哪一层”，而不是只暴露历史脚本来源、场景组合或求解器名称。当前代码功能已经覆盖投资测算雏形，但模块组织仍明显受历史实现影响，V1 不应先做大规模搬家，应先固化目标边界、内部合同和兼容测试。
+
+| 当前模块/文件 | 真实职责 | 评价 | V1 重构决策 |
+|---|---|---|---|
+| `resource_simulation/` | 风光资源曲线生成、缓存和基础资源参数建模。 | 位置合理，属于基础输入层；但资源来源、坐标、风电等效满发小时数反向约束和可开发容量尚未形成统一输入合同。 | 保留当前位置；后续补 `PlanningInputBundle` 中的资源输入字段和资源反向约束校验。 |
+| `interfaces.py` | 分布式容量搜索配置、拓扑配置、单节点 BESS 调度合同、分布式 BESS 调度合同。 | 文件名适合作公共合同入口，但当前混合了配置、拓扑、调度输入和调度输出，职责偏宽。 | 短期保留以避免破坏导入；V1 先按输入、仿真、结算、财务、案例分区规划合同，新增类型前列清旧字段映射。 |
+| `models/dispatch_algo.py` | 风光储逐时步贪心平衡和年度汇总。 | 属于运行仿真层；当前输出偏年度汇总，不能独立支撑月度结算和 SOC 审计。 | 规划统一目标结果 `DispatchSimulationResult`，保留现有函数入口，先补结果适配层和一致性测试。 |
+| `models/cvxp_bess_dispatch.py` | 单节点 BESS CVXPY 调度模型。 | 属于运行仿真层，本地化后符合容量测算调用面；但名称暴露求解器，不表达结算职责。 | 保留为调度模型；不承担结算和财务；未来若拆包，归入 `dispatch/` 或继续使用 `models/dispatch_*` 命名。 |
+| `models/distributed_bess_dispatch.py` | 分布式 BESS 调度模型和求解 helper。 | 属于运行仿真层；应只表达调度结果，不混入投资决策。 | 保留 dispatcher 和 helper；通过统一仿真结果或适配层接入 planner。 |
+| `models/resource_bess_planner_core.py` | 单源新能源+BESS 候选搜索和仿真 helper。 | 兼具候选生成、仿真和指标汇总，职责偏宽。 | 暂不搬移；V1 编码时先把候选生成、运行仿真、结算评价的边界在调用层拆开。 |
+| `models/simulation_model.py` | BESS 策略回放、收益和电费计算 helper。 | 名称过泛，实际接近仿真回放和结算前置计算。 | 暂保留；后续月度结算独立后，将电费/需量口径迁入 `settlement.py`。 |
+| `*_planner.py` | 场景包装、容量扫描、候选搜索、结果导出和诊断编排。 | 作为外部入口合理，但内部常混合数据读取、候选生成、仿真、价格倒推、CSV 写出。 | 保留 `plan_*`、`scan_*`、`run_*` 入口和结果字段；内部逐步迁移为输入归一化、候选生成、运行仿真、月度结算、财务评价、诊断导出。 |
+| `irr_finance.py` | IRR、绿电/PPA 价格倒推和目标 IRR gap 财务 helper。 | 位置合理，属于财务测算层；当前仍是年化简化模型。 | 标记为 V1 基准财务工具；后续扩展逐年现金流、融资、O&M、更换、退化、税费和残值。 |
+| `feasibility_analyzer.py` | 容量边界、可行性和约束诊断。 | 属于输入边界条件和诊断层，不应伪装成投资决策主流程。 | 保持诊断定位；输出用于解释候选不可行原因，不直接覆盖 planner 目标函数。 |
+| `multi_node_scanner.py` | 多节点场景扫描和评估。 | 属于场景评估和边界诊断，容易被误读为正式组合投资优化。 | 保持 scanner 定位；进入正式主流程前必须接入统一输入、仿真、结算和财务合同。 |
+| `wind_pv_bess_capacity_planner.py`、`wind_pv_bess_capacity_optimizer.py`、`wind_pv_bess_irr_planner.py`、`wind_pv_bess_planner.py` | 风光储不同目标下的容量搜索、优化、IRR 和可行性包装。 | 命名基本可读，但同一技术组合下目标差异依靠后缀表达，仍偏场景脚本化。 | 保留兼容入口；文档和后续代码中明确每个 planner 的目标函数、输入边界、输出字段和是否包含财务口径。 |
+
+### 目标模块分布
+
+V1 的目标不是一次性把文件移成最终形态，而是先让代码可以按下列层次迁移。只有当内部合同和兼容测试齐备后，才执行真实拆包或改名。
+
+| 目标层 | 建议位置 | 职责边界 |
+|---|---|---|
+| 基础输入层 | `inputs/` 或 `input_models.py`，短期可继续由 `interfaces.py` 承载目标合同 | 资源、负荷、电价、政策、成本、融资和项目边界输入；生产数据通过 `data_provider` 接入，`data/` 仅用于 demo、接口验证和回归测试。 |
+| 运行仿真层 | `dispatch/` 或继续使用 `models/dispatch_*` | 逐时步能量平衡、BESS 调度、SOC、购网、弃电和仿真元数据；不负责 PPA、税费或 IRR。 |
+| 结算层 | `settlement.py` | 月度电量、电价、需量、电价提升优势、PPA 收入和业主综合电价；年度值必须由月度汇总得到。 |
+| 财务测算层 | `finance.py` 或继续扩展 `irr_finance.py` | 逐年现金流、CAPEX、OPEX、融资、税费、储能更换、退化、残值、投资方 IRR 和业主节费率。 |
+| 案例聚合层 | `cases.py` | `InvestmentPlanningCase` 聚合输入、候选、仿真、结算、财务和诊断，使任意 IRR 结果可追溯到同一组时序与结算。 |
+| 编排入口层 | `planners/` 或保留现有 `*_planner.py` | 只做流程编排和兼容入口；外部 `plan_*`、`scan_*`、`run_*` 名称、`capacity_planning.__all__` 和结果字段先保持稳定。 |
+
 ### 体系对标总览
 
 公司投资测算体系可以拆为四层。当前 `capacity_planning` 已经覆盖部分算法能力，但还没有形成统一的输入、仿真、结算和财务合同。
@@ -78,6 +110,15 @@ V1 不新增业务功能，先把当前已有能力整理成可维护的投资�
 3. 接口归属跟随测算责任。属于容量测算配置、输入、仿真和结果解释的公共合同放在 `interfaces.py`；属于容量测算专用执行模型的算法放在 `models/`；属于交易/调度侧通用能力的原始内核仍保留在 `optimization/`。
 4. 保留现有外部入口和结果字段，先抽公共合同和一致性测试，不做大规模模型替换。未来新增类型时只作为内部合同逐步接入，避免一次性重写所有 planner。
 
+### 第一性原理判断准则
+
+- 模块名应说明投资测算流水线层次。只描述求解器、历史脚本或场景组合的名称可以保留为兼容入口，但新增内部模块应优先表达输入、仿真、结算、财务或诊断职责。
+- 输入、仿真、结算、财务和诊断之间必须保持单向数据流。上游不读取下游字段，下游不重新解释上游原始文件。
+- 任何 IRR、PPA 或节费率结果都必须能追溯到同一组 `DispatchSimulationResult` 和 `MonthlySettlementResult`，不能由另一套年度散字段单独推导。
+- 任何生产策略评估不得依赖 `data/` 样例路径。`data/` 只能用于 demo、接口验证和回归测试，正式输入必须来自 `data_provider` 或显式传入的输入包。
+- 任何“资源调参”都必须标注为诊断，不能伪装成真实资源可开发能力或最终投资约束。
+- 月度结算是财务测算的来源，不是导出报表的附属物。年度收入、业主综合电价和 IRR 输入必须可由月度明细汇总复算。
+
 ### 对抗式审查
 
 - 如果 `use_numba=False` 会弱化 BESS 仿真，Python fallback 不能作为可接受的经济测算路径。V1 必须要求 numba/Python 路径同输入同结果，或在无等价 fallback 时显式失败。
@@ -93,12 +134,27 @@ V1 不新增业务功能，先把当前已有能力整理成可维护的投资�
 1. 已完成：将风光资源仿真迁入 `capacity_planning/resource_simulation/`，并更新容量规划 runner、forecasting 物理预测模式和相关测试的导入。
 2. 已完成：消除 `capacity_planning` 源码对 `ele_trading.optimization` / `..optimization` 的直接引用，将容量规划实际需要的公共合同并入 `interfaces.py`。
 3. 已完成：将单节点和分布式 BESS 调度模型收敛到 `models/cvxp_bess_dispatch.py` 与 `models/distributed_bess_dispatch.py`，删除不属于容量规划调用面的临时 wrapper。
-4. 下一步：盘点并冻结现有输出字段，保持 `WindPVBESSIRRResult`、CSV 英文字段和中文表头稳定。
-5. 下一步：为候选仿真定义内部目标合同名称：`DispatchSimulationResult`，字段至少覆盖 generation、direct_used、charge、discharge、soc、grid_buy、curtail、monthly_summary。
-6. 下一步：为月度结算定义内部目标合同名称：`MonthlySettlementResult`，字段至少覆盖 green_used、grid_buy、demand_charge、energy_charge、ppa_revenue、owner_avg_price。
-7. 下一步：将 `dispatch_annual()` 的 Python 路径补齐为等价 BESS 仿真，或在无 numba 且需要 BESS 结果时明确失败。
-8. 下一步：将 IRR 计算输入从年度散字段收敛到结算结果；保留 `evaluate_levelized_irr()` 作为 V1 基准财务评价。
-9. 下一步：将 runner 的硬编码样例路径标注为 demo 路径；正式路径后续通过 `PlanningInputBundle` 和 `data_provider` 接入。
+4. 下一步：先在本文档固化目标分层和命名规则；任何新增模块先回答其所属层次、输入对象、输出对象和旧字段映射。
+5. 下一步：盘点并冻结现有输出字段，保持 `capacity_planning.__all__`、`plan_*`/`scan_*`/`run_*` 入口、`WindPVBESSIRRResult`、CSV 英文字段和中文表头稳定。
+6. 下一步：新增内部合同类型前，先列出字段和旧字段映射，不删除旧 dataclass；新增类型先作为 adapter 目标，不直接替换 public API。
+7. 下一步：为候选仿真定义内部目标合同名称：`DispatchSimulationResult`，字段至少覆盖 `timestamps`、`generation_kwh`、`direct_used_kwh`、`charge_kwh`、`discharge_kwh`、`soc_kwh`、`grid_buy_kwh`、`curtail_kwh`、`load_kwh`、`monthly_summary`、`annual_summary`、`metadata`。
+8. 下一步：为月度结算定义内部目标合同名称：`MonthlySettlementResult`，字段至少覆盖 `month`、`green_used_kwh`、`grid_buy_kwh`、`curtail_kwh`、`energy_charge_yuan`、`demand_charge_yuan`、`ppa_revenue_yuan`、`owner_avg_price_yuan_per_kwh`、`baseline_price_yuan_per_kwh`、`savings_yuan`、`savings_ratio`。
+9. 下一步：将 planner 内部流程统一为输入归一化、候选生成、运行仿真、月度结算、财务评价、诊断导出；先在 `wind_pv_bess_irr_planner.py` 和 BESS planner 中通过私有 adapter 落地，不改外部入口。
+10. 下一步：将 `dispatch_annual()` 的 Python 路径补齐为等价 BESS 仿真，或在无 numba 且需要 BESS 结果时明确失败。
+11. 下一步：将 IRR 计算输入从年度散字段收敛到结算结果；保留 `evaluate_levelized_irr()` 作为 V1 基准财务评价。
+12. 下一步：将 runner 的硬编码样例路径标注为 demo 路径；正式路径后续通过 `PlanningInputBundle` 和 `data_provider` 接入。
+13. 下一步：后续如果真的移动文件，必须同步 `__init__.py`、`capacity_planning/README.md`、`configs/README.md`、app 入口和对应测试，且先提供旧入口兼容测试。
+
+### 可直接编码的重构步骤
+
+1. 文档和合同准备：在 V1 中保持本节为编码基线；为每个拟新增合同写字段清单、单位、来源、旧字段映射和是否对外公开。
+2. `interfaces.py` 内部分区：先用注释或局部排序把现有合同分为容量搜索配置、拓扑配置、单节点 BESS 调度合同、分布式 BESS 调度合同；不删除现有 dataclass，不改变导入路径。
+3. `DispatchSimulationResult` adapter：新增私有转换函数，把 `dispatch_annual()` 和 BESS dispatcher 输出转换为统一字段；初期 adapter 可以只服务新增测试和 planner 内部，不替换既有结果类。
+4. `MonthlySettlementResult` adapter：从仿真结果、电价曲线、PPA 价格和需量配置生成月度结算；年度汇总只能由 12 个月或实际结算周期汇总得到。
+5. Planner 流水线拆分：把现有长函数内部拆成私有阶段函数，命名固定为 `_normalize_inputs()`、`_generate_candidates()`、`_simulate_candidate()`、`_settle_candidate()`、`_evaluate_finance()`、`_export_diagnostics()`；外部入口和返回字段不变。
+6. 财务输入收敛：`irr_finance.py` 暂保留年化简化模型，但调用方应从结算结果提取年收入、OPEX 和节费指标，不再直接拼年度散字段。
+7. 生产输入边界：app runner 中样例路径保留为 demo；正式测算入口必须接受显式输入包或 `data_provider`，不能把 `data/profit_calc/...` 作为默认生产路径。
+8. 文件移动延后：只有在 adapter、兼容导入和回归测试都通过后，才考虑建立 `inputs/`、`dispatch/`、`planners/` 等目录；移动时用兼容 shim 或同步更新全部调用方，避免半迁移。
 
 ### 后续扩展方向
 
@@ -119,20 +175,34 @@ V1 不新增业务功能，先把当前已有能力整理成可维护的投资�
 
 ### 验证要求
 
+本次文档更新后必须检查 V1 是否包含模块重构计划的关键小节：
+
+```bash
+rg -n "模块命名与分布诊断|目标模块分布|可直接编码的重构步骤|第一性原理|基础输入层|运行仿真层|财务测算层|输入边界条件" src/ele_trading/capacity_planning/PLAN.md
+```
+
+当前源码边界必须保持：
+
 - `dispatch_annual` numba 与 Python 路径同输入同结果。
 - `capacity_planning` 的 `.py` 源码不直接引用 `ele_trading.optimization` 或 `..optimization`。
 - `capacity_planning` 的 `.py` 源码不再引用已删除的 `optimization_interfaces.py`、`user_side_bess_dispatch_cvxpy.py` 和 `user_side_bess_distributed_dispatch_class.py`。
 - `models/cvxp_bess_dispatch.py` 和 `models/distributed_bess_dispatch.py` 可被直接导入。
+
+后续真正编码 V1 重构时必须新增或补强以下测试：
+
+- 旧入口兼容：`capacity_planning.__all__`、`plan_*`、`scan_*`、`run_*`、app runner 和已有结果字段保持可用。
+- 结果字段兼容：新增 adapter 不删除旧 dataclass 字段，不改 CSV 稳定英文字段；中文表头只在导出边界映射。
 - IRR planner 输出候选满足能量守恒：`generation = used + curtail`，`load = green_used + grid_buy`。
 - PPA 反推后业主综合电价回到目标值。
 - 月度结算汇总之和等于年度汇总。
 - 正式测算 runner 不通过硬编码样例数据路径读取生产输入。
+- `ProjectCashflowResult` 或后续逐年现金流实现必须能从同一组月度结算结果复算年度收入。
 
 ### 维护规则
 
 - 本文档记录建设路线，不代表未实现功能已经存在。
 - 后续对当前方案的小修订应直接修改 V1 内容；只有形成新的完整基线时，才新增下一个二级版本标题。
-- 未来真正新增 `PlanningInputBundle`、`DispatchSimulationResult`、`MonthlySettlementResult`、`ProjectCashflowResult` 或 `InvestmentPlanningCase` 时，必须同步更新 `configs/README.md`、`capacity_planning/README.md` 和对应测试。
+- 未来真正新增 `PlanningInputBundle`、`DispatchSimulationResult`、`MonthlySettlementResult`、`ProjectCashflowResult` 或 `InvestmentPlanningCase` 时，必须同步更新 `capacity_planning/README.md`、`configs/README.md`、`__init__.py` 和对应测试。
 - 修改测算口径时，先更新公共合同和测试，再迁移 planner；不要在单个 runner 中临时硬编码市场参数。
 - 修改 `capacity_planning` 本地调度模型时，必须同步审查 `optimization/` 原始内核的语义差异；如果两者都需要同一行为，应优先补一致性测试，再决定是否同步实现。
 - 内部机器可读字段保持英文；如需中文展示，在导出边界增加中文标签，不替换稳定字段名。
