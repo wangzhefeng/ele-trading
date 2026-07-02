@@ -1,12 +1,14 @@
 """IRR 目标型 Wind+PV+BESS 容量规划运行脚本。
 
 使用真实仿真数据替代合成数据：
-- 负荷：从 data/profit_calc/wind_pv_bess/v1/demand_load.csv 读取
+- 正式测算：通过 --data-dir 显式传入输入目录
+- Demo 测算：通过 --demo 显式使用 data/profit_calc/wind_pv_bess/v1
 - 风电：使用 wind_simulation_v1 模块仿真单位出力曲线
 - 光伏：使用 pv_simulation_v1 模块仿真单位出力曲线
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import sys
 from pathlib import Path
@@ -245,6 +247,27 @@ def _curve_cache_filename(prefix: str, config_section: dict[str, Any]) -> str:
 def _curve_cache_path(data_dir: Path, prefix: str, config_section: dict[str, Any]) -> Path:
     return data_dir / "curve_cache" / _curve_cache_filename(prefix, config_section)
 
+
+def _resolve_data_dir(data_dir: Path | None, *, demo: bool) -> Path:
+    """解析运行输入目录。
+
+    V4 明确区分正式输入和仓库样例输入：
+    - 正式运行必须通过 --data-dir 显式传入数据目录；
+    - 仓库内 data/profit_calc/... 只能在 --demo 模式下使用。
+    """
+    if data_dir is not None:
+        return Path(data_dir)
+    if demo:
+        return PROJECT_ROOT / "data" / "profit_calc" / "wind_pv_bess" / "v1"
+    raise SystemExit("run_wind_pv_bess_irr_planning requires --data-dir or explicit --demo")
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run Wind/PV/BESS target-IRR capacity planning")
+    parser.add_argument("--data-dir", type=Path, default=None, help="正式测算输入目录，需包含 demand_load.csv")
+    parser.add_argument("--demo", action="store_true", help="显式使用仓库内 data/profit_calc/wind_pv_bess/v1 样例数据")
+    return parser.parse_args(argv)
+
 # ------------------------------
 # 构建最优解数据
 # ------------------------------
@@ -309,12 +332,13 @@ def _build_optimal_solution_df(result: WindPVBESSIRRResult) -> pd.DataFrame:
 
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    args = _parse_args(argv)
     # 加载配置
     CONFIG_PATH = PROJECT_ROOT / 'configs' / 'capacity_planning' / 'wind_pv_bess_irr_planning.yaml'
     config = read_yaml(CONFIG_PATH)
     # 数据目录
-    data_dir = PROJECT_ROOT / "data" / "profit_calc" / "wind_pv_bess" / "v1"
+    data_dir = _resolve_data_dir(data_dir=args.data_dir, demo=bool(args.demo))
     # ------------------------------
     # 1. 加载真实负荷数据
     # ------------------------------

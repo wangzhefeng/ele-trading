@@ -50,6 +50,12 @@ from .wind_pv_bess_irr_tuning import (
     iter_resource_scenarios,
     run_wind_pv_bess_irr_resource_tuning,
 )
+from .models.physics_contract import BESSPhysicsContract
+from .models.canonical_dispatch import DispatchSimulationResult, canonical_dispatch
+from .settlement import MonthlySettlementResult, SettlementResult, settle_monthly
+from .tariff import DemandChargeConfig, Tariff
+from .models.price_aware_dispatch import DispatchMode, price_aware_dispatch
+from .irr_finance import ProjectCashflowResult, build_project_cashflows, compute_npv
 from .bess_capacity_economic_planner import CapacitySizingResult, solve_capacity_sizing
 from .interfaces import (
     DIST_BESS_CABINET_CAPACITY_KWH,
@@ -124,6 +130,11 @@ __all__ = [
     'plan_wind_pv_bess_for_target_irr',
     'WindPVBESSIRRTuningResult', 'iter_resource_scenarios',
     'run_wind_pv_bess_irr_resource_tuning',
+    'BESSPhysicsContract', 'DispatchSimulationResult', 'canonical_dispatch',
+    'MonthlySettlementResult', 'SettlementResult', 'settle_monthly',
+    'Tariff', 'DemandChargeConfig',
+    'DispatchMode', 'price_aware_dispatch',
+    'ProjectCashflowResult', 'build_project_cashflows', 'compute_npv',
     'CapacitySizingResult', 'solve_capacity_sizing',
     'DIST_BESS_CABINET_CAPACITY_KWH', 'DIST_BESS_CABINET_POWER_KW',
     'DIST_BESS_CONSTRAINT_TOLERANCE_KW',

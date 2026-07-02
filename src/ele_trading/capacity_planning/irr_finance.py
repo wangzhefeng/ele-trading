@@ -205,3 +205,110 @@ def evaluate_degraded_irr(
         life_revenue_yuan=float(sum(revenues)),
         life_net_yuan=float(sum(annual_net)),
     )
+
+
+def compute_npv(cashflows: list[float], discount_rate: float) -> float:
+    """净现值：``Σ cf_t / (1+discount_rate)^t``。"""
+    return sum(cf / ((1.0 + discount_rate) ** t) for t, cf in enumerate(cashflows))
+
+
+def compute_payback_year(cashflows: list[float]) -> float | None:
+    """静态/动态回收期（线性插值 cum cashflow 跨零点）；不跨零返回 None。"""
+    cum = 0.0
+    for t, cf in enumerate(cashflows):
+        prev = cum
+        cum += cf
+        if prev < 0 <= cum:
+            return (t - 1) + (-prev) / cf if cf != 0 else float(t - 1)
+    return None
+
+
+@dataclass
+class ReplacementEvent:
+    """储能更换事件（第 year 年注入 cost_yuan 负现金流）。"""
+
+    year: int
+    cost_yuan: float
+
+
+@dataclass(slots=True)
+class ProjectCashflowResult:
+    """逐年项目现金流结果（项目 IRR，无杠杆；权益层字段预留）。"""
+
+    capex_yuan: float
+    annual_revenues_yuan: list[float]
+    annual_opexes_yuan: list[float]
+    annual_taxes_yuan: list[float]
+    replacement_events_yuan: list[float]
+    salvage_yuan: float
+    cashflows: list[float]
+    irr: float | None
+    npv_yuan: float | None = None
+    payback_year: float | None = None
+    # 权益层预留（Q3），本轮不填实现。
+    debt_service_yuan: list[float] | None = None
+    equity_irr: float | None = None
+
+
+def build_project_cashflows(
+    *,
+    capex_yuan: float,
+    annual_revenue_y1_yuan: float,
+    annual_opex_y1_yuan: float,
+    life_years: int,
+    capacity_degradation: list[float] | None = None,
+    tax_rate: float = 0.0,
+    depreciation_years: int | None = None,
+    replacements: list[ReplacementEvent] | None = None,
+    salvage_ratio: float = 0.0,
+    discount_rate: float | None = None,
+) -> ProjectCashflowResult:
+    """构造逐年项目现金流：CAPEX + (收入-运维-税-更换)×N + 残值。
+
+    - 收入/运维按 ``capacity_degradation`` 曲线逐年衰减（默认不衰减，退化模型见 ``evaluate_degraded_irr``）；
+    - 税 = ``max(0, (收入-运维-折旧) × tax_rate)``，直线折旧（默认 = life_years）；
+    - 储能更换在第 year 年注入 cost_yuan；残值 = ``salvage_ratio × capex`` 期末计入；
+    - ``discount_rate`` 给定时计算 NPV/回收期，否则两者为 None。
+    无税/无更换/无残值/无衰减时，IRR 与 ``evaluate_levelized_irr`` 一致（退化基准）。
+    """
+    N = int(life_years)
+    deg = capacity_degradation if capacity_degradation is not None else [1.0] * N
+    if len(deg) != N:
+        raise ValueError("capacity_degradation length must equal life_years")
+    dep_years = int(depreciation_years) if depreciation_years is not None else N
+    dep_y = float(capex_yuan) / dep_years
+    repl_by_year = {int(e.year): float(e.cost_yuan) for e in (replacements or [])}
+
+    revs: list[float] = []
+    opexes: list[float] = []
+    taxes: list[float] = []
+    repls: list[float] = []
+    for y in range(1, N + 1):
+        ratio = deg[y - 1]
+        revenue = float(annual_revenue_y1_yuan) * ratio
+        opex = float(annual_opex_y1_yuan) * ratio
+        depreciation = dep_y if y <= dep_years else 0.0
+        tax = max(0.0, (revenue - opex - depreciation) * float(tax_rate))
+        revs.append(revenue)
+        opexes.append(opex)
+        taxes.append(tax)
+        repls.append(repl_by_year.get(y, 0.0))
+
+    salvage = float(salvage_ratio) * float(capex_yuan)
+    annual_net = [revs[i] - opexes[i] - taxes[i] - repls[i] for i in range(N)]
+    cashflows = [-float(capex_yuan)] + annual_net + [salvage]
+    irr = compute_irr(cashflows)
+    npv = compute_npv(cashflows, discount_rate) if discount_rate is not None else None
+    payback = compute_payback_year(cashflows) if discount_rate is not None else None
+    return ProjectCashflowResult(
+        capex_yuan=float(capex_yuan),
+        annual_revenues_yuan=revs,
+        annual_opexes_yuan=opexes,
+        annual_taxes_yuan=taxes,
+        replacement_events_yuan=repls,
+        salvage_yuan=salvage,
+        cashflows=cashflows,
+        irr=irr,
+        npv_yuan=npv,
+        payback_year=payback,
+    )

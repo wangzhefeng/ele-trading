@@ -1,0 +1,84 @@
+scenario:
+  # 场景名称：用于标识本次测算案例，默认也可作为输出报告的场景名。
+  name: mvp_demo
+
+sample_data:
+  # 是否生成模拟数据：true 表示运行前自动覆盖生成 dataset/sample_*.csv。
+  enabled: true
+  # 模拟数据年份：生成从该年 1 月 1 日到下一年 1 月 1 日前一时刻的全年数据。
+  year: 2026
+  # 模拟数据时间频率：1h 表示小时级；15min 可用于 15 分钟级样例。
+  freq: 1h
+
+paths:
+  # 负荷输入 CSV：字段为 time,value，value 当前按 kW 平均功率解释。
+  load_csv: dataset/sample_load.csv
+  # 电价输入 CSV：字段为 time,price,price_type，price 当前按元/kWh解释。
+  price_csv: dataset/sample_price.csv
+  # 风光资源输入 CSV：字段为 time,pv_kw,wind_kw，表示已仿真的风光平均功率。
+  resource_csv: dataset/sample_resource.csv
+  # 月度结算输出 CSV：记录月度电量、成本、收益和节费指标。
+  monthly_output_csv: results/mvp_monthly_settlement.csv
+  # 时序调度输出 CSV：记录每个时间点的能量流和储能 SOC。
+  dispatch_output_csv: results/mvp_dispatch_timeseries.csv
+
+project:
+  # 风电装机容量，单位 kW；用于 CAPEX 计算和后续容量约束口径。
+  wind_capacity_kw: 1000.0
+  # 光伏装机容量，单位 kW；用于 CAPEX 计算和后续容量约束口径。
+  pv_capacity_kw: 800.0
+  # 固定 PPA 单价，单位元/kWh；当前 MVP 不做分时 PPA。
+  ppa_price: 0.55
+  # 余电上网价格，单位元/kWh；允许余电上网时用于投资方上网收益。
+  export_price: 0.28
+  # 目标税前项目 IRR；PPA 反求会寻找达到该目标的固定 PPA 单价。
+  target_irr: 0.08
+  # 电价单位说明；仅作为配置含义标识，不参与计算。
+  price_unit: CNY_per_kWh
+
+bess:
+  # 储能额定功率，单位 kW；限制每个时间步最大充放电功率。
+  power_kw: 500.0
+  # 储能额定容量，单位 kWh；用于 SOC 上下限和 CAPEX 计算。
+  energy_kwh: 1000.0
+  # 充电效率：充入电量转换为 SOC 的比例。
+  charge_efficiency: 0.95
+  # 放电效率：SOC 转换为负荷侧可用电量的比例。
+  discharge_efficiency: 0.95
+  # 最小 SOC 比例：储能运行时不能低于 energy_kwh * soc_min_pct。
+  soc_min_pct: 0.1
+  # 最大 SOC 比例：储能运行时不能高于 energy_kwh * soc_max_pct。
+  soc_max_pct: 0.9
+  # 初始 SOC 比例：仿真开始时的储能电量。
+  initial_soc_pct: 0.5
+  # 是否允许从电网充电：用户已确认 MVP 允许。
+  allow_grid_charge: true
+  # 允许电网充电的电价类型：与 price_csv 中的 price_type 匹配。
+  charge_price_types:
+    - valley
+    - flat
+  # 允许储能放电供负荷的电价类型：与 price_csv 中的 price_type 匹配。
+  discharge_price_types:
+    - peak
+    - 尖峰
+    - 高峰
+
+finance:
+  # 项目测算年限，单位年；用于年度现金流长度。
+  project_years: 20
+  # 风电单位投资，单位元/kW；用于初始 CAPEX。
+  capex_wind_per_kw: 5500.0
+  # 光伏单位投资，单位元/kW；用于初始 CAPEX。
+  capex_pv_per_kw: 3500.0
+  # 储能功率侧单位投资，单位元/kW；用于初始 CAPEX 和更换成本。
+  capex_bess_power_per_kw: 500.0
+  # 储能容量侧单位投资，单位元/kWh；用于初始 CAPEX 和更换成本。
+  capex_bess_energy_per_kwh: 900.0
+  # 固定运维费比例：按初始 CAPEX 的比例逐年扣除。
+  fixed_om_pct_of_capex: 0.02
+  # 可再生发电年衰减率：影响后续年度投资方收入。
+  renewable_degradation_pct: 0.005
+  # 储能更换年份：None 表示不考虑更换；当前示例第 10 年更换。
+  bess_replacement_year: 10
+  # 储能更换成本比例：按储能初始投资的比例计入该年现金流。
+  bess_replacement_cost_pct: 0.35

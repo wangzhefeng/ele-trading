@@ -155,6 +155,92 @@ def _dispatch_annual_numba(
     return gen_e, used_e, load_e, direct_e, bess_dis, curtail_e
 
 
+def _dispatch_annual_python(
+    load_kw: np.ndarray,
+    wind_kw: np.ndarray,
+    pv_kw: np.ndarray,
+    other_kw: np.ndarray,
+    dt_hours: float,
+    batt_kwh: float,
+    eta_roundtrip: float,
+    c_rate: float,
+    soc_init_frac: float,
+    soc_min_frac: float,
+    soc_max_frac: float,
+    switch_gap_steps: int,
+) -> tuple[float, float, float, float, float, float]:
+    """与 Numba 路径等价的纯 Python 年度贪心调度。
+
+    该 fallback 不能退化为"无储能"近似，因为容量规划和 IRR 测算依赖
+    BESS 放电量、弃电量和绿电消纳量。这里刻意与 `_dispatch_annual_numba`
+    保持同一套状态变量和能量口径，方便在无 numba 或显式禁用 numba 时
+    仍得到物理可解释的结果。
+    """
+    gen_e = 0.0
+    used_e = 0.0
+    load_e = 0.0
+    direct_e = 0.0
+    bess_dis = 0.0
+    curtail_e = 0.0
+
+    # eta_roundtrip 是往返效率；年度贪心旧口径采用充/放对称开方。
+    eta_c = eta_roundtrip ** 0.5
+    eta_d = eta_roundtrip ** 0.5
+
+    capacity = float(batt_kwh)
+    pmax = c_rate * capacity
+    soc_min = soc_min_frac * capacity
+    soc_max = soc_max_frac * capacity
+    soc = min(max(soc_init_frac * capacity, soc_min), soc_max)
+
+    # last_action 用于 enforce 充放电切换间隔，避免刚充完立刻放电。
+    last_action = 0
+    last_action_t = -10**9
+
+    for i in range(load_kw.shape[0]):
+        load_i = max(float(load_kw[i]), 0.0)
+        gen_i = max(float(wind_kw[i] + pv_kw[i] + other_kw[i]), 0.0)
+
+        load_e += load_i * dt_hours
+        gen_e += gen_i * dt_hours
+
+        # direct 是本时步新能源直接覆盖负荷的功率，不经过电池。
+        direct = min(load_i, gen_i)
+        direct_e += direct * dt_hours
+        used_e += direct * dt_hours
+
+        # surplus 用于充电；deficit 尝试由电池放电补足。
+        surplus = gen_i - direct
+        deficit = load_i - direct
+
+        can_charge = not (last_action == -1 and (i - last_action_t) < switch_gap_steps)
+        can_discharge = not (last_action == 1 and (i - last_action_t) < switch_gap_steps)
+
+        charge_power = 0.0
+        if surplus > 1e-9 and capacity > 0.0 and soc < soc_max and can_charge:
+            max_charge_by_room = (soc_max - soc) / (eta_c * dt_hours)
+            charge_power = min(surplus, pmax, max_charge_by_room)
+            if charge_power > 1e-9:
+                soc += charge_power * dt_hours * eta_c
+                last_action = 1
+                last_action_t = i
+
+        if deficit > 1e-9 and capacity > 0.0 and soc > soc_min and can_discharge:
+            max_discharge_by_soc = (soc - soc_min) * eta_d / dt_hours
+            discharge_power = min(deficit, pmax, max_discharge_by_soc)
+            if discharge_power > 1e-9:
+                soc -= discharge_power * dt_hours / eta_d
+                used_e += discharge_power * dt_hours
+                bess_dis += discharge_power * dt_hours
+                last_action = -1
+                last_action_t = i
+
+        # 弃电只统计直供和充电后仍无法消纳的 surplus。
+        curtail_e += max(surplus - charge_power, 0.0) * dt_hours
+
+    return gen_e, used_e, load_e, direct_e, bess_dis, curtail_e
+
+
 def dispatch_annual(
     load_kw: np.ndarray,
     wind_kw: np.ndarray,
@@ -181,23 +267,20 @@ def dispatch_annual(
             switch_gap_steps = switch_gap_steps,
         )
     else:
-        # 简化版调度：不模拟电池充放电, 按直供/弃电两类分别累计
-        # 新能源总出力 (kW)
-        gen_kw = wind_kw + pv_kw + other_kw
-        # 新能源直接供给负荷的部分 (kW), 取负荷与发电的较小者
-        direct_kw = np.minimum(load_kw, np.maximum(gen_kw, 0.0))
-        # 年新能源发电量 (kWh)
-        gen_e = float(np.maximum(gen_kw, 0.0).sum() * dt_hours)
-        # 年总负荷用电量 (kWh)
-        load_e = float(np.maximum(load_kw, 0.0).sum() * dt_hours)
-        # 新能源被直供消纳的电能 (kWh)
-        used_e = float(direct_kw.sum() * dt_hours)
-        direct_e = used_e
-        # 简化路径不模拟电池充放电, 故放电量记为 0
-        bess_dis = 0.0
-        # 弃电量(简化：surplus 部分减去充电)
-        surplus_e = float(np.maximum(gen_kw - load_kw, 0.0).sum() * dt_hours)
-        curtail_e = max(surplus_e - (gen_e - used_e - bess_dis), 0.0)
+        gen_e, used_e, load_e, direct_e, bess_dis, curtail_e = _dispatch_annual_python(
+            load_kw = load_kw,
+            wind_kw = wind_kw,
+            pv_kw = pv_kw,
+            other_kw = other_kw,
+            batt_kwh = float(batt_kwh),
+            dt_hours = dt_hours,
+            eta_roundtrip = float(cfg.eta_roundtrip),
+            c_rate = float(cfg.c_rate),
+            soc_init_frac = float(cfg.soc_init_frac),
+            soc_min_frac = float(cfg.soc_min_frac),
+            soc_max_frac = float(cfg.soc_max_frac),
+            switch_gap_steps = switch_gap_steps,
+        )
 
     return {
         "ren_gen_kwh": float(gen_e),

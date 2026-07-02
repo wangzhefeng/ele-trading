@@ -1,13 +1,26 @@
 from __future__ import annotations
 
-import cvxpy as cp
 import numpy as np
+from typing import Any
 
 from ..interfaces import (
     CvxpBESSDispatchInput,
     CvxpBESSDispatchResult,
     CvxpBESSProfile,
 )
+
+cp: Any | None = None
+
+
+def _require_cvxpy() -> Any:
+    global cp
+    if cp is None:
+        try:
+            import cvxpy as cvxpy_module
+        except ImportError as exc:
+            raise ImportError("cvxpy is required to solve CVXPY BESS dispatch") from exc
+        cp = cvxpy_module
+    return cp
 
 
 def _to_list(arr, tol: float = 1e-6) -> list[float]:
@@ -54,6 +67,7 @@ class CvxpBESSDispatcher:
         self.dispatch_input = dispatch_input
 
     def solve(self) -> CvxpBESSDispatchResult:
+        _require_cvxpy()
         self._validate_input()
         self._init_params()
         self._create_variables()

@@ -6,7 +6,7 @@
 
 入口脚本应位于 `app/capacity_planning/run_*.py`。测试或 notebook 不应绕过入口脚本直接调用底层求解器。
 
-长期重构计划维护在 `PLAN.md`，当前权威基线为 V2（V1 保留为历史）。V2 的核心是先建一条 canonical 物理+结算链（时序调度→月度结算→财务）并用 golden-output 回归与 24h 手算 oracle 验证，再迁源码；不先做破坏式改名。
+长期重构计划维护在 `PLAN.md`，当前权威基线为 V4（V1/V2/V3 保留为历史）。V4 第一阶段的核心是建立 `canonical dispatch -> monthly settlement -> IRR/owner KPI` 主链，并先迁移 `plan_wind_pv_bess_for_target_irr()`；不做破坏式改名或大规模目录搬迁。
 
 ## 算法分层
 
@@ -23,7 +23,10 @@ capacity_planning/*.py
         |      - 容量规划公共合同
         |
         +--> capacity_planning/models/*
-        |      - 规划流程内的贪心仿真、BESS 调度、单源 BESS 搜索、策略回放
+        |      - canonical 调度、物理合同、贪心仿真、BESS 调度、单源 BESS 搜索、策略回放
+        |
+        +--> capacity_planning/settlement.py
+        |      - 月度结算、PPA 收入、业主综合电价和节费率
         |
         +--> capacity_planning/resource_simulation/*
                - PV/Wind 物理出力仿真与 profile 构造
@@ -39,6 +42,9 @@ capacity_planning/*.py
 | `interfaces.py` | 容量规划公共合同 | `DistBESSDispatchInput`, `UserSideBESSParams`, `CvxpBESSDispatchInput`, `DistributedBESSDispatchInput` | 合并容量规划实际使用的容量搜索与调度合同 |
 | `models/cvxp_bess_dispatch.py` | 单节点 BESS CVXPY 调度 | `CvxpBESSDispatcher`, `get_cvxp_profile()` | 容量规划本地调度模型 |
 | `models/distributed_bess_dispatch.py` | 多节点分布式 BESS 调度 | `DistributedBESSDispatcher` | 容量规划本地调度模型 |
+| `models/physics_contract.py` | V4 储能物理口径合同 | `BESSPhysicsContract` | 统一效率、SOC 单位和 C-rate 语义 |
+| `models/canonical_dispatch.py` | V4 投资测算 canonical 物理核 | `canonical_dispatch()`, `DispatchSimulationResult` | 逐时步风/光/储能量守恒、SOC、购网和弃电 |
+| `settlement.py` | V4 月度结算层 | `settle_monthly()`, `MonthlySettlementResult` | 从 dispatch 结果计算 PPA 收入、需量费、业主综合电价和节费率 |
 | `pv_bess_planner.py` | 固定 PV 装机，求满足消纳约束的最小 BESS | `plan_pv_bess_system()` | 单源共享内核 + 二分搜索 |
 | `wind_bess_planner.py` | 固定 Wind 装机，求满足消纳约束的最小 BESS | `plan_wind_bess_system()` | 单源共享内核 + 二分搜索 |
 | `pv_bess_irr_planner.py` | 光储前期 IRR 敏感性 | `scan_pv_bess_irr()` | 月度/时段聚合三段式收益公式 + BESS x 电价网格扫描 |
@@ -46,7 +52,7 @@ capacity_planning/*.py
 | `wind_pv_bess_planner.py` | Wind+PV+BESS 成本型容量规划 | `plan_wind_pv_bess()`, `evaluate_wind_pv_bess()` | PV 粗扫/细扫 + BESS 二分 + `dispatch_annual()` |
 | `wind_pv_bess_capacity_planner.py` | 给定风/光装机，仅搜索 BESS | `plan_energy_system()` | BESS 线性扫描 + 内联 Numba 贪心调度 |
 | `wind_pv_bess_capacity_optimizer.py` | 风/光/储三维最低成本组合 | `CapacityOptimizer.optimize()` | 粗扫 + 细扫两阶段网格搜索 + 内联贪心仿真 |
-| `wind_pv_bess_irr_planner.py` | 风/光/储 IRR 目标型规划 | `plan_wind_pv_bess_for_target_irr()` | 三维容量网格 + `dispatch_annual()` + PPA/IRR 约束筛选 |
+| `wind_pv_bess_irr_planner.py` | 风/光/储 IRR 目标型规划 | `plan_wind_pv_bess_for_target_irr()` | 三维容量网格 + canonical dispatch + monthly settlement + PPA/IRR 约束筛选 |
 | `wind_pv_bess_irr_tuning.py` | 风光储 IRR 资源敏感性诊断 | `run_wind_pv_bess_irr_resource_tuning()` | 多资源场景 coarse/fine 调参诊断 |
 | `multi_node_scanner.py` | 多电价节点 BESS 容量扫描 | `scan_single_node()`, `scan_multiple_nodes()` | 单容量 MILP 调度 + 退化/寿命经济性评估 |
 | `feasibility_analyzer.py` | BESS 规划前置可行性诊断 | `BESSFeasibilityAnalyzer.analyze()` | 电价、负荷、变压器裕度和策略可执行性评分 |
@@ -147,14 +153,15 @@ PV 与 Wind 的差异主要在输入列、单位缩放、月度统计和成本�
 
 ### `wind_pv_bess_irr_planner.py`
 
-`plan_wind_pv_bess_for_target_irr()` 用三维容量网格寻找满足 PPA/IRR 约束的风光储组合：
+`plan_wind_pv_bess_for_target_irr()` 用三维容量网格寻找满足 PPA/IRR 约束的风光储组合。V4 起该路径是 canonical dispatch + monthly settlement 的第一阶段主消费者：
 
 1. 枚举 `wind_mw x pv_mw x bess_mwh`。
-2. 调用 `dispatch_annual()` 计算绿电发电、绿电消纳、负荷、弃电。
+2. 调用 `canonical_dispatch()` 计算逐时步绿电发电、直供、充电、放电、SOC、购网和弃电。
 3. 先筛选自用率和负荷覆盖率。
 4. 根据业主目标综合电价和电网购电价反推绿电结算价，再扣除 `green_price_adder_yuan_per_kwh` 得到 PPA 价格。
-5. 用 CAPEX、OPEX 和 PPA 收入计算 IRR。
-6. 按 `irr_constraint_mode` 筛选：`range` 要求 IRR 在目标附近，`minimum` 要求不低于目标。
+5. 调用 `settle_monthly()` 生成月度结算，年度 PPA 收入、业主综合电价和购网电量从月度结果汇总得到。
+6. 用 CAPEX、OPEX 和结算收入计算 IRR。
+7. 按 `irr_constraint_mode` 筛选：`range` 要求 IRR 在目标附近，`minimum` 要求不低于目标。
 
 失败时 `diagnostics` 和 `diagnostic_summary` 会保留 PPA/IRR 不满足的候选摘要，用于解释无解原因。
 
@@ -173,7 +180,15 @@ PV 与 Wind 的差异主要在输入列、单位缩放、月度统计和成本�
 3. 负荷缺口由 BESS 放电补足。
 4. 仍然剩余的新能源计为弃电。
 
-效率使用对称开方模型：`eta_charge = eta_discharge = sqrt(eta_roundtrip)`。`switch_gap_steps` 可限制充放电频繁切换。
+效率使用对称开方模型：`eta_charge = eta_discharge = sqrt(eta_roundtrip)`。`switch_gap_steps` 可限制充放电频繁切换。V4 已补齐 `use_numba=False` 时的 Python BESS 仿真，不能再静默退化为“无储能”路径。
+
+### `models/physics_contract.py` 与 `models/canonical_dispatch.py`
+
+`BESSPhysicsContract` 是 V4 新增的容量测算物理合同，集中表达充电效率、放电效率、SOC 单位和 C-rate 语义。`canonical_dispatch()` 是 V4 投资测算主链的唯一物理上游，输出逐时步 `DispatchSimulationResult`，其月度和年度汇总必须由时序结果复算得到。
+
+### `settlement.py`
+
+`settle_monthly()` 从 canonical dispatch 结果生成月度结算。需量费使用 `net_load_kw` 月内峰值，PPA 收入使用月度绿电消纳量和 PPA 价格，年度业主综合电价、节费额和节费率从月度结果相加得到。
 
 ### `models/resource_bess_planner_core.py`
 
@@ -203,11 +218,20 @@ PV 与 Wind 的差异主要在输入列、单位缩放、月度统计和成本�
 ## 口径差异
 
 - `dispatch_annual()` 使用 `sqrt(eta_roundtrip)` 的对称效率模型。
+- `BESSPhysicsContract` 是 V4 主链的效率/SOC 口径入口；新增投资测算路径应优先从该合同读取物理参数。
 - `resource_bess_planner_core.py`、`bess_capacity_economic_planner.py`、`bess_capacity_operating_planner.py` 使用充放分离效率。
 - `pv_bess_irr_planner.py` / `wind_bess_irr_planner.py` 是聚合收益模型，不产生充放电时序，不能与逐时步调度结果直接逐点对账。
 - `wind_pv_bess_capacity_optimizer.py` 和 `wind_pv_bess_capacity_planner.py` 各自内联贪心仿真；修改共享口径时需要同步审视这些脚本。
+- `models/cvxp_bess_dispatch.py` 和 `models/distributed_bess_dispatch.py` 延迟导入 `cvxpy`；普通 `capacity_planning` 包导入、PuLP 路径和 IRR 路径不应依赖 CVXPY 已安装。
 - `capacity_planning/interfaces.py`、`models/cvxp_bess_dispatch.py` 和 `models/distributed_bess_dispatch.py` 是容量规划公共合同与本地调度模型；修改调度口径时需要同步审视 `optimization/` 中的原始交易/调度侧内核，避免两边语义漂移。
 - `capacity_planning/models/` 是规划层 helper。新增容量规划专用求解器可放在本目录；跨业务复用的交易/调度内核仍应优先放入 `optimization/`。
+
+## 入口脚本输入边界
+
+`app/capacity_planning/run_wind_pv_bess_irr_planning.py` 不再把仓库样例数据作为隐式生产输入：
+
+- 正式测算必须传 `--data-dir <path>`，目录内至少包含 `demand_load.csv`。
+- 使用仓库内 `data/profit_calc/wind_pv_bess/v1` 样例数据时必须显式传 `--demo`。
 
 ## 文档校验
 

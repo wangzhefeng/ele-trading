@@ -1,15 +1,30 @@
 from __future__ import annotations
 
-import cvxpy as cp
 import numpy as np
 import pandas as pd
-from cvxpy.error import SolverError
+from typing import Any
 
 from ..interfaces import (
     DistributedBESSDispatchInput,
     DistributedBESSDispatchPolicy,
     DistributedBESSDispatchResult,
 )
+
+cp: Any | None = None
+SolverError: type[Exception] | None = None
+
+
+def _require_cvxpy() -> Any:
+    global cp, SolverError
+    if cp is None:
+        try:
+            import cvxpy as cvxpy_module
+            from cvxpy.error import SolverError as cvxpy_solver_error
+        except ImportError as exc:
+            raise ImportError("cvxpy is required to solve distributed BESS dispatch") from exc
+        cp = cvxpy_module
+        SolverError = cvxpy_solver_error
+    return cp
 
 
 def _clean_matrix(values: np.ndarray | None, *, tol: float = 1e-6) -> list[list[float]]:
@@ -177,6 +192,7 @@ class DistributedBESSDispatcher:
         return charge_target_indices, discharge_target_indices
 
     def _solve_lp(self) -> DistributedBESSDispatchResult:
+        _require_cvxpy()
         dispatch_input = self.dispatch_input
         nodes = dispatch_input.nodes
         row = len(nodes)
@@ -501,4 +517,3 @@ class DistributedBESSDispatcher:
             solver_name="rule",
             constraint_violations={},
         )
-

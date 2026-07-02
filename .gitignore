@@ -178,6 +178,7 @@ __marimo__/
 # .hermes/
 .venv/
 data/
+dataset/
 logs/
 results/
 src/demand_response/todo/result/

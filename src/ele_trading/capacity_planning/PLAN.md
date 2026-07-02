@@ -1,6 +1,6 @@
 # Capacity Planning 投资测算模型体系 PLAN
 
-本文档用于长期维护 `capacity_planning` 投资测算模型体系建设方案。版本以二级标题组织；当前权威基线为 `V2`（`V1` 保留为历史与变更溯源），后续小修订直接在 `V2` 内继续，或在形成新的完整基线时新增下一个二级版本。
+本文档用于长期维护 `capacity_planning` 投资测算模型体系建设方案。版本以二级标题组织；当前权威基线为 `V4`（`V1`/`V2`/`V3` 保留为历史与变更溯源），后续小修订直接在 `V4` 内继续，或在形成新的完整基线时新增下一个二级版本。
 
 ## V1 - 现有算法体系重构与口径固化
 
@@ -744,3 +744,114 @@ V2 列为"后续扩展"的合同，V3 按阻断/行为/延后重新归类：
 - **新增**：装机容量（MWp/kWp）与额定功率（MW/kW）字段名不可混用；新增字段隐含单位换算（如 `pv_mw` 内部 `× 1000.0`）会被审查否决。
 - **新增**：每个 scanner/planner 入口须在 docstring 标注组合规模公式和预期 wall-clock 时间。
 - **新增**：每个 planner 入口须在本文档"planner 迁移状态"表登记其当前版本状态（保留/改造/冻结/弃用）和 sunset。
+
+## V4 - 第一阶段整合实施基线：canonical dispatch + monthly settlement 主链
+
+> **构建信息（provenance）**
+> - 构建代理（Agent）：Codex，基于用户提供的 V4 第一阶段整合计划写入。
+> - 构建日期：2026-07-02。
+> - 与 V1/V2/V3 的关系：V4 是第一阶段实施基线。V4 继承 V2 的架构主线（canonical 唯一、月度结算必交付、行为测试优先），吸收 V3 的源码核实结论（optional solver 导入、效率合同、fallback 静默错误、重复调度核、runner 输入边界），并裁剪 V3 中不属于第一阶段阻断路径的治理项。
+
+### 目标
+
+V4 第一阶段只建立一条可验证的投资测算主链：
+
+```text
+canonical dispatch -> monthly settlement -> IRR / owner KPI
+```
+
+第一阶段以 Wind/PV/BESS IRR 投资测算链为主消费者，不试图统一所有运营调度、分布式调度和 MILP sizing 的目标函数。外部入口、结果 dataclass、CSV 英文字段和中文表头保持稳定；新增能力通过内部合同和 adapter 落地。
+
+### V4 整合判断
+
+- V1 的分层、兼容入口稳定性、生产输入边界和中文导出边界规则继续有效，但 V1 把月度结算等能力描述成“重构”不够准确。V4 承认第一阶段包含新增内部能力。
+- V2 的核心分析最适合作为架构主线：canonical 唯一、月度结算是财务来源、行为 oracle/golden 优先、adapter 必须有消费者。
+- V3 的源码事实更准确：`cvxpy` 顶层导入、效率口径碎片化、重复贪心调度核、Python fallback 静默错误和硬编码 runner 输入边界必须进入实施前置项。
+- V3 的 P4 治理项需要裁剪：parquet 持久化、全部 planner wall-clock 标注、PV 字段公开改名和大规模目录搬迁不进入 V4 第一阶段阻断路径。
+
+### Key Changes
+
+- 新增统一物理合同 `BESSPhysicsContract`，作为容量测算调度路径读取效率、SOC 单位和 C-rate 语义的唯一来源。
+  - 第一阶段默认值采用当前 Wind/PV/BESS IRR 主链语义：`roundtrip_efficiency=0.92`，`eta_charge=sqrt(0.92)`，`eta_discharge=sqrt(0.92)`，`soc_unit="kwh"`。
+  - 现有 public config 字段保留；内部通过 adapter 构造合同，禁止新增局部硬编码效率默认值。
+  - CVXPY、分布式和 PuLP 路径暂不强求与 canonical 数值一致，但其默认效率必须来自同一合同或显式 public input 转换。
+
+- 修复 optional dependency 边界。
+  - `models/cvxp_bess_dispatch.py`、`models/distributed_bess_dispatch.py` 内的 `cvxpy` 改为求解函数内延迟导入。
+  - `bess_capacity_operating_planner.py`、`bess_capacity_distributed_planner.py` 和 `capacity_planning.__init__` 避免在普通包导入时触发 `cvxpy`。
+  - PuLP/IRR/贪心路径在未安装 `cvxpy` 时仍可导入、可运行。
+
+- 新建 `models/canonical_dispatch.py`，实现第一阶段唯一投资测算物理核。
+  - 输入：同轴 `load_kw`、`generation_kw` 字典、`BESSPhysicsContract`、`bess_capacity_kwh`、`TimeIndex` 或等价时间轴、`switch_gap_steps`。
+  - 输出 `DispatchSimulationResult`：逐时步 `generation_kwh`、`direct_used_kwh`、`charge_kwh`、`discharge_kwh`、`soc_kwh`、`grid_buy_kwh`、`curtail_kwh`、`load_kwh`、`net_load_kw`、`metadata`。
+  - Python 与 numba 路径必须等价；若暂未实现 numba，则第一阶段只保留正确 Python 核，不保留错误 fallback。
+  - `dispatch_annual()` 保留为兼容 wrapper；当 `batt_kwh > 0` 且 fallback 无法正确模拟时必须显式失败，不能返回“无电池”结果。
+
+- 新建 `settlement.py`，把结算从调度和财务中拆出。
+  - `MonthlySettlementResult` 由 `DispatchSimulationResult`、价格/PPA/需量参数和结算周期生成。
+  - 需量峰值由 settlement 根据 `net_load_kw`、时间轴和需量口径计算；不要把月峰值硬塞进物理核，避免 tariff policy 污染 dispatch。
+  - 年度收入、业主综合电价、节费额、节费率必须从月度结果汇总得到。
+
+- 迁移主消费者，不全量迁移所有 planner。
+  - 第一阶段主消费者：`plan_wind_pv_bess_for_target_irr`。
+  - 该 planner 内部改为：输入归一化 -> 候选生成 -> canonical dispatch -> monthly settlement -> `evaluate_levelized_irr()`。
+  - 外部入口、返回字段、CSV 英文字段和中文表头保持稳定。
+  - `wind_pv_bess_capacity_planner._dispatch_numba` 标记为重复实现；第一阶段优先用 canonical wrapper 替代其调用，只有测试覆盖后再删除。
+
+- 修正输入边界的真实问题。
+  - `run_wind_pv_bess_irr_planning.py` 不再默认把 `data/profit_calc/...` 当生产输入；如保留 demo 默认，CLI/config 必须明确 `demo` 语义。
+  - `run_dist_bess_dispatch.py` 的 `base_dir` 保持显式 config 输入，不在 V4 中视为同类硬编码生产路径，除非 config 默认直接指向样例数据。
+
+### 实施顺序（V4）
+
+1. **P0-a 测试先行**：新增失败测试覆盖 canonical dispatch 24h oracle、monthly settlement oracle、IRR planner 结算来源、`cvxpy` 缺失时包级导入。→ 验证：测试在当前实现下失败，且失败原因对应缺口。
+2. **P0-b optional solver 导入边界**：修复 `cvxpy` 顶层导入和 `__init__` 链式触发。→ 验证：模拟 `cvxpy` 不可用时，`import ele_trading.capacity_planning`、`plan_wind_pv_bess_for_target_irr`、`solve_capacity_sizing` 可用；CVXPY dispatcher 调用 `solve()` 时才要求 `cvxpy`。
+3. **P0-c 物理合同**：新增 `BESSPhysicsContract`，主链由 public config adapter 构造合同。→ 验证：主链效率/SOC 口径来自合同，不再由局部散字段直接驱动。
+4. **P1-a canonical dispatch**：新增 `models/canonical_dispatch.py`，输出逐时步结果和年度/月度物理汇总。→ 验证：24h oracle 通过能量守恒和 SOC 递推检查。
+5. **P1-b fallback 修正**：`dispatch_annual()` 在无 numba 且 `batt_kwh > 0` 时不得静默返回错误结果；可选择正确 Python 实现或显式 `raise`。→ 验证：无 numba + BESS 场景不再返回 `bess_dis=0` 的错误经济测算。
+6. **P2-a settlement 层**：新增 `settlement.py`，从 dispatch 结果计算月度电量、电费、需量费、PPA 收入、业主综合电价和节费率。→ 验证：`年度 = Σ月度 = Σ时步`，需量电费来自 `net_load_kw` 峰值而非月度电量反推。
+7. **P2-b IRR planner 消费者迁移**：`plan_wind_pv_bess_for_target_irr` 内部接入 canonical dispatch + settlement，`evaluate_levelized_irr()` 的年收入来自 settlement。→ 验证：现有 IRR planner 测试继续通过；若物理 bug 修正导致数值变化，必须解释。
+8. **P3-a 重复调度核收敛**：将 `wind_pv_bess_capacity_planner._dispatch_numba` 标记并逐步替换为 canonical wrapper；第一阶段不急于删除未覆盖路径。→ 验证：替换路径的兼容测试通过。
+9. **P3-b runner 输入边界**：修正 `run_wind_pv_bess_irr_planning.py` 的生产/demo 输入语义。→ 验证：正式测算入口不默认读 `data/profit_calc/...`；demo 路径有显式语义。
+10. **P4 文档同步**：更新 `capacity_planning/README.md` 和必要 config 文档，只描述已实现能力，不把后续合同写成已完成。→ 验证：`rg` 检查 V4 关键字，`compileall` 通过。
+
+### 验证要求（V4）
+
+- 导入边界：
+  - 模拟 `cvxpy` 不可用时，`import ele_trading.capacity_planning`、`plan_wind_pv_bess_for_target_irr`、`solve_capacity_sizing` 仍可用。
+  - CVXPY 相关 dispatcher 在调用 `solve()` 时才要求 `cvxpy`。
+- 物理 oracle：
+  - 新增 24h 手算用例，覆盖 surplus 充电、deficit 放电、SOC 上下限、弃电、购网。
+  - 校验 `generation = direct_used + charge + curtail`，`load = direct_used + discharge + grid_buy`，SOC 递推符合效率合同。
+- 结算 oracle：
+  - 固定 24h 或跨 2 个月小样本，校验 `年度 = Σ月度 = Σ时步`。
+  - 需量电费从 `net_load_kw` 峰值计算，不允许从月度电量反推。
+  - PPA 反推后业主综合电价回到目标值。
+- 兼容回归：
+  - `tests/test_wind_pv_bess_irr_planner.py` 继续通过，除非因修正物理 bug 导致数值变化；变化必须说明。
+  - `capacity_planning.__all__`、主要 `plan_*` / `scan_*` / `run_*` 入口仍可导入。
+  - `python3 -m compileall src/ele_trading/capacity_planning` 通过。
+
+文档自检命令：
+
+```bash
+rg -n "^## V[0-9]+|V4|canonical dispatch|monthly settlement|BESSPhysicsContract|对抗式审查|第一性原理" src/ele_trading/capacity_planning/PLAN.md
+```
+
+### 对抗式审查（V4）
+
+- 若 `import ele_trading.capacity_planning` 在 `cvxpy` 缺失时失败，审查否决。
+- 若 Wind/PV/BESS IRR 主链绕过 canonical dispatch 直接使用年度散字段进入 IRR，审查否决。
+- 若 settlement 从月度电量推导需量电费，而不是使用 `net_load_kw` 峰值口径，审查否决。
+- 若 annual revenue、owner average price、savings/savings_ratio 不能由月度 settlement 汇总复算，审查否决。
+- 若 Python fallback 在 `batt_kwh > 0` 时静默返回“无储能放电”的经济测算结果，审查否决。
+- 若新增 adapter 没有第一阶段消费者，审查否决。
+- 若第一阶段引入 `inputs/`、`dispatch/`、`planners/` 等目录搬迁，或公开改名 `pv_mw` 字段，审查要求退回；这些属于后续阶段。
+
+### 延后项与假设
+
+- `evaluate_levelized_irr()` 继续作为 V4 基准财务模型；逐年现金流、融资、税费、退化、更换、残值放到后续阶段。
+- `pv_mw` 实际语义为 MWp 的问题在 V4 记录为已知命名债务；第一阶段不改 public 字段名，只在新增内部字段和文档中写清单位。
+- 场景采样和场景缩减不进入第一阶段实现；保留项目规则：默认 LHS、兼容 `method="mc"`、缩减必须是 Kantorovich/Wasserstein L1 后向缩减。
+- 不新增 `inputs/`、`dispatch/`、`planners/` 目录；第一阶段只加最小必要模块和 adapter。
+- V4 内容为当前权威；V1/V2/V3 仅作历史。后续小修订直接改 V4，下一个完整基线再新增 `## V5`。

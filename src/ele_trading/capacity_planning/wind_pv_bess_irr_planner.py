@@ -13,10 +13,17 @@ from ele_trading.utils.time_index import infer_dt_hours
 from ele_trading.utils.log_util import logger
 from .irr_finance import (
     backsolve_green_ppa_price,
+    build_project_cashflows,
     compute_target_irr_gap_metrics,
-    evaluate_levelized_irr,
+    OwnerPriceBacksolveResult,
+    ProjectCashflowResult,
+    ReplacementEvent,
 )
-from .models.dispatch_algo import dispatch_annual
+from .models.canonical_dispatch import DispatchSimulationResult, canonical_dispatch
+from .models.physics_contract import BESSPhysicsContract
+from .models.price_aware_dispatch import DispatchMode, price_aware_dispatch
+from .settlement import settle_monthly
+from .tariff import Tariff
 
 
 @dataclass(slots=True)
@@ -58,6 +65,18 @@ class WindPVBESSIRRPlanConfig:
     switch_gap_hours: float = 1.0  # 充放电状态切换的最小间隔小时数
     use_numba: bool = True  # 是否使用 numba 加速
 
+    # --- Item 2/3 新增字段（默认值保持旧行为：无税/无更换/无残值/不衰减/标量电价/最低CAPEX）---
+    tax_rate: float = 0.0
+    salvage_ratio: float = 0.0
+    replacement_year: int | None = None
+    replacement_cost_yuan: float = 0.0
+    capacity_end_ratio: float = 1.0  # 1.0 = 不衰减；线性衰减到该比例（复用 evaluate_degraded_irr 公式）
+    discount_rate: float | None = None
+    dispatch_mode: str = "self_consumption"  # "self_consumption" | "arbitrage"
+    grid_buy_price_curve: pd.Series | None = None  # 给定时走价格感知 TOU 调度
+    objective: str = "min_capex_at_target_irr"  # Task 7: maximize_irr | maximize_savings_ratio
+    ppa_price_locked: float | None = None  # Task 8: 给定时正向求 IRR，不反推价格
+
 
 @dataclass(slots=True)
 class WindPVBESSIRRResult:
@@ -87,7 +106,14 @@ class WindPVBESSIRRResult:
     message: str | None = None  # 失败原因说明
 
 
-def _prepare_arrays(df_load: pd.DataFrame, wind_unit_kw: pd.Series | pd.DataFrame, pv_unit_kw: pd.Series | pd.DataFrame, load_col: str, time_col: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+def _prepare_arrays(
+    df_load: pd.DataFrame,
+    wind_unit_kw: pd.Series | pd.DataFrame,
+    pv_unit_kw: pd.Series | pd.DataFrame,
+    load_col: str,
+    time_col: str,
+    price_curve: pd.Series | pd.DataFrame | None = None,
+) -> tuple[pd.DatetimeIndex, np.ndarray, np.ndarray, np.ndarray, float, np.ndarray | None]:
     """
     数据预处理：将负荷、风电、光伏数据对齐到统一时间轴并转为连续数组。
 
@@ -128,10 +154,29 @@ def _prepare_arrays(df_load: pd.DataFrame, wind_unit_kw: pd.Series | pd.DataFram
     # 推断时间步长 dt_hours
     dt_hours = infer_dt_hours(df[time_col])
     
-    return load_kw_arr, wind_unit_arr, pv_unit_arr, dt_hours
+    # 可选：电价曲线对齐到同一时间轴（给定时走价格感知 TOU 调度）。
+    price_arr: np.ndarray | None = None
+    if price_curve is not None:
+        price_s = as_time_series(
+            price_curve,
+            time_col=time_col,
+            value_cols=("ele_price", "price", "Price", "value"),
+            scale=1.0,
+        )
+        price_arr = np.asarray(align_to_time(df[time_col], price_s), dtype=float)
+
+    return pd.DatetimeIndex(df[time_col]), load_kw_arr, wind_unit_arr, pv_unit_arr, dt_hours, price_arr
 
 
-def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[str, float], cfg: WindPVBESSIRRPlanConfig) -> dict[str, Any]:
+def _evaluate_candidate(
+    wind_mw: float,
+    pv_mw: float,
+    bess_mwh: float,
+    st: dict[str, float],
+    cfg: WindPVBESSIRRPlanConfig,
+    dispatch: DispatchSimulationResult | None = None,
+    price_arr: np.ndarray | None = None,
+) -> dict[str, Any]:
     """
     评估单个风光储容量组合的可行性与经济性。
 
@@ -162,13 +207,30 @@ def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[
     # ------------------------------
     # 3.绿电价格/PPA 价格约束
     # ------------------------------
-    price = backsolve_green_ppa_price(
-        load_kwh=load,
-        green_used_kwh=used,
-        target_owner_price_yuan_per_kwh=cfg.target_owner_price_yuan_per_kwh,
-        grid_buy_price_yuan_per_kwh=cfg.grid_buy_price_yuan_per_kwh,
-        green_price_adder_yuan_per_kwh=cfg.green_price_adder_yuan_per_kwh,
-    )
+    grid_buy_kwh = max(load - used, 0.0)
+    if cfg.ppa_price_locked is not None:
+        # PPA 锁定：正向用锁定价，不反推 target_owner_price（refine spec A4：优先级而非硬互斥）。
+        ppa_price = float(cfg.ppa_price_locked)
+        green_price = ppa_price + float(cfg.green_price_adder_yuan_per_kwh)
+        owner_avg = (
+            (green_price * used + cfg.grid_buy_price_yuan_per_kwh * grid_buy_kwh) / load
+            if load > 1e-9
+            else 0.0
+        )
+        price = OwnerPriceBacksolveResult(
+            green_price_yuan_per_kwh=green_price,
+            ppa_price_yuan_per_kwh=ppa_price,
+            owner_avg_price_yuan_per_kwh=owner_avg,
+            annual_grid_buy_kwh=float(grid_buy_kwh),
+        )
+    else:
+        price = backsolve_green_ppa_price(
+            load_kwh=load,
+            green_used_kwh=used,
+            target_owner_price_yuan_per_kwh=cfg.target_owner_price_yuan_per_kwh,
+            grid_buy_price_yuan_per_kwh=cfg.grid_buy_price_yuan_per_kwh,
+            green_price_adder_yuan_per_kwh=cfg.green_price_adder_yuan_per_kwh,
+        )
 
     row = {
         "wind_mw": wind_mw,
@@ -183,6 +245,32 @@ def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[
         "load_cover_ratio": float(cover),
         "curtail_kwh": float(st.get("curtail_kwh", 0.0)),
     }
+    if dispatch is not None:
+        if price_arr is not None:
+            tariff = Tariff(
+                timestamps=dispatch.timestamps,
+                grid_buy_price_yuan_per_kwh=price_arr,
+                green_price_yuan_per_kwh=float(price.green_price_yuan_per_kwh),
+            )
+            settlement = settle_monthly(
+                dispatch,
+                tariff=tariff,
+                ppa_price_yuan_per_kwh=float(price.ppa_price_yuan_per_kwh),
+                baseline_price_yuan_per_kwh=float(cfg.grid_buy_price_yuan_per_kwh),
+            )
+        else:
+            settlement = settle_monthly(
+                dispatch,
+                green_price_yuan_per_kwh=float(price.green_price_yuan_per_kwh),
+                ppa_price_yuan_per_kwh=float(price.ppa_price_yuan_per_kwh),
+                grid_buy_price_yuan_per_kwh=float(cfg.grid_buy_price_yuan_per_kwh),
+                baseline_price_yuan_per_kwh=float(cfg.grid_buy_price_yuan_per_kwh),
+            )
+        row["owner_avg_price"] = float(settlement.annual_summary["owner_avg_price_yuan_per_kwh"])
+        row["annual_grid_buy_kwh"] = float(settlement.annual_summary["grid_buy_kwh"])
+        row["annual_green_used_kwh"] = float(settlement.annual_summary["green_used_kwh"])
+        row["settlement_annual_summary"] = settlement.annual_summary
+        row["dispatch_annual_summary"] = dispatch.annual_summary
     # 候选组合被标记为 non_positive_ppa，不会作为可行解，但会进入 diagnostics
     if price.green_price_yuan_per_kwh <= 0.0 or price.ppa_price_yuan_per_kwh <= 0.0:
         return {**row, "reason": "non_positive_ppa", "irr": np.nan, "irr_gap": np.inf}
@@ -195,36 +283,63 @@ def _evaluate_candidate(wind_mw: float, pv_mw: float, bess_mwh: float, st: dict[
         + pv_mw * 1000.0 * cfg.pv_capex_yuan_per_kwp
         + bess_mwh * 1000.0 * cfg.bess_capex_yuan_per_kwh
     )
-    finance = evaluate_levelized_irr(
-        total_capex_yuan=total_capex,
-        annual_revenue_yuan=price.ppa_price_yuan_per_kwh * used,
-        annual_opex_yuan=total_capex * cfg.annual_opex_ratio,
+    annual_opex = total_capex * cfg.annual_opex_ratio
+    annual_revenue = float(
+        row.get("settlement_annual_summary", {}).get(
+            "ppa_revenue_yuan", price.ppa_price_yuan_per_kwh * used
+        )
+    )
+    # 逐年衰减曲线（复用 evaluate_degraded_irr 的线性公式）。
+    if cfg.capacity_end_ratio < 1.0:
+        n_years = int(cfg.life_years)
+        step = (1.0 - cfg.capacity_end_ratio) / max(n_years - 1, 1)
+        degradation = [max(cfg.capacity_end_ratio, 1.0 - step * y) for y in range(n_years)]
+    else:
+        degradation = None
+    replacements = (
+        [ReplacementEvent(year=int(cfg.replacement_year), cost_yuan=float(cfg.replacement_cost_yuan))]
+        if cfg.replacement_year is not None
+        else None
+    )
+    finance: ProjectCashflowResult = build_project_cashflows(
+        capex_yuan=total_capex,
+        annual_revenue_y1_yuan=annual_revenue,
+        annual_opex_y1_yuan=annual_opex,
         life_years=int(cfg.life_years),
+        capacity_degradation=degradation,
+        tax_rate=cfg.tax_rate,
+        replacements=replacements,
+        salvage_ratio=cfg.salvage_ratio,
+        discount_rate=cfg.discount_rate,
     )
     irr = finance.irr
     irr_gap = abs(irr - cfg.target_irr)
 
     row.update({
-        "total_capex_yuan": float(finance.total_capex_yuan),
-        "annual_revenue_yuan": float(finance.annual_revenue_yuan),
-        "annual_opex_yuan": float(finance.annual_opex_yuan),
-        "annual_cashflow_yuan": float(finance.annual_cashflow_yuan),
+        "total_capex_yuan": float(finance.capex_yuan),
+        "annual_revenue_yuan": float(annual_revenue),
+        "annual_opex_yuan": float(annual_opex),
+        "annual_cashflow_yuan": float(annual_revenue - annual_opex),
         "irr": float(irr),
         "irr_gap": float(irr_gap),
+        "cashflows": finance.cashflows,
+        "replacement_events_yuan": finance.replacement_events_yuan,
+        "annual_taxes_yuan": finance.annual_taxes_yuan,
+        "salvage_yuan": float(finance.salvage_yuan),
     })
-    if cfg.irr_constraint_mode not in {"range", "minimum"}:
-        raise ValueError("irr_constraint_mode must be 'range' or 'minimum'")
-
-    if cfg.irr_constraint_mode == "minimum":
-        irr_out_of_bounds = irr < cfg.target_irr
-    else:
-        irr_out_of_bounds = irr < cfg.target_irr or irr > cfg.target_irr + cfg.irr_tolerance
-
-    # 候选组合不满足 IRR 约束时进入 diagnostics。
-    if irr_out_of_bounds:
-        return {**row, "reason": "irr_out_of_tolerance"}
+    # 仅 min_capex_at_target_irr 目标施加 IRR 容差过滤；最大化目标保留全部物理+PPA 可行候选。
+    if cfg.objective == "min_capex_at_target_irr":
+        if cfg.irr_constraint_mode not in {"range", "minimum"}:
+            raise ValueError("irr_constraint_mode must be 'range' or 'minimum'")
+        if cfg.irr_constraint_mode == "minimum":
+            irr_out_of_bounds = irr < cfg.target_irr
+        else:
+            irr_out_of_bounds = irr < cfg.target_irr or irr > cfg.target_irr + cfg.irr_tolerance
+        # 候选组合不满足 IRR 约束时进入 diagnostics。
+        if irr_out_of_bounds:
+            return {**row, "reason": "irr_out_of_tolerance"}
     # ------------------------------
-    # 物理约束满足、PPA 为正、IRR 达到目标且在上侧容差内
+    # 物理约束满足、PPA 为正（最大化目标下 IRR 不过滤）
     # ------------------------------
     return {**row, "reason": "ok"}
 
@@ -259,10 +374,16 @@ def _summary_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
         "self_use_ratio",
         "load_cover_ratio",
         "curtail_kwh",
+        "settlement_annual_summary",
+        "dispatch_annual_summary",
         "total_capex_yuan",
         "annual_revenue_yuan",
         "annual_opex_yuan",
         "annual_cashflow_yuan",
+        "cashflows",
+        "replacement_events_yuan",
+        "annual_taxes_yuan",
+        "salvage_yuan",
         "reason",
     )
     cleaned: dict[str, Any] = {}
@@ -270,7 +391,9 @@ def _summary_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
         if key not in row:
             continue
         value = row[key]
-        if pd.isna(value):
+        if isinstance(value, (list, np.ndarray)):
+            cleaned[key] = value
+        elif pd.isna(value):
             cleaned[key] = None
         elif isinstance(value, (np.floating, np.integer)):
             cleaned[key] = float(value)
@@ -362,8 +485,8 @@ def plan_wind_pv_bess_for_target_irr(
     扫描风光储容量组合，寻找满足 IRR 目标的最低投资方案。
     """
     # 数据预处理
-    load_kw_arr, wind_unit_arr, pv_unit_arr, dt_hours = _prepare_arrays(
-        df_load, wind_unit_kw, pv_unit_kw, load_col, time_col
+    timestamps, load_kw_arr, wind_unit_arr, pv_unit_arr, dt_hours, price_arr = _prepare_arrays(
+        df_load, wind_unit_kw, pv_unit_kw, load_col, time_col, price_curve=cfg.grid_buy_price_curve
     )
     logger.info(f"dt_hours: {dt_hours}")
 
@@ -393,19 +516,41 @@ def plan_wind_pv_bess_for_target_irr(
             pv_kw_arr = pv_unit_arr * float(pv_mw) * 1000.0
             for bess_mwh in bess_candidates:
                 total_combinations += 1
-                # ------------------------------
-                # 年度调度模型
-                # ------------------------------
-                st = dispatch_annual(
-                    load_kw = load_kw_arr,
-                    wind_kw = wind_kw_arr,
-                    pv_kw = pv_kw_arr,
-                    other_kw = np.zeros_like(load_kw_arr, dtype=np.float64),
-                    batt_kwh = float(bess_mwh) * 1000.0,
-                    dt_hours = dt_hours,
-                    cfg = cfg,
-                    switch_gap_steps = switch_gap_steps,
+                bess = BESSPhysicsContract.from_roundtrip(
+                    cfg.eta_roundtrip,
+                    soc_init_frac=cfg.soc_init_frac,
+                    soc_min_frac=cfg.soc_min_frac,
+                    soc_max_frac=cfg.soc_max_frac,
+                    c_rate=cfg.c_rate,
                 )
+                if price_arr is not None:
+                    dispatch = price_aware_dispatch(
+                        load_kw=load_kw_arr,
+                        generation_kw={"wind": wind_kw_arr, "pv": pv_kw_arr},
+                        bess=bess,
+                        bess_capacity_kwh=float(bess_mwh) * 1000.0,
+                        price_yuan_per_kwh=price_arr,
+                        timestamps=timestamps,
+                        dt_hours=dt_hours,
+                        mode=DispatchMode(cfg.dispatch_mode),
+                        switch_gap_steps=switch_gap_steps,
+                    )
+                else:
+                    dispatch = canonical_dispatch(
+                        load_kw=load_kw_arr,
+                        generation_kw={"wind": wind_kw_arr, "pv": pv_kw_arr},
+                        bess=bess,
+                        bess_capacity_kwh=float(bess_mwh) * 1000.0,
+                        timestamps=timestamps,
+                        dt_hours=dt_hours,
+                        switch_gap_steps=switch_gap_steps,
+                    )
+                st = {
+                    "ren_gen_kwh": dispatch.annual_summary["generation_kwh"],
+                    "ren_used_kwh": dispatch.annual_summary["green_used_kwh"],
+                    "load_kwh": dispatch.annual_summary["load_kwh"],
+                    "curtail_kwh": dispatch.annual_summary["curtail_kwh"],
+                }
                 # ------------------------------
                 # 对当前风光储组合进行物理约束、价格约束和 IRR 约束的综合评估
                 # ------------------------------
@@ -415,6 +560,8 @@ def plan_wind_pv_bess_for_target_irr(
                     bess_mwh = float(bess_mwh), 
                     st = st, 
                     cfg = cfg,
+                    dispatch=dispatch,
+                    price_arr=price_arr,
                 )
                 logger.debug("evaluated=%s", evaluated)
                 # ------------------------------
@@ -434,14 +581,22 @@ def plan_wind_pv_bess_for_target_irr(
                     diagnostics.append(row)
                     evaluated_rows.append(row)
     diagnostic_summary = _build_diagnostic_summary(total_combinations, reason_counts, evaluated_rows, cfg)
-    # 存在满足所有约束的候选组合，选取总投资最低且 IRR 偏差最小的方案
+    # 存在满足约束的候选组合，按 objective 选 best
     if candidates:
-        best = min(candidates, key=lambda row: (row["total_capex_yuan"], row["irr_gap"]))
+        if cfg.objective == "maximize_irr":
+            best = max(candidates, key=lambda row: row["irr"])
+        elif cfg.objective == "maximize_savings_ratio":
+            best = max(
+                candidates,
+                key=lambda row: row["settlement_annual_summary"]["savings_ratio"],
+            )
+        else:  # min_capex_at_target_irr
+            best = min(candidates, key=lambda row: (row["total_capex_yuan"], row["irr_gap"]))
         return _result_from_row(
-            status="ok", 
-            row=best, 
-            diagnostics=pd.DataFrame(candidates), 
-            diagnostic_summary=diagnostic_summary, 
+            status="ok",
+            row=best,
+            diagnostics=pd.DataFrame(candidates),
+            diagnostic_summary=diagnostic_summary,
         )
     # 无满足所有约束的候选，返回 PPA/IRR 不满足的诊断信息供参考
     if diagnostics:
