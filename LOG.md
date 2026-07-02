@@ -501,3 +501,27 @@ docs/
 - `rg -n "模块命名与分布诊断|目标模块分布|可直接编码的重构步骤|第一性原理|基础输入层|运行仿真层|财务测算层|输入边界条件" src/ele_trading/capacity_planning/PLAN.md`：通过
 - `python3 -m compileall src/ele_trading/capacity_planning`：通过
 - `rg -n "optimization_interfaces|user_side_bess_dispatch_cvxpy|user_side_bess_distributed_dispatch_class|ele_trading\.optimization|\.\.optimization" src/ele_trading/capacity_planning --glob '!PLAN.md'`：无命中
+
+## 2026-07-02
+
+### 状态对齐 026 — capacity_planning PLAN V2 第一性原理修正基线
+
+#### 变更清单
+
+**T1 — 新增 PLAN V2 完整修订基线**
+- `src/ele_trading/capacity_planning/PLAN.md` 新增 `## V2 - 第一性原理修正：canonical 物理+结算链与可证伪验证`（V1 章节未改动，保留为历史）
+- V2 修正 V1 核心矛盾：承认 canonical 时序调度 + 月度结算是新增能力（不再伪装纯重构）；月度结算由“后续扩展”提升为 V2 必交付项
+- 指定唯一 canonical 物理核，其余 4 条调度路径分类为弃用/异范围，不再要求彼此“一致”
+- 仿真→结算 seam 强制携带每月净负荷峰值（供需量电费）；新增顶层 TimeIndex canonization
+- 验证改为行为优先：golden-output 回归 + 24h 手算 oracle，替代 rg 关键词自检
+- 修正 V1 事实陈述：仅 1/6 runner 硬编码 data 路径；planner 内无 CSV 写出；optimization 边界实测已清零
+- 构建信息：Agent = Claude Code（CLI），Model = glm-5.2（1M context）
+
+**T2 — 文档指针同步**
+- `PLAN.md` 前言、根 `README.md`、`capacity_planning/README.md` 中“当前计划 = V1”更新为“当前权威基线 = V2”
+
+#### 当前验证状态
+
+- `python3 -m compileall src/ele_trading/capacity_planning`：通过（本次仅文档变更）
+- `rg -n "^## V[12] " src/ele_trading/capacity_planning/PLAN.md`：V1@5、V2@227，V1 章节体未改动
+- `rg -n "^## V[0-9]+|canonical|golden|oracle|TimeIndex|月度结算" src/ele_trading/capacity_planning/PLAN.md`：命中

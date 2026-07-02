@@ -106,7 +106,7 @@ ele-trading/
 - **共享引擎**（`models/`）：`cvxp_bess_dispatch.py`（单节点 BESS CVXPY 调度）、`distributed_bess_dispatch.py`（多节点分布式 BESS 调度）、`dispatch_algo.py`（Numba 贪心年度调度）、`resource_bess_planner_core.py`（单源 PV/Wind 贪心 + 二分搜索）、`simulation_model.py`（策略回放仿真）。
 - **辅助**：`feasibility_analyzer.py`（电价-负荷匹配评分）、`multi_node_scanner.py`（多节点 MILP 扫描）。
 
-长期建设计划维护在 `src/ele_trading/capacity_planning/PLAN.md`，当前 V1 以投资测算体系为目标，先固化输入、仿真、结算、财务和诊断的模块边界，再执行源码级重构。
+长期建设计划维护在 `src/ele_trading/capacity_planning/PLAN.md`，当前权威基线为 V2：先建一条 canonical 物理+结算链（时序调度→月度结算→财务）并用 golden/oracle 验证，再迁源码；V1 保留为历史。
 
 详见 `src/ele_trading/capacity_planning/README.md`。
 
