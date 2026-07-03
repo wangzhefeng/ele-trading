@@ -4,8 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
-import numpy as np
-
 from ele_trading.evaluation.metrics import compute_irr
 
 
@@ -17,23 +15,6 @@ class LevelizedIRRResult:
     annual_cashflow_yuan: float
     irr: float
     cashflows: list[float]
-
-
-@dataclass(slots=True)
-class EquityIRRResult:
-    """Project-finance IRR result based on the Excel-aligned model."""
-
-    total_capex_yuan: float
-    annual_revenue_yuan: float
-    annual_opex_yuan: float
-    annual_cashflow_yuan: float
-    irr: float | None
-    irr_ti_pre: float | None
-    irr_ti_post: float | None
-    irr_eq_pre: float | None
-    irr_eq_post: float | None
-    cashflows_wan: list[float]  # 资本金税后现金流序列，单位 万元（模型原生口径，与 total_investment_wan 一致）
-    total_investment_wan: float
 
 
 @dataclass(slots=True)
@@ -88,78 +69,6 @@ def evaluate_levelized_irr(
         annual_cashflow_yuan=float(annual_cashflow),
         irr=float(irr),
         cashflows=cashflows,
-    )
-
-
-def evaluate_equity_irr(
-    *,
-    wind_mw: float,
-    pv_mw: float,
-    bess_mwh: float,
-    wind_capex_yuan_per_kw: float,
-    pv_capex_yuan_per_kwp: float,
-    bess_capex_yuan_per_kwh: float,
-    annual_revenue_yuan: float,
-    annual_opex_yuan: float,
-    life_years: int,
-    construction_years: int = 2,
-    loan_rate: float = 0.03,
-    loan_term: int | None = None,
-    vat_rate: float = 0.13,
-) -> EquityIRRResult:
-    """Evaluate post-tax equity IRR using the detailed project-finance model."""
-    from .irr_calculation import IRRCalculator
-
-    wind_unit_cost = float(wind_capex_yuan_per_kw) / 1000.0
-    solar_unit_cost = float(pv_capex_yuan_per_kwp) / 1000.0
-    storage_unit_cost = float(bess_capex_yuan_per_kwh) / 1000.0
-
-    revenue_ex_tax_wan = float(annual_revenue_yuan) / (1.0 + float(vat_rate)) / 10000.0
-    opex_wan = float(annual_opex_yuan) / 10000.0
-    effective_loan_term = int(loan_term) if loan_term is not None else min(15, int(life_years))
-
-    calc = IRRCalculator(
-        wind_capacity=float(wind_mw),
-        solar_capacity=float(pv_mw),
-        storage_capacity=float(bess_mwh),
-        wind_unit_cost=wind_unit_cost,
-        solar_unit_cost=solar_unit_cost,
-        storage_unit_cost=storage_unit_cost,
-        operating_years=int(life_years),
-        construction_years=int(construction_years),
-        loan_rate=float(loan_rate),
-        loan_term=effective_loan_term,
-        external_revenue=revenue_ex_tax_wan,
-        external_opex=opex_wan,
-        delivery_cost=0.0,
-        survey_unit_cost=0.0,
-        other_unit_cost=0.0,
-    )
-    result = calc.run()
-
-    eq_post_cashflows = result.get("eq_post")
-    cashflows = [float(value) for value in eq_post_cashflows] if eq_post_cashflows is not None else []
-    if eq_post_cashflows is not None and len(eq_post_cashflows) > int(construction_years):
-        annual_cashflow_yuan = float(np.mean(eq_post_cashflows[int(construction_years):])) * 10000.0
-    else:
-        annual_cashflow_yuan = float(annual_revenue_yuan) - float(annual_opex_yuan)
-
-    irr_eq_post = result.get("irr_eq_post")
-    irr_eq_pre = result.get("irr_eq_pre")
-    irr_ti_post = result.get("irr_ti_post")
-    irr_ti_pre = result.get("irr_ti_pre")
-    return EquityIRRResult(
-        total_capex_yuan=float(calc.total_inv * 10000.0),
-        annual_revenue_yuan=float(annual_revenue_yuan),
-        annual_opex_yuan=float(annual_opex_yuan),
-        annual_cashflow_yuan=float(annual_cashflow_yuan),
-        irr=float(irr_eq_post) if irr_eq_post is not None else None,
-        irr_ti_pre=float(irr_ti_pre) if irr_ti_pre is not None else None,
-        irr_ti_post=float(irr_ti_post) if irr_ti_post is not None else None,
-        irr_eq_pre=float(irr_eq_pre) if irr_eq_pre is not None else None,
-        irr_eq_post=float(irr_eq_post) if irr_eq_post is not None else None,
-        cashflows_wan=cashflows,
-        total_investment_wan=float(calc.total_inv),
     )
 
 

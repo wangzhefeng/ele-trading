@@ -49,9 +49,15 @@ RESULT_COLUMN_CN: dict[str, str] = {
     "wind_curve_cache_path": "风电曲线缓存路径",
     "pv_curve_cache_path": "光伏曲线缓存路径",
     "stage": "搜索阶段",
+    "stage_index": "阶段内序号",
+    "stage_total": "阶段场景总数",
     "status": "状态",
     "has_feasible_solution": "是否存在可行解",
     "best_reason": "最佳候选原因",
+    "elapsed_seconds": "场景耗时(秒)",
+    "total_combinations": "候选组合数",
+    "reason_counts": "候选原因分布",
+    "worker_pid": "进程ID",
     "wind_mw": "风电容量(MW)",
     "pv_mw": "光伏容量(MW)",
     "bess_mwh": "储能容量(MWh)",
@@ -67,8 +73,12 @@ RESULT_COLUMN_CN: dict[str, str] = {
     "total_capex_yuan": "总投资(元)",
     "annual_revenue_yuan": "年度收入(元)",
     "annual_opex_yuan": "年度运维成本(元)",
-    "annual_cashflow_yuan": "年度现金流(元)",
-    "irr": "内部收益率",
+    "annual_cashflow_yuan": "资本金税后平均年度现金流(元)",
+    "irr": "资本金IRR税后",
+    "irr_ti_pre": "全投资IRR税前",
+    "irr_ti_post": "全投资IRR税后",
+    "irr_eq_pre": "资本金IRR税前",
+    "irr_eq_post": "资本金IRR税后",
     "irr_gap": "IRR差距",
     "reason": "原因",
 }
@@ -184,6 +194,7 @@ def _to_config(config: dict) -> WindPVBESSIRRPlanConfig:
     search = config["search"]
     bess = config["bess"]
     cost = config["cost"]
+    finance = config.get("finance", {})
     return WindPVBESSIRRPlanConfig(
         target_owner_price_yuan_per_kwh=price["target_owner_price_yuan_per_kwh"],
         grid_buy_price_yuan_per_kwh=price["grid_buy_price_yuan_per_kwh"],
@@ -213,6 +224,10 @@ def _to_config(config: dict) -> WindPVBESSIRRPlanConfig:
         bess_capex_yuan_per_kwh=cost["bess_capex_yuan_per_kwh"],
         annual_opex_ratio=cost["annual_opex_ratio"],
         life_years=cost["life_years"],
+        construction_years=finance.get("construction_years", 2),
+        loan_rate=finance.get("loan_rate", 0.03),
+        loan_term=finance.get("loan_term"),
+        vat_rate=finance.get("vat_rate", 0.13),
     )
 
 # ------------------------------
@@ -303,6 +318,10 @@ def _build_optimal_solution_df(result: WindPVBESSIRRResult) -> pd.DataFrame:
         "annual_opex_yuan",
         "annual_cashflow_yuan",
         "irr",
+        "irr_ti_pre",
+        "irr_ti_post",
+        "irr_eq_pre",
+        "irr_eq_post",
         "irr_gap",
         "reason",
     ]
@@ -315,14 +334,17 @@ def _build_optimal_solution_df(result: WindPVBESSIRRResult) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=columns)
 
+    # 与 planner 最优解选取口径一致：(总投资, IRR 偏差) 升序，确保 solution_rank=1
+    # 落在最低投资的最优解上（diagnostics 默认按容量遍历序排列，未排序）。
+    df = df.sort_values(
+        by=["total_capex_yuan", "irr_gap"],
+        ascending=[True, True],
+        na_position="last",
+    ).reset_index(drop=True)
+
     for column in columns:
         if column not in df.columns:
             df[column] = None
-    if "annual_green_generation_kwh" in df.columns:
-        df["annual_green_generation_kwh"] = (
-            pd.to_numeric(df["annual_green_used_kwh"], errors="coerce").fillna(0.0)
-            + pd.to_numeric(df["curtail_kwh"], errors="coerce").fillna(0.0)
-        )
     df.insert(0, "solution_rank_tmp", range(1, len(df) + 1))
     df["solution_rank"] = df["solution_rank_tmp"]
     df["is_best_solution"] = df["solution_rank"] == 1
@@ -349,6 +371,13 @@ def main(argv: list[str] | None = None) -> None:
     # 2. 运行容量规划
     # ------------------------------
     cfg = _to_config(config)
+    results_dir = PROJECT_ROOT / "results" / "wind_pv_bess_irr"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    parameter_search_path = results_dir / "parameter_search_summary.csv"
+
+    def _write_parameter_search_progress(summary_df: pd.DataFrame) -> None:
+        if summary_df is not None and not summary_df.empty:
+            _write_result_csv_with_cn_header(summary_df, parameter_search_path)
 
     tuning_enabled = bool(config.get("resource_tuning", {}).get("enabled", False))
     parameter_search_df: pd.DataFrame | None = None
@@ -364,6 +393,9 @@ def main(argv: list[str] | None = None) -> None:
             build_wind_unit_curve=_build_wind_unit_curve,
             build_pv_unit_curve=_build_pv_unit_curve,
             curve_cache_path=_curve_cache_path,
+            on_summary_update=_write_parameter_search_progress
+            if bool(config.get("resource_tuning", {}).get("incremental_write", False))
+            else None,
         )
         result = tuning_result.result
         parameter_search_df = tuning_result.parameter_search_summary
@@ -402,10 +434,6 @@ def main(argv: list[str] | None = None) -> None:
     # ------------------------------
     # 5. 保存结果
     # ------------------------------
-    # 结果保存路径
-    results_dir = PROJECT_ROOT / "results" / "wind_pv_bess_irr"
-    results_dir.mkdir(parents=True, exist_ok=True)
-    
     # diagnostics.csv save
     diagnostics_path = results_dir / "diagnostics.csv"
 
@@ -420,7 +448,6 @@ def main(argv: list[str] | None = None) -> None:
     
     # parameter_search_summary.csv save
     if parameter_search_df is not None:
-        parameter_search_path = results_dir / "parameter_search_summary.csv"
         _write_result_csv_with_cn_header(parameter_search_df, parameter_search_path)
         logger.info("参数搜索摘要已保存: %s", parameter_search_path)
         if parameter_search_best:
@@ -457,11 +484,11 @@ def main(argv: list[str] | None = None) -> None:
             reason_counts = result.diagnostic_summary.get("reason_counts")
             max_irr_candidate = result.diagnostic_summary.get("max_irr_candidate")
             nearest_irr_candidate = result.diagnostic_summary.get("nearest_irr_candidate")
-            target_gap_metrics = result.diagnostic_summary.get("target_gap_metrics")
+            levelized_target_gap_metrics = result.diagnostic_summary.get("levelized_target_gap_metrics")
             logger.info("reason_counts=%s", reason_counts)
             logger.info("max_irr_candidate=%s", max_irr_candidate)
             logger.info("nearest_irr_candidate=%s", nearest_irr_candidate)
-            logger.info("target_gap_metrics=%s", target_gap_metrics)
+            logger.info("levelized_target_gap_metrics=%s", levelized_target_gap_metrics)
 
 
 if __name__ == "__main__":

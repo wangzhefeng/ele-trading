@@ -1,11 +1,16 @@
 """Wind/PV/BESS IRR resource-parameter tuning helpers."""
 from __future__ import annotations
 
+import os
+import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
 
 import pandas as pd
+
+from ele_trading.utils.log_util import logger
 
 from .wind_pv_bess_irr_planner import (
     WindPVBESSIRRPlanConfig,
@@ -17,6 +22,7 @@ from .wind_pv_bess_irr_planner import (
 BuildWindCurve = Callable[[dict[str, Any], Path], pd.Series]
 BuildPVCurve = Callable[[dict[str, Any], pd.DatetimeIndex, Path], pd.Series]
 CurveCachePath = Callable[[Path, str, dict[str, Any]], Path]
+SummaryUpdateCallback = Callable[[pd.DataFrame], None]
 
 
 @dataclass(slots=True)
@@ -27,6 +33,27 @@ class WindPVBESSIRRTuningResult:
     parameter_search_summary: pd.DataFrame
     best_summary: dict[str, Any] | None
     raw_diagnostics: pd.DataFrame | None = None
+
+
+@dataclass(slots=True)
+class _StageScenarioPayload:
+    stage: str
+    stage_index: int
+    stage_total: int
+    metadata: dict[str, Any]
+    df_load: pd.DataFrame
+    wind_unit: pd.Series
+    pv_unit: pd.Series
+    cfg: WindPVBESSIRRPlanConfig
+    retain_diagnostics: bool
+
+
+@dataclass(slots=True)
+class _StageScenarioResult:
+    result: WindPVBESSIRRResult
+    metadata: dict[str, Any]
+    summary_row: dict[str, Any]
+    elapsed_seconds: float
 
 
 def _float_range(start: float, stop: float, step: float) -> list[float]:
@@ -160,17 +187,25 @@ def _bounded_cfg(
 
 def _result_summary_row(result: WindPVBESSIRRResult, metadata: dict[str, Any], stage: str) -> dict[str, Any]:
     best_reason = "ok" if result.status == "ok" else None
-    annual_green_generation_kwh = result.annual_green_used_kwh + result.curtail_kwh
+    annual_green_generation_kwh = result.annual_green_generation_kwh
     row = {
         **metadata,
         "stage": stage,
         "status": result.status,
         "has_feasible_solution": result.status == "ok",
         "best_reason": best_reason,
+        "elapsed_seconds": None,
+        "total_combinations": None,
+        "reason_counts": None,
+        "worker_pid": None,
         "wind_mw": result.wind_mw,
         "pv_mw": result.pv_mw,
         "bess_mwh": result.bess_mwh,
         "irr": result.irr,
+        "irr_ti_pre": result.irr_ti_pre,
+        "irr_ti_post": result.irr_ti_post,
+        "irr_eq_pre": result.irr_eq_pre,
+        "irr_eq_post": result.irr_eq_post,
         "irr_gap": None if result.irr is None else abs(result.irr - metadata["target_irr"]),
         "green_price": result.green_price,
         "ppa_price": result.ppa_price,
@@ -193,23 +228,126 @@ def _result_summary_row(result: WindPVBESSIRRResult, metadata: dict[str, Any], s
             "pv_mw": best.get("pv_mw", 0.0),
             "bess_mwh": best.get("bess_mwh", 0.0),
             "irr": best.get("irr"),
+            "irr_ti_pre": best.get("irr_ti_pre"),
+            "irr_ti_post": best.get("irr_ti_post"),
+            "irr_eq_pre": best.get("irr_eq_pre"),
+            "irr_eq_post": best.get("irr_eq_post"),
             "irr_gap": best.get("irr_gap"),
             "green_price": best.get("green_price"),
             "ppa_price": best.get("ppa_price"),
             "owner_avg_price": best.get("owner_avg_price"),
             "total_capex_yuan": best.get("total_capex_yuan"),
             "annual_cashflow_yuan": best.get("annual_cashflow_yuan"),
-            "annual_green_generation_kwh": (
-                float(best.get("annual_green_used_kwh", 0.0) or 0.0)
-                + float(best.get("curtail_kwh", 0.0) or 0.0)
-            ),
+            "annual_green_generation_kwh": best.get("annual_green_generation_kwh"),
             "annual_green_used_kwh": best.get("annual_green_used_kwh"),
             "annual_grid_buy_kwh": best.get("annual_grid_buy_kwh"),
             "self_use_ratio": best.get("self_use_ratio"),
             "load_cover_ratio": best.get("load_cover_ratio"),
             "curtail_kwh": best.get("curtail_kwh"),
         })
+    if result.diagnostic_summary:
+        row["total_combinations"] = result.diagnostic_summary.get("total_combinations")
+        row["reason_counts"] = result.diagnostic_summary.get("reason_counts")
     return row
+
+
+def _run_stage_scenario(payload: _StageScenarioPayload) -> _StageScenarioResult:
+    start = time.perf_counter()
+    result = plan_wind_pv_bess_for_target_irr(
+        payload.df_load,
+        payload.wind_unit,
+        payload.pv_unit,
+        cfg=payload.cfg,
+        retain_diagnostics=payload.retain_diagnostics,
+    )
+    elapsed = time.perf_counter() - start
+    row = _result_summary_row(result, payload.metadata, stage=payload.stage)
+    row["stage_index"] = payload.stage_index
+    row["stage_total"] = payload.stage_total
+    row["elapsed_seconds"] = float(elapsed)
+    row["worker_pid"] = os.getpid()
+    return _StageScenarioResult(
+        result=result,
+        metadata=payload.metadata,
+        summary_row=row,
+        elapsed_seconds=float(elapsed),
+    )
+
+
+def _log_stage_result(stage_result: _StageScenarioResult, stage: str) -> None:
+    row = stage_result.summary_row
+    logger.info(
+        "%s %s/%s scenario_id=%s status=%s irr=%s elapsed=%.2fs",
+        stage,
+        row.get("stage_index"),
+        row.get("stage_total"),
+        row.get("scenario_id"),
+        row.get("status"),
+        row.get("irr"),
+        stage_result.elapsed_seconds,
+    )
+
+
+def _summary_dataframe(rows: list[dict[str, Any]]) -> pd.DataFrame:
+    stage_order = {"coarse": 0, "fine": 1}
+    return pd.DataFrame(sorted(
+        rows,
+        key=lambda row: (
+            stage_order.get(str(row.get("stage")), 99),
+            int(row.get("stage_index") or 0),
+            int(row.get("scenario_id") or 0),
+        ),
+    ))
+
+
+def _run_stage_scenarios(
+    payloads: list[_StageScenarioPayload],
+    *,
+    parallel_enabled: bool,
+    max_workers: int,
+    on_summary_update: SummaryUpdateCallback | None,
+    completed_rows: list[dict[str, Any]],
+) -> list[_StageScenarioResult]:
+    if not payloads:
+        return []
+
+    results: list[_StageScenarioResult] = []
+    if parallel_enabled and max_workers > 1:
+        worker_count = min(max_workers, len(payloads))
+        logger.info("并行运行 %s 阶段资源场景: workers=%d scenarios=%d", payloads[0].stage, worker_count, len(payloads))
+        try:
+            with ProcessPoolExecutor(max_workers=worker_count) as executor:
+                future_map = {executor.submit(_run_stage_scenario, payload): payload for payload in payloads}
+                for future in as_completed(future_map):
+                    stage_result = future.result()
+                    results.append(stage_result)
+                    completed_rows.append(stage_result.summary_row)
+                    _log_stage_result(stage_result, stage_result.summary_row["stage"])
+                    if on_summary_update is not None:
+                        on_summary_update(_summary_dataframe(completed_rows))
+        except (NotImplementedError, PermissionError) as exc:
+            logger.warning("并行执行不可用，降级为串行运行 %s 阶段: %s", payloads[0].stage, exc)
+            for payload in payloads:
+                stage_result = _run_stage_scenario(payload)
+                results.append(stage_result)
+                completed_rows.append(stage_result.summary_row)
+                _log_stage_result(stage_result, stage_result.summary_row["stage"])
+                if on_summary_update is not None:
+                    on_summary_update(_summary_dataframe(completed_rows))
+    else:
+        logger.info("串行运行 %s 阶段资源场景: scenarios=%d", payloads[0].stage, len(payloads))
+        for payload in payloads:
+            stage_result = _run_stage_scenario(payload)
+            results.append(stage_result)
+            completed_rows.append(stage_result.summary_row)
+            _log_stage_result(stage_result, stage_result.summary_row["stage"])
+            if on_summary_update is not None:
+                on_summary_update(_summary_dataframe(completed_rows))
+
+    return sorted(
+        results,
+        key=lambda item: (item.summary_row.get("stage_index", 0), item.summary_row.get("scenario_id", 0)),
+    )
 
 
 def _add_metadata(df: pd.DataFrame | None, metadata: dict[str, Any]) -> pd.DataFrame | None:
@@ -271,10 +409,14 @@ def run_wind_pv_bess_irr_resource_tuning(
     build_wind_unit_curve: BuildWindCurve,
     build_pv_unit_curve: BuildPVCurve,
     curve_cache_path: CurveCachePath,
+    on_summary_update: SummaryUpdateCallback | None = None,
 ) -> WindPVBESSIRRTuningResult:
     """Run resource-parameter tuning plus two-stage Wind/PV/BESS capacity search."""
     tuning = config.get("resource_tuning", {})
     scenarios = iter_resource_scenarios(config)
+    parallel_enabled = bool(tuning.get("parallel_enabled", False))
+    max_workers = max(1, int(tuning.get("max_workers", 1)))
+    retain_intermediate_diagnostics = bool(tuning.get("retain_intermediate_diagnostics", True))
 
     coarse_bounds = tuning.get("coarse_search_bounds", {})
     fine_window = tuning.get("fine_search_window", {})
@@ -292,7 +434,8 @@ def run_wind_pv_bess_irr_resource_tuning(
         bess_step=coarse_bounds.get("bess_step_mwh", config["search"]["bess_step_mwh"]),
     )
 
-    scenario_rows: list[dict[str, Any]] = []
+    completed_rows: list[dict[str, Any]] = []
+    scenario_payloads_for_stage: list[_StageScenarioPayload] = []
     scenario_payloads: dict[int, tuple[dict[str, Any], pd.Series, pd.Series]] = {}
     for idx, scenario in enumerate(scenarios, start=1):
         scenario_config = scenario["config"]
@@ -323,16 +466,38 @@ def run_wind_pv_bess_irr_resource_tuning(
             "wind_curve_cache_path": str(wind_curve_path),
             "pv_curve_cache_path": str(pv_curve_path),
         }
-        result = plan_wind_pv_bess_for_target_irr(df_load, wind_unit, pv_unit, cfg=coarse_cfg)
-        scenario_rows.append(_result_summary_row(result, metadata, stage="coarse"))
         scenario_payloads[idx] = (metadata, wind_unit, pv_unit)
+        scenario_payloads_for_stage.append(_StageScenarioPayload(
+            stage="coarse",
+            stage_index=idx,
+            stage_total=len(scenarios),
+            metadata=metadata,
+            df_load=df_load,
+            wind_unit=wind_unit,
+            pv_unit=pv_unit,
+            cfg=coarse_cfg,
+            retain_diagnostics=retain_intermediate_diagnostics,
+        ))
 
-    scenario_df = _add_resource_adjustment_columns(pd.DataFrame(scenario_rows), config)
+    coarse_results = _run_stage_scenarios(
+        scenario_payloads_for_stage,
+        parallel_enabled=parallel_enabled,
+        max_workers=max_workers,
+        on_summary_update=on_summary_update,
+        completed_rows=completed_rows,
+    )
+    scenario_df = _add_resource_adjustment_columns(
+        pd.DataFrame([stage_result.summary_row for stage_result in coarse_results]),
+        config,
+    )
     for _, row in scenario_df.iterrows():
         metadata, _, _ = scenario_payloads[int(row["scenario_id"])]
         metadata["base_wind_unit_flh"] = float(row["base_wind_unit_flh"])
         metadata["base_pv_unit_flh"] = float(row["base_pv_unit_flh"])
         metadata["resource_adjustment_score"] = float(row["resource_adjustment_score"])
+    completed_rows[:] = scenario_df.to_dict("records")
+    if on_summary_update is not None:
+        on_summary_update(pd.DataFrame(completed_rows))
     near_df = scenario_df[
         scenario_df["irr"].notna()
         & (scenario_df["irr"] >= base_cfg.target_irr - max(base_cfg.irr_tolerance * 3, 0.006))
@@ -340,10 +505,19 @@ def run_wind_pv_bess_irr_resource_tuning(
     if near_df.empty:
         near_df = scenario_df[scenario_df["irr"].notna()].sort_values("irr", ascending=False).head(5).copy()
     near_df = _sort_feasible(near_df).head(int(tuning.get("fine_scenario_limit", 12)))
+    if near_df.empty:
+        summary_df = scenario_df.copy()
+        if on_summary_update is not None:
+            on_summary_update(summary_df)
+        return WindPVBESSIRRTuningResult(
+            result=None,
+            parameter_search_summary=summary_df,
+            best_summary=None,
+        )
 
-    final_rows: list[dict[str, Any]] = []
-    final_results: list[tuple[WindPVBESSIRRResult, dict[str, Any]]] = []
-    for _, row in near_df.iterrows():
+    fine_payloads: list[_StageScenarioPayload] = []
+    fine_cfg_by_scenario: dict[int, WindPVBESSIRRPlanConfig] = {}
+    for fine_idx, (_, row) in enumerate(near_df.iterrows(), start=1):
         metadata, wind_unit, pv_unit = scenario_payloads[int(row["scenario_id"])]
         bess_window = fine_window.get("bess_mwh", 10.0)
         fine_cfg = _bounded_cfg(
@@ -358,13 +532,31 @@ def run_wind_pv_bess_irr_resource_tuning(
             bess_max=min(coarse_cfg.bess_max_mwh, float(row["bess_mwh"]) + bess_window),
             bess_step=fine_step.get("bess_mwh", 1.0),
         )
-        fine_result = plan_wind_pv_bess_for_target_irr(df_load, wind_unit, pv_unit, cfg=fine_cfg)
-        fine_row = _result_summary_row(fine_result, metadata, stage="fine")
-        final_rows.append(fine_row)
-        final_results.append((fine_result, metadata))
+        scenario_id = int(row["scenario_id"])
+        fine_cfg_by_scenario[scenario_id] = fine_cfg
+        fine_payloads.append(_StageScenarioPayload(
+            stage="fine",
+            stage_index=fine_idx,
+            stage_total=len(near_df),
+            metadata=metadata,
+            df_load=df_load,
+            wind_unit=wind_unit,
+            pv_unit=pv_unit,
+            cfg=fine_cfg,
+            retain_diagnostics=retain_intermediate_diagnostics,
+        ))
 
-    final_df = pd.DataFrame(final_rows)
+    fine_results = _run_stage_scenarios(
+        fine_payloads,
+        parallel_enabled=parallel_enabled,
+        max_workers=max_workers,
+        on_summary_update=on_summary_update,
+        completed_rows=completed_rows,
+    )
+    final_df = pd.DataFrame([stage_result.summary_row for stage_result in fine_results])
     summary_df = pd.concat([scenario_df, final_df], ignore_index=True)
+    if on_summary_update is not None:
+        on_summary_update(summary_df)
     ok_df = final_df[final_df["status"] == "ok"].copy()
     if ok_df.empty:
         return WindPVBESSIRRTuningResult(
@@ -378,12 +570,18 @@ def run_wind_pv_bess_irr_resource_tuning(
     best_result: WindPVBESSIRRResult | None = None
     best_metadata: dict[str, Any] | None = None
     raw_diagnostics: pd.DataFrame | None = None
-    for result, metadata in final_results:
-        if metadata["scenario_id"] == int(best_row["scenario_id"]) and result.status == "ok":
-            best_result = result
-            best_metadata = metadata
-            raw_diagnostics = result.diagnostics.copy() if result.diagnostics is not None else None
-            break
+    best_scenario_id = int(best_row["scenario_id"])
+    best_metadata, best_wind_unit, best_pv_unit = scenario_payloads[best_scenario_id]
+    best_cfg = fine_cfg_by_scenario[best_scenario_id]
+    best_result = plan_wind_pv_bess_for_target_irr(
+        df_load,
+        best_wind_unit,
+        best_pv_unit,
+        cfg=best_cfg,
+        retain_diagnostics=True,
+    )
+    best_metadata = best_metadata
+    raw_diagnostics = best_result.diagnostics.copy() if best_result.diagnostics is not None else None
     if best_result is None or best_metadata is None:
         raise RuntimeError("failed to locate best resource tuning result")
 

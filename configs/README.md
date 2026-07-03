@@ -22,7 +22,7 @@
 | `capacity_planning/bess_capacity_planning.yaml` | `capacity_planning/run_bess_capacity_planning.py` | 固定风光容量下 BESS 最小容量规划 |
 | `capacity_planning/wind_bess_capacity_planning.yaml` | `capacity_planning/run_wind_bess_capacity_planning.py` | Wind+BESS 容量规划、平移充电策略、二分搜索参数 |
 | `capacity_planning/wind_pv_bess_capacity_planning.yaml` | `capacity_planning/run_wind_pv_bess_capacity_planning_1.py` | Wind+PV+BESS 容量规划、PV 搜索、BESS 搜索和能量门槛检查 |
-| `capacity_planning/wind_pv_bess_irr_planning.yaml` | `capacity_planning/run_wind_pv_bess_irr_planning.py` | IRR 目标型 Wind+PV+BESS 容量规划、PPA 反推和综合电价约束 |
+| `capacity_planning/wind_pv_bess_irr_planning.yaml` | `capacity_planning/run_wind_pv_bess_irr_planning.py` | IRR 目标型 Wind+PV+BESS 容量规划、PPA 反推、综合电价约束、项目财务模型和资源调参并行运行参数 |
 | `optimization/user_side_bess_dispatch.yaml` | `optimization/run_user_side_bess_dispatch.py` | 用户侧储能调度、需量电费、终端 SOC、合成负荷/电价 |
 | `optimization/user_side_pv_dispatch.yaml` | `optimization/run_user_side_pv_dispatch.py` | 用户侧 PV-only 调度、上网/弃光规则、合成负荷/PV/电价 |
 | `optimization/user_side_pv_bess_dispatch.yaml` | `optimization/run_user_side_pv_bess_dispatch.py` | 用户侧 PV+storage 联合调度、储能、上网、策略偏好 |
@@ -38,6 +38,7 @@
 - 设备物理参数放入对应设备或调度配置，例如 `optimization/bess.yaml`、`*_dispatch.yaml`、`*_capacity_planning.yaml`。
 - 路径类参数使用相对项目根目录的路径，入口脚本负责解析为绝对路径。
 - 新增配置文件时，应同步补充对应入口、读取逻辑、测试和本 README。
+- `wind_pv_bess_irr_planning.yaml` 的 `resource_tuning.parallel_enabled`、`max_workers`、`incremental_write` 和 `retain_intermediate_diagnostics` 只控制 coarse/fine 资源场景的运行方式、增量摘要落盘和中间 diagnostics 保留策略，不改变 IRR、PPA 或最优解排序口径。
 
 ## 运行示例
 

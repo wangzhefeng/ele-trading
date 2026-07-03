@@ -5,6 +5,7 @@ from ele_trading.capacity_planning.irr_finance import (
     backsolve_green_ppa_price,
     compute_target_irr_gap_metrics,
     evaluate_degraded_irr,
+    evaluate_equity_irr,
     evaluate_levelized_irr,
     required_levelized_cashflow,
 )
@@ -16,6 +17,7 @@ from ele_trading.capacity_planning.wind_bess_irr_planner import (
     WindBESSIRRConfig,
     scan_wind_bess_irr,
 )
+from ele_trading.capacity_planning.irr_calculation import IRRCalculator
 
 
 def test_evaluate_levelized_irr_builds_equal_annual_cashflows():
@@ -30,6 +32,183 @@ def test_evaluate_levelized_irr_builds_equal_annual_cashflows():
     assert result.annual_cashflow_yuan == pytest.approx(250.0)
     assert result.cashflows == expected_cashflows
     assert result.irr == pytest.approx(compute_irr(expected_cashflows))
+
+
+def test_evaluate_equity_irr_uses_project_finance_model():
+    result = evaluate_equity_irr(
+        wind_mw=1.0,
+        pv_mw=0.0,
+        bess_mwh=0.0,
+        wind_capex_yuan_per_kw=1000.0,
+        pv_capex_yuan_per_kwp=1000.0,
+        bess_capex_yuan_per_kwh=1000.0,
+        annual_revenue_yuan=300_000.0,
+        annual_opex_yuan=10_000.0,
+        life_years=5,
+        loan_rate=0.03,
+        loan_term=5,
+    )
+
+    assert result.total_capex_yuan > 1_000_000.0
+    assert result.annual_revenue_yuan == pytest.approx(300_000.0)
+    assert result.annual_opex_yuan == pytest.approx(10_000.0)
+    assert result.irr == result.irr_eq_post
+    assert result.irr_ti_pre is not None
+    assert result.irr_ti_post is not None
+    assert result.irr_eq_pre is not None
+    assert result.irr_eq_post is not None
+    assert len(result.cashflows_wan) == 7
+
+
+def test_evaluate_equity_irr_preserves_two_year_construction_cashflows():
+    result = evaluate_equity_irr(
+        wind_mw=1.0,
+        pv_mw=0.0,
+        bess_mwh=0.0,
+        wind_capex_yuan_per_kw=1000.0,
+        pv_capex_yuan_per_kwp=1000.0,
+        bess_capex_yuan_per_kwh=1000.0,
+        annual_revenue_yuan=300_000.0,
+        annual_opex_yuan=10_000.0,
+        life_years=5,
+        loan_rate=0.03,
+        loan_term=5,
+    )
+
+    calc = IRRCalculator(
+        wind_capacity=1.0,
+        solar_capacity=0.0,
+        storage_capacity=0.0,
+        wind_unit_cost=1.0,
+        solar_unit_cost=1.0,
+        storage_unit_cost=1.0,
+        operating_years=5,
+        construction_years=2,
+        loan_rate=0.03,
+        loan_term=5,
+        external_revenue=300_000.0 / 1.13 / 10000.0,
+        external_opex=10_000.0 / 10000.0,
+        delivery_cost=0.0,
+        survey_unit_cost=0.0,
+        other_unit_cost=0.0,
+    )
+    expected = calc.run()
+
+    assert result.cashflows_wan == pytest.approx([float(x) for x in expected["eq_post"]])
+    assert result.cashflows_wan[1] < 0.0
+
+
+def test_evaluate_equity_irr_propagates_none_when_irr_unresolved():
+    """现金流全负（IRR 无解）时，irr / irr_eq_post 应透传 None，而非伪 0.0。"""
+    result = evaluate_equity_irr(
+        wind_mw=1.0,
+        pv_mw=0.0,
+        bess_mwh=0.0,
+        wind_capex_yuan_per_kw=1000.0,
+        pv_capex_yuan_per_kwp=1000.0,
+        bess_capex_yuan_per_kwh=1000.0,
+        annual_revenue_yuan=1_000.0,        # 极低含税收入
+        annual_opex_yuan=50_000_000.0,      # 极高运维 → 运营期净现金流为负
+        life_years=5,
+        loan_rate=0.03,
+        loan_term=5,
+    )
+
+    assert result.irr is None
+    assert result.irr_eq_post is None
+    assert result.irr_eq_pre is None
+    assert result.irr_ti_pre is None
+    assert result.irr_ti_post is None
+
+
+def test_evaluate_equity_irr_reports_none_when_equity_cashflow_has_no_irr():
+    """亏损项目（资本金现金流全周期为负、无实数 IRR）应返回 None，而非伪 ~0.5 IRR。
+
+    回归缺陷：irr_calculation 的牛顿法对无实根现金流会停在 NPV 残差巨大的伪根上，
+    irr_robust 又按 |NPV| 取最小者，使亏损方案被误报为 ~50% 资本金 IRR，进而被
+    minimum 模式当成"达标可行解"选中。复现自 wind_pv_bess 最优解 (103MW 风 + 138MW 光)。
+    """
+    result = evaluate_equity_irr(
+        wind_mw=103.0,
+        pv_mw=138.0,
+        bess_mwh=0.0,
+        wind_capex_yuan_per_kw=5000.0,
+        pv_capex_yuan_per_kwp=3500.0,
+        bess_capex_yuan_per_kwh=800.0,
+        annual_revenue_yuan=90_602_512.90,   # = PPA 0.18880 × green_used 4.7999e8
+        annual_opex_yuan=19_960_000.0,        # = 设备投资 9.98e8 × 2%
+        life_years=15,
+        construction_years=2,
+        loan_rate=0.03,
+        vat_rate=0.13,
+    )
+
+    # 资本金税后现金流全周期加总为负 → 不存在实数 IRR
+    assert sum(result.cashflows_wan) < 0
+    assert result.irr is None
+    assert result.irr_eq_post is None
+    assert result.irr_eq_pre is None
+
+
+def test_irr_solver_rejects_spurious_root_for_no_irr_cashflow():
+    """irr_calculation 的求解器对无实根现金流必须返回 None，不得返回伪根。
+
+    回归：旧实现在该 eq_post 现金流上由 guess=0.30 收敛到 ~0.501，
+    但该处 NPV 残差 ~1.97e4 万元（远非 0），属伪根。
+    """
+    from ele_trading.capacity_planning.irr_calculation import compute_irr as newton_irr
+    from ele_trading.capacity_planning.irr_calculation import irr_robust
+
+    calc = IRRCalculator(
+        wind_capacity=103.0,
+        solar_capacity=138.0,
+        storage_capacity=0.0,
+        wind_unit_cost=5.0,
+        solar_unit_cost=3.5,
+        storage_unit_cost=0.8,
+        operating_years=15,
+        construction_years=2,
+        loan_rate=0.03,
+        loan_term=15,
+        external_revenue=90_602_512.90 / 1.13 / 10000.0,
+        external_opex=19_960_000.0 / 10000.0,
+        delivery_cost=0.0,
+        survey_unit_cost=0.0,
+        other_unit_cost=0.0,
+    )
+    eq_post = [float(x) for x in calc.run()["eq_post"]]
+
+    assert sum(eq_post) < 0                      # 全周期净负 → 无实数 IRR
+    assert newton_irr(eq_post, guess=0.30) is None
+    assert irr_robust(eq_post) is None
+
+
+def test_irr_calculator_single_construction_year_deploys_full_investment():
+    """construction_years=1 时，建设投资与流动资金应在第 0 年一次性全额投出（不漏投）。
+
+    回归缺陷 2：旧逻辑 nc=1 仅投 95% 且流动资金从不投出却被末年回收，导致 IRR 虚高。
+    """
+    common = dict(
+        wind_capacity=1.0, solar_capacity=0.0, storage_capacity=0.0,
+        wind_unit_cost=0.05, solar_unit_cost=0.05, storage_unit_cost=0.05,
+        operating_years=15, loan_rate=0.03, loan_term=15,
+        external_revenue=0.246 * 24000 / 1.13 / 10000.0, external_opex=0.0,
+        delivery_cost=0.0, survey_unit_cost=0.0, other_unit_cost=0.0,
+    )
+    calc1 = IRRCalculator(construction_years=1, **common)
+    calc2 = IRRCalculator(construction_years=2, **common)
+    r1, r2 = calc1.run(), calc2.run()
+
+    const_inv = 1.0 * 0.05 * 100  # wind_inv (万元)，delivery/survey/connection 均为 0
+    eq_construction = const_inv * 0.20
+    wc = const_inv * 0.006
+
+    # nc=1：第 0 年一次性投出全部资本金(eq_construction + wc)，不再仅投 95%
+    assert r1["eq_post"][0] == pytest.approx(-(eq_construction + wc))
+    # nc=2：两年合计同样全额投出
+    assert (abs(r2["eq_post"][0]) + abs(r2["eq_post"][1])) == pytest.approx(eq_construction + wc)
+    # 两口径均收敛到有限 IRR（nc=1 因更早发电略高，属正常，非虚高）
+    assert r1["irr_eq_post"] is not None and r2["irr_eq_post"] is not None
 
 
 def test_backsolve_green_ppa_price_matches_owner_average_price():

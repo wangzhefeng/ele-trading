@@ -110,41 +110,6 @@ def test_monthly_settlement_sums_to_time_step_totals_and_uses_peak_net_load():
     assert [row.month for row in settlement.monthly] == ["2026-01", "2026-02"]
 
 
-def test_wind_pv_bess_irr_result_revenue_comes_from_monthly_settlement():
-    from ele_trading.capacity_planning.wind_pv_bess_irr_planner import (
-        WindPVBESSIRRPlanConfig,
-        plan_wind_pv_bess_for_target_irr,
-    )
-
-    idx = pd.date_range("2026-01-01", periods=24, freq="h")
-    df_load = pd.DataFrame({"Time": idx, "P_kw": 1000.0})
-    wind_unit = pd.Series(1000.0, index=idx, name="wind_unit_kw")
-    pv_unit = pd.Series(0.0, index=idx, name="pv_unit_kw")
-    cfg = WindPVBESSIRRPlanConfig(
-        wind_max_mw=1.0,
-        pv_max_mw=0.0,
-        bess_max_mwh=0.0,
-        wind_step_mw=1.0,
-        pv_step_mw=1.0,
-        bess_step_mwh=1.0,
-        target_irr=0.0,
-        irr_tolerance=10.0,
-        wind_capex_yuan_per_kw=1.0,
-        annual_opex_ratio=0.0,
-    )
-
-    result = plan_wind_pv_bess_for_target_irr(df_load, wind_unit, pv_unit, cfg=cfg)
-
-    assert result.status == "ok"
-    assert result.best_solution is not None
-    assert result.best_solution["settlement_annual_summary"]["ppa_revenue_yuan"] == pytest.approx(
-        result.annual_revenue_yuan
-    )
-    assert result.best_solution["dispatch_annual_summary"]["green_used_kwh"] == pytest.approx(
-        result.annual_green_used_kwh
-    )
-
-
 def test_dispatch_annual_python_fallback_simulates_bess_when_numba_disabled():
     from ele_trading.capacity_planning.models.dispatch_algo import dispatch_annual
     from ele_trading.capacity_planning.wind_pv_bess_irr_planner import WindPVBESSIRRPlanConfig

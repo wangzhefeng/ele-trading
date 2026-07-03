@@ -1,107 +1,160 @@
 # IRR 目标型 Wind+PV+BESS 容量规划配置
+# 流程：仿真单位出力曲线 → 资源调参(可选) → 三层容量网格搜索 → 调度结算 → 资本金税后 IRR 评价 → 选最低投资达标解
 
+# ------------------------------
+# 项目场景与地理位置（用于气象数据拉取和时区）
+# ------------------------------
 scenario:
-  timezone: "Asia/Shanghai"
+  timezone: "Asia/Shanghai"        # 项目所在时区
 
 site:
-  latitude: 41.0
-  longitude: 113.13
+  latitude: 41.0                   # 纬度（open-meteo 气象数据拉取用）
+  longitude: 113.13                # 经度
 
+# ------------------------------
+# 光伏单位出力曲线仿真（1kWp 基准，后续按 pv_mw × 1000 缩放）
+# ------------------------------
 pv_simulation:
-  latitude: 41.0
-  longitude: 113.13
-  timezone: Asia/Shanghai
-  capacity_kwp: 1.0
-  tilt: null
-  azimuth: 180.0
-  system_loss: 0.14  # 调参
-  temp_coeff: -0.004
-  cloud_factor: 0.85  # 调参
-  mode: clear_sky
+  latitude: 41.0                   # 纬度
+  longitude: 113.13                # 经度
+  timezone: Asia/Shanghai          # 时区
+  capacity_kwp: 1.0                # 基准装机 1kWp（单位曲线，固定不改）
+  tilt: null                       # 组件倾角(°)；null=按纬度自动取最优
+  azimuth: 180.0                   # 方位角(°)；180=正南
+  system_loss: 0.14                # 系统损耗（逆变器/线损/污损等综合折减）# 调参
+  temp_coeff: -0.004               # 电池板功率温度系数（/°C）
+  cloud_factor: 0.85               # 云量折减因子（直射→散射衰减）# 调参
+  mode: clear_sky                  # 仿真模式：clear_sky 晴空模型
 
+# ------------------------------
+# 风电单位出力曲线仿真（1MW 基准，后续按 wind_mw 缩放）
+# ------------------------------
 wind_simulation:
-  year: 2023
-  freq: 5min
-  farm_capacity_mw: 1.0
-  mean_wind_speed_target: 7.0
-  target_full_load_hours: 2500.0  # 调参
-  meteo_height_m: 100.0
-  met_mast_height_m: 140.0
-  hub_height_m: 140.0
-  shear_alpha: 0.2
-  rated_power_kw: 5000.0
-  cut_in: 3.0
-  rated_speed: 11.0
-  cut_out: 25.0
-  max_power_ratio: 1.2
-  mode: resource_simulation
+  year: 2023                       # 仿真年份（决定气象数据区间）
+  freq: 5min                       # 输出时间分辨率
+  farm_capacity_mw: 1.0            # 基准装机 1MW（单位曲线，固定不改）
+  mean_wind_speed_target: 7.0      # 平均风速校核目标(m/s)
+  target_full_load_hours: 2500.0   # 目标等效满发小时数(h/年) # 调参
+  meteo_height_m: 100.0            # 气象数据风速所在高度(m)
+  met_mast_height_m: 140.0         # 测风塔高度(m)
+  hub_height_m: 140.0              # 轮毂高度(m)
+  shear_alpha: 0.2                 # 风切变幂律指数（用于高度外推）
+  rated_power_kw: 5000.0           # 单机额定功率(kW)
+  cut_in: 3.0                      # 切入风速(m/s)
+  rated_speed: 11.0                # 额定风速(m/s)
+  cut_out: 25.0                    # 切出风速(m/s)
+  max_power_ratio: 1.2             # 最大功率超发比（机组可短时超发至额定的 1.2 倍）
+  mode: resource_simulation        # 仿真模式：resource_simulation 资源驱动
 
+# ------------------------------
+# 电价与 IRR 目标
+# 关系：绿电价格 = PPA价格 + green_price_adder；
+#       业主综合电价 = (绿电价格×绿电量 + 电网购电价×购电量)/总用电量，
+#       由 target_owner_price 反推 PPA 价格（backsolve）。
+# ------------------------------
 price:
-  target_owner_price_yuan_per_kwh: 0.32
-  grid_buy_price_yuan_per_kwh: 0.36
-  green_price_adder_yuan_per_kwh: 0.074
-  target_irr: 0.05
-  irr_tolerance: 0.002
-  irr_constraint_mode: minimum
+  target_owner_price_yuan_per_kwh: 0.33   # 业主综合电价目标(元/kWh)，作为反推基准
+  grid_buy_price_yuan_per_kwh: 0.36       # 业主向电网购电价格(元/kWh)
+  green_price_adder_yuan_per_kwh: 0.074   # 绿电溢价(元/kWh)；绿电价格 = PPA + 此项
+  target_irr: 0.05                        # 目标资本金税后 IRR（5%）
+  irr_tolerance: 0.002                    # IRR 容差（range 模式上侧容忍 0.2pp）
+  irr_constraint_mode: minimum            # IRR 约束模式：minimum(≥目标) 或 range([目标, 目标+容差])
 
+# ------------------------------
+# 绿电消纳物理约束（不满足直接判不可行，不进诊断表）
+# ------------------------------
 constraints:
-  self_use_ratio_min: 0.60
-  load_cover_ratio_min: 0.35
+  self_use_ratio_min: 0.60         # 绿电自用率下限：自用量/发电量 ≥ 60%
+  load_cover_ratio_min: 0.35       # 负荷覆盖率下限：自用量/总用电量 ≥ 35%
 
+# ------------------------------
+# 容量搜索上下限（wind_min/pv_min 默认 0，可含 0 容量候选）
+# ------------------------------
 capacity:
-  wind_max_mw: 280.0
-  pv_max_mw: 140.0
-  bess_min_mwh: 0.0
-  bess_max_mwh: 1000.0
+  wind_max_mw: 280.0               # 风电搜索上限(MW)
+  pv_max_mw: 140.0                 # 光伏搜索上限(MW)
+  bess_min_mwh: 0.0                # 储能搜索下限(MWh)；0=允许无储能方案
+  bess_max_mwh: 1000.0             # 储能搜索上限(MWh)
 
+# ------------------------------
+# 容量搜索步长（决定网格分辨率与组合数）
+# ------------------------------
 search:
-  wind_step_mw: 10.0
-  pv_step_mw: 10.0
-  bess_step_mwh: 5.0
+  wind_step_mw: 10.0               # 风电步长(MW)
+  pv_step_mw: 10.0                 # 光伏步长(MW)
+  bess_step_mwh: 5.0               # 储能步长(MWh)
 
+# ------------------------------
+# 储能(BESS)物理参数
+# ------------------------------
 bess:
-  eta_roundtrip: 0.92
-  c_rate: 0.5
-  soc_init_frac: 0.10
-  soc_min_frac: 0.10
-  soc_max_frac: 1.00
-  switch_gap_hours: 0.0833
+  eta_roundtrip: 0.92              # 往返效率（充放电循环综合效率）
+  c_rate: 0.5                      # 功率倍率 C(MW/MWh)；最大充放功率 = c_rate × 容量
+  soc_init_frac: 0.10              # 初始 SOC（占额定容量比例）
+  soc_min_frac: 0.10               # SOC 下限（可用容量下界）
+  soc_max_frac: 1.00               # SOC 上限（可用容量上界）
+  switch_gap_hours: 0.0833         # 充放电状态切换最小间隔(h)；0.0833≈5min，防频繁切换
 
+# ------------------------------
+# 单位造价与测算年限（设备口径，用于 CAPEX 和 OPEX）
+# ------------------------------
 cost:
-  wind_capex_yuan_per_kw: 5000.0
-  pv_capex_yuan_per_kwp: 3500.0
-  bess_capex_yuan_per_kwh: 800.0
-  annual_opex_ratio: 0.02
-  life_years: 15
+  wind_capex_yuan_per_kw: 5000.0   # 风电单位投资(元/kW)
+  pv_capex_yuan_per_kwp: 3500.0    # 光伏单位投资(元/kWp)
+  bess_capex_yuan_per_kwh: 800.0   # 储能单位投资(元/kWh)
+  annual_opex_ratio: 0.02          # 年运维费用占设备投资比例(2%)
+  life_years: 15                   # IRR 现金流测算年限(运营期，年)
 
+# ------------------------------
+# 项目融资参数（对齐 Excel 项目财务模型，影响资本金税后 IRR）
+# ------------------------------
+finance:
+  construction_years: 2            # 建设期年限；2=模型原生 95%/5% 分年投资（避免漏投）
+  loan_rate: 0.03                  # 长期贷款年利率(3%)
+  loan_term: null                  # 贷款期限(年)；null=按模型默认 min(15, 运营期)
+  vat_rate: 0.13                   # 收入增值税率(13%，用于收入除税)
+
+# ------------------------------
+# 资源调参（容量规划前的风光资源参数扫描，寻找资源调整评分最小的场景）
+# ------------------------------
 resource_tuning:
-  enabled: true
-  objective: min_resource_adjustment
-  wind_target_full_load_hours_min: 2500.0
-  wind_target_full_load_hours_max: 2500.0
-  wind_target_full_load_hours_step: 10.0
-  pv_cloud_factor_min: 0.70
-  pv_cloud_factor_max: 0.94
-  pv_cloud_factor_step: 0.03
-  pv_system_loss_min: 0.08
-  pv_system_loss_max: 0.14
-  pv_system_loss_step: 0.03
-  fine_scenario_limit: 12
+  enabled: true                    # 是否启用资源调参 + 容量规划遍历
+  objective: min_resource_adjustment  # 优化目标：资源调整评分最小
+  parallel_enabled: true           # 是否按资源场景并行执行 coarse/fine 搜索
+  max_workers: 4                   # 并行进程数上限；过高会增加内存压力
+  incremental_write: true          # 每个场景完成后增量刷新 parameter_search_summary.csv
+  retain_intermediate_diagnostics: false  # 中间场景仅保留摘要，最终最优场景重跑完整 diagnostics
+  # --- 风电：目标等效满发小时数扫描范围 ---
+  wind_target_full_load_hours_min: 2500.0    # 满发小时数下限(h/年)
+  wind_target_full_load_hours_max: 2500.0    # 满发小时数上限(h/年)
+  wind_target_full_load_hours_step: 10.0     # 满发小时数步长(h)
+  # --- 光伏：云量因子扫描范围 ---
+  pv_cloud_factor_min: 0.70        # 云量因子下限
+  pv_cloud_factor_max: 0.94        # 云量因子上限
+  pv_cloud_factor_step: 0.03       # 云量因子步长
+  # --- 光伏：系统损耗扫描范围 ---
+  pv_system_loss_min: 0.08         # 系统损耗下限
+  pv_system_loss_max: 0.14         # 系统损耗上限
+  pv_system_loss_step: 0.03        # 系统损耗步长
+  fine_scenario_limit: 12          # 精搜保留的资源场景数上限
+  # --- 粗搜阶段容量范围（每个资源场景下先粗扫） ---
   coarse_search_bounds:
-    wind_min_mw: 100.0
-    wind_max_mw: 280.0
-    wind_step_mw: 10.0
-    pv_min_mw: 0.0
-    pv_max_mw: 140.0
-    pv_step_mw: 10.0
-    bess_min_mwh: 0.0
-    bess_max_mwh: 100.0
-    bess_step_mwh: 5.0
+    wind_min_mw: 100.0             # 粗搜风电下限(MW)
+    wind_max_mw: 280.0             # 粗搜风电上限(MW)
+    wind_step_mw: 10.0             # 粗搜风电步长(MW)
+    pv_min_mw: 0.0                 # 粗搜光伏下限(MW)
+    pv_max_mw: 140.0               # 粗搜光伏上限(MW)
+    pv_step_mw: 10.0               # 粗搜光伏步长(MW)
+    bess_min_mwh: 0.0              # 粗搜储能下限(MWh)
+    bess_max_mwh: 100.0            # 粗搜储能上限(MWh)
+    bess_step_mwh: 5.0             # 粗搜储能步长(MWh)
+  # --- 精搜窗口：在粗搜最优解附近的搜索半径 ---
   fine_search_window:
-    wind_mw: 15.0
-    pv_mw: 15.0
-    bess_mwh: 10.0
+    wind_mw: 15.0                  # 风电精搜窗口半径(MW)
+    pv_mw: 15.0                    # 光伏精搜窗口半径(MW)
+    bess_mwh: 10.0                 # 储能精搜窗口半径(MWh)
+  # --- 精搜步长（窗口内细分辨率扫描） ---
   fine_search_step:
-    wind_mw: 1.0
-    pv_mw: 1.0
-    bess_mwh: 1.0
+    wind_mw: 1.0                   # 风电精搜步长(MW)
+    pv_mw: 1.0                     # 光伏精搜步长(MW)
+    bess_mwh: 1.0                  # 储能精搜步长(MWh)
