@@ -8,6 +8,8 @@
 2. 用 `BESSConfig` 表示储能容量、效率、SOC 边界、电网充电开关和充放电电价类型。
 3. 用 `FinanceConfig` 表示税前项目 IRR 测算所需的 CAPEX、运维、衰减和储能更换假设。
 4. 用 `CaseConfig` 汇总场景名称、输入输出路径、项目参数和模拟数据生成参数。
+5. 用 `CapacitySearchConfig` 表示容量搜索候选值、约束阈值和目标模式。
+6. 用 `BaselineProjectConfig` 表示 V5 的基准方案，用于计算投资方 IRR 相对提升。
 
 使用方式：
 
@@ -37,6 +39,13 @@ v1 版本已实现：
 2. 结算扩展配置 `SettlementConfig`。
 3. v1 搜索结果输出路径配置。
 4. 从 `v1_capacity_search_demo.yaml` 加载候选容量、PPA 单价和约束阈值。
+
+V2-V5 版本已实现：
+
+1. `objective_mode` 配置字段。
+2. `investor_irr_first`、`owner_saving_first`、`investor_irr_uplift` 三种目标模式。
+3. `baseline_project` 基准方案配置。
+4. 从 V2-V5 YAML 场景加载目标模式和基准方案。
 
 后续待扩展：
 

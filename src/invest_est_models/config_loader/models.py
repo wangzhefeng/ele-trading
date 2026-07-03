@@ -110,6 +110,8 @@ class CapacitySearchConfig:
     bess_energy_kwh: tuple[float, ...] = ()
     # 固定 PPA 单价候选值，单位元/kWh。
     ppa_price: tuple[float, ...] = ()
+    # 目标模式；控制可行候选方案的最优排序规则。
+    objective_mode: str = "investor_irr_first"
     # 投资方最低税前项目 IRR 约束。
     min_project_irr: float = 0.0
     # 业主最低节费比例约束。
@@ -118,6 +120,22 @@ class CapacitySearchConfig:
     min_self_use_ratio: float | None = None
     # 最大余电上网比例约束；None 表示不启用。
     max_export_ratio: float | None = None
+
+
+@dataclass(frozen=True)
+class BaselineProjectConfig:
+    """V5 基准方案配置，用于计算投资方 IRR 相对提升。"""
+
+    # 基准方案风电容量，单位 kW；None 表示沿用 project.wind_capacity_kw。
+    wind_capacity_kw: float | None = None
+    # 基准方案光伏容量，单位 kW；None 表示沿用 project.pv_capacity_kw。
+    pv_capacity_kw: float | None = None
+    # 基准方案固定 PPA 单价，单位元/kWh；None 表示沿用 project.ppa_price。
+    ppa_price: float | None = None
+    # 基准方案储能功率，单位 kW；None 表示沿用 project.bess.power_kw。
+    bess_power_kw: float | None = None
+    # 基准方案储能容量，单位 kWh；None 表示沿用 project.bess.energy_kwh。
+    bess_energy_kwh: float | None = None
 
 
 @dataclass(frozen=True)
@@ -170,3 +188,5 @@ class CaseConfig:
     sample_data: SampleDataConfig = SampleDataConfig()
     # v1 容量搜索配置。
     search: CapacitySearchConfig = CapacitySearchConfig()
+    # V5 基准方案配置；仅 investor_irr_uplift 模式需要。
+    baseline_project: BaselineProjectConfig | None = None

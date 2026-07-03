@@ -6,6 +6,10 @@
 
 1. `mvp_demo.yaml`：最小可行版本演示场景。
 2. `v1_capacity_search_demo.yaml`：v1 容量搜索演示场景。
+3. `v2_owner_saving_first_demo.yaml`：V2 业主节费比例优先排序演示场景。
+4. `v3_investor_irr_target_demo.yaml`：V3 投资方 IRR 优先场景。
+5. `v4_owner_saving_target_demo.yaml`：V4 业主节费比例优先场景。
+6. `v5_investor_irr_uplift_demo.yaml`：V5 投资方 IRR 相对基准提升场景。
 
 YAML 结构：
 
@@ -15,6 +19,8 @@ YAML 结构：
 4. `project`：风光容量、固定 PPA 单价、余电上网价格、目标 IRR。
 5. `bess`：储能容量、效率、SOC 边界和充放电电价类型。
 6. `finance`：税前项目 IRR 所需的投资、运维、衰减和更换假设。
+7. `search`：容量搜索候选值、约束阈值和目标模式。
+8. `baseline_project`：V5 基准方案，仅 `investor_irr_uplift` 模式需要。
 
 规则：
 
@@ -35,6 +41,14 @@ v1 版本已实现：
 1. `v1_capacity_search_demo.yaml` 容量搜索配置。
 2. 搜索候选容量、PPA 单价和约束阈值配置。
 3. 候选结果、最优摘要、不可行原因和年度现金流输出路径配置。
+
+V2-V5 版本已实现：
+
+1. `v2_owner_saving_first_demo.yaml`。
+2. `v3_investor_irr_target_demo.yaml`。
+3. `v4_owner_saving_target_demo.yaml`。
+4. `v5_investor_irr_uplift_demo.yaml`。
+5. 每个新增 YAML 字段均添加中文注释。
 
 后续待扩展：
 

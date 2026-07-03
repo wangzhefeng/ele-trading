@@ -1,4 +1,5 @@
 from .models import (
+    BaselineProjectConfig,
     BESSConfig,
     CapacitySearchConfig,
     CaseConfig,
@@ -12,6 +13,7 @@ from .yaml_loader import load_case_config
 
 __all__ = [
     # 配置 dataclass。
+    "BaselineProjectConfig",
     "BESSConfig",
     "CapacitySearchConfig",
     "CaseConfig",

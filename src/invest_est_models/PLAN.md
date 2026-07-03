@@ -656,6 +656,8 @@ v1 版本应在最小可行版本的基础上，把当前“可运行闭环”�
 输出投资方 IRR、业主节费、关键政策指标和不可行原因。
 ```
 
+v1 当前保持为基础 `capacity_search` 能力版本。它的核心不是引入复杂优化器，而是先把候选容量、PPA 价格、调度、结算、财务测算和不可行诊断串成稳定闭环。当前最优方案排序规则为：先比较 `project_irr`，再比较 `owner_saving_pct`。这使 v1 的默认结果更接近投资方收益优先口径，但 v1 尚未显式引入 `objective_mode`，因此不把 v1 定义为最终的“投资方 IRR 目标场景”。
+
 ### v1 开发原则
 
 1. 保持 YAML 驱动：新增业务参数必须进入 `configs/`，app 脚本不得硬编码场景参数。
@@ -763,9 +765,355 @@ PYTHONPATH=src ./.venv/bin/python -m invest_est_models.app.run_mvp_demo --config
 PYTHONPATH=src ./.venv/bin/python -m invest_est_models.app.run_capacity_search --config src/invest_est_models/configs/v1_capacity_search_demo.yaml
 ```
 
+## V2版本
+
+V2 版本继续保留 `capacity_search` 模式，不新建一套重复搜索模块。V2 的目标是在 v1 基础上把“最优排序规则”显式配置化，使同一套容量搜索算法可以支持投资方优先和业主优先两种排序口径。
+
+### V2 设计判断
+
+V2 不需要单独构建和开发一套独立算法。原因是 V2 与 v1 的算法流程完全一致：
+
+```text
+候选容量和 PPA 枚举
+  -> 规则调度
+  -> 月度结算
+  -> 财务测算
+  -> 约束过滤
+  -> 最优排序
+```
+
+V2 只改变最后一步“最优排序”的主次指标，因此应通过配置参数在 v1 的 `capacity_search/` 内切换，而不是复制出新的搜索流程。
+
+### V2 新增配置
+
+建议在 `CapacitySearchConfig` 中新增：
+
+```python
+objective_mode: str = "investor_irr_first"
+```
+
+建议支持的取值：
+
+```text
+investor_irr_first
+owner_saving_first
+```
+
+对应 YAML 示例：
+
+```yaml
+search:
+  # 目标模式：investor_irr_first 表示投资方 IRR 优先；
+  # owner_saving_first 表示业主节费比例优先。
+  objective_mode: owner_saving_first
+```
+
+### V2 排序规则
+
+1. `investor_irr_first`
+
+   ```text
+   可行性约束：
+       project_irr >= min_project_irr
+       owner_saving_pct >= min_owner_saving_pct
+
+   排序规则：
+       先比较 project_irr
+       再比较 owner_saving_pct
+   ```
+
+2. `owner_saving_first`
+
+   ```text
+   可行性约束：
+       project_irr >= min_project_irr
+       owner_saving_pct >= min_owner_saving_pct
+
+   排序规则：
+       先比较 owner_saving_pct
+       再比较 project_irr
+   ```
+
+### V2 输出增强
+
+建议在候选结果表和最优摘要中新增以下字段：
+
+1. `objective_mode`：当前目标模式。
+2. `objective_value`：当前模式下用于主排序的目标值。
+3. `ranking_primary_metric`：主排序指标名。
+4. `ranking_secondary_metric`：次排序指标名。
+5. `constraint_min_project_irr`：投资方最低 IRR 约束。
+6. `constraint_min_owner_saving_pct`：业主最低节费比例约束。
+
+### V2 配置文件
+
+新增配置文件，不修改 `mvp_demo.yaml`：
+
+```text
+configs/v2_owner_saving_first_demo.yaml
+```
+
+该文件用于演示 `owner_saving_first` 排序模式。v1 配置可继续保留当前排序结果，用于回归对照。
+
+### V2 验收标准
+
+1. `v1_capacity_search_demo.yaml` 仍可运行，默认结果不破坏。
+2. `v2_owner_saving_first_demo.yaml` 可运行，并选择 `owner_saving_pct` 更高的可行方案。
+3. 测试覆盖两个排序模式，确认同一批候选结果在不同 `objective_mode` 下可选出不同最优方案。
+4. 输出 CSV 能明确说明本次运行采用的目标模式和排序依据。
+
+### V2 当前实现进度
+
+已完成。当前在 `CapacitySearchConfig` 中新增 `objective_mode`，并在 `capacity_search/` 中实现 `investor_irr_first` 和 `owner_saving_first` 两种排序规则。已新增 `configs/v2_owner_saving_first_demo.yaml`，候选结果表和最优摘要中已输出 `objective_mode`、`objective_value`、主次排序指标和约束阈值。
+
+## V3版本
+
+V3 版本定义为“以投资方 IRR 为目标，业主节费比例为约束”的模型场景。V3 不需要新建算法模块，而是在 V2 的 `objective_mode` 机制上形成明确的投资方视角配置模板和验收口径。
+
+### V3 模型形式
+
+V3 采用绝对 IRR 目标，即当前讨论中的方案 A：
+
+```text
+maximize project_irr(x)
+
+subject to:
+    owner_saving_pct(x) >= min_owner_saving_pct
+    project_irr(x) >= min_project_irr
+    self_use_ratio(x) >= min_self_use_ratio，可选
+    export_ratio(x) <= max_export_ratio，可选
+    风光储容量满足候选边界
+```
+
+其中 `x` 表示候选风电容量、光伏容量、储能功率、储能容量和 PPA 价格组合。
+
+### V3 业务含义
+
+V3 回答的问题是：
+
+```text
+在保证业主至少达到约定节费比例的前提下，
+投资方能获得的最高项目 IRR 是多少，
+对应的风光储容量和 PPA 价格是什么？
+```
+
+### V3 配置方案
+
+建议新增：
+
+```text
+configs/v3_investor_irr_target_demo.yaml
+```
+
+关键配置：
+
+```yaml
+search:
+  # 目标模式：投资方 IRR 优先。
+  objective_mode: investor_irr_first
+  # 投资方最低税前项目 IRR，作为准入约束。
+  min_project_irr: 0.08
+  # 业主最低节费比例，作为硬约束。
+  min_owner_saving_pct: 0.05
+```
+
+### V3 开发内容
+
+1. 复用 V2 的 `objective_mode=investor_irr_first`。
+2. 在 README 和输出摘要中明确 V3 是投资方收益优先场景。
+3. 在结果中突出 `project_irr`、`owner_saving_pct`、`ppa_price`、CAPEX、NPV 和回收期。
+4. 增加测试：构造多个可行候选方案，确认 V3 选择 `project_irr` 最高的方案。
+
+### V3 不包含内容
+
+V3 不计算“IRR 提升值”。如果要计算相对基准方案的提升，应进入 V5 的 `investor_irr_uplift` 模式。
+
+### V3 当前实现进度
+
+已完成。V3 复用 V2 的 `objective_mode=investor_irr_first`，并新增 `configs/v3_investor_irr_target_demo.yaml` 作为投资方 IRR 优先场景配置。当前输出会把 `project_irr` 作为主目标值，并保留业主节费比例约束字段。
+
+## V4版本
+
+V4 版本定义为“以业主节费比例为目标，投资方 IRR 为约束”的模型场景。V4 同样不新建算法模块，而是在 V2 的 `objective_mode` 机制上形成业主视角配置模板和验收口径。
+
+### V4 模型形式
+
+```text
+maximize owner_saving_pct(x)
+
+subject to:
+    project_irr(x) >= min_project_irr
+    owner_saving_pct(x) >= min_owner_saving_pct
+    self_use_ratio(x) >= min_self_use_ratio，可选
+    export_ratio(x) <= max_export_ratio，可选
+    风光储容量满足候选边界
+```
+
+其中 `x` 表示候选风电容量、光伏容量、储能功率、储能容量和 PPA 价格组合。
+
+### V4 业务含义
+
+V4 回答的问题是：
+
+```text
+在投资方收益不低于最低 IRR 要求的前提下，
+最多能给业主做到多高的节费比例，
+对应的风光储容量和 PPA 价格是什么？
+```
+
+### V4 配置方案
+
+建议新增：
+
+```text
+configs/v4_owner_saving_target_demo.yaml
+```
+
+关键配置：
+
+```yaml
+search:
+  # 目标模式：业主节费比例优先。
+  objective_mode: owner_saving_first
+  # 投资方最低税前项目 IRR，作为硬约束。
+  min_project_irr: 0.08
+  # 业主最低节费比例，作为准入约束或谈判底线。
+  min_owner_saving_pct: 0.05
+```
+
+### V4 开发内容
+
+1. 复用 V2 的 `objective_mode=owner_saving_first`。
+2. 在 README 和输出摘要中明确 V4 是业主节费优先场景。
+3. 在结果中突出 `owner_saving_pct`、`owner_saving`、`project_irr`、`ppa_price` 和业主综合用能成本。
+4. 增加测试：构造多个可行候选方案，确认 V4 选择 `owner_saving_pct` 最高的方案。
+
+### V4 当前实现进度
+
+已完成。V4 复用 V2 的 `objective_mode=owner_saving_first`，并新增 `configs/v4_owner_saving_target_demo.yaml` 作为业主节费比例优先场景配置。当前输出会把 `owner_saving_pct` 作为主目标值，并保留投资方最低 IRR 约束字段。
+
+## V5版本
+
+V5 版本记录为 `investor_irr_uplift` 模式，即“以投资方 IRR 提升为目标，业主节费比例为约束”的相对提升场景。该模式对应当前讨论中的方案 B。
+
+V5 与 V3 的区别是：
+
+```text
+V3：看候选方案自身 project_irr 是否最高。
+V5：看候选方案相对基准方案的 irr_uplift 是否最高。
+```
+
+### V5 模型形式
+
+```text
+baseline_irr = IRR(基准方案)
+candidate_irr(x) = IRR(候选方案 x)
+irr_uplift(x) = candidate_irr(x) - baseline_irr
+
+maximize irr_uplift(x)
+
+subject to:
+    candidate_irr(x) >= min_project_irr
+    owner_saving_pct(x) >= min_owner_saving_pct
+    self_use_ratio(x) >= min_self_use_ratio，可选
+    export_ratio(x) <= max_export_ratio，可选
+    风光储容量满足候选边界
+```
+
+### V5 业务含义
+
+V5 回答的问题是：
+
+```text
+相对于一个已定义的基准方案，
+通过调整风光储容量、PPA 价格或调度策略，
+投资方 IRR 能提升多少，
+同时业主节费比例是否仍满足约束？
+```
+
+### V5 必须新增的基准方案定义
+
+V5 不能只靠当前 v1/v2 的候选搜索完成，必须先定义基准方案。基准方案可选口径包括：
+
+1. 不配置储能，只投风光。
+2. 固定当前人工经验容量和 PPA 价格。
+3. 只投光伏，不投风电和储能。
+4. 使用已谈判或已立项的原始方案。
+5. 使用当前 v1/v3 的最优方案作为后续策略改进的基准。
+
+未确认基准方案前，不应实现 `irr_uplift` 排序，否则“提升”没有业务含义。
+
+### V5 配置方案
+
+建议新增：
+
+```text
+configs/v5_investor_irr_uplift_demo.yaml
+```
+
+建议新增配置结构：
+
+```yaml
+search:
+  # 目标模式：投资方 IRR 相对基准提升优先。
+  objective_mode: investor_irr_uplift
+  # 投资方最低税前项目 IRR，约束候选方案本身必须达标。
+  min_project_irr: 0.08
+  # 业主最低节费比例，作为硬约束。
+  min_owner_saving_pct: 0.05
+
+baseline_project:
+  # 基准方案风电容量，单位 kW。
+  wind_capacity_kw: 1000.0
+  # 基准方案光伏容量，单位 kW。
+  pv_capacity_kw: 800.0
+  # 基准方案 PPA 价格，单位元/kWh。
+  ppa_price: 0.55
+  # 基准方案储能功率，单位 kW。
+  bess_power_kw: 0.0
+  # 基准方案储能容量，单位 kWh。
+  bess_energy_kwh: 0.0
+```
+
+### V5 开发内容
+
+1. 在配置类中新增 `baseline_project` 或等价基准方案配置。
+2. 在 `capacity_search/` 中先运行基准方案，计算 `baseline_irr`。
+3. 对每个候选方案计算 `candidate_irr` 和 `irr_uplift`。
+4. 新增 `objective_mode=investor_irr_uplift` 排序：
+
+   ```text
+   先比较 irr_uplift
+   再比较 candidate_irr
+   再比较 owner_saving_pct
+   ```
+
+5. 输出新增字段：
+
+   ```text
+   baseline_project_irr
+   candidate_project_irr
+   irr_uplift
+   baseline_owner_saving_pct
+   candidate_owner_saving_pct
+   ```
+
+6. 增加测试：同一批候选方案中，确认 V5 选择 `irr_uplift` 最大的方案，而不是绝对 `project_irr` 最大的方案。
+
+### V5 待澄清问题
+
+1. 基准方案到底采用哪一种业务口径。
+2. `irr_uplift` 是否按百分点差值计算，例如 `12% - 8% = 4pct`，还是按相对增长率计算，例如 `(12%-8%)/8%=50%`。建议优先采用百分点差值。
+3. 基准方案是否也必须满足业主节费比例约束。建议默认不强制，但输出基准方案的业主节费比例用于解释。
+4. 如果基准方案 IRR 不可求，应判定 V5 场景不可运行，还是允许以 NPV 提升替代。建议第一版直接报错，避免混淆口径。
+
+### V5 当前实现进度
+
+已完成第一版。当前新增 `BaselineProjectConfig` 和 `baseline_project` YAML 配置，并在 `capacity_search/` 中支持 `objective_mode=investor_irr_uplift`。运行时会先计算基准方案 `baseline_project_irr` 和 `baseline_owner_saving_pct`，再对候选方案计算 `candidate_project_irr`、`candidate_owner_saving_pct` 和 `irr_uplift`。第一版按百分点差值计算 `irr_uplift = candidate_project_irr - baseline_project_irr`，基准方案 IRR 不可求时直接报错。
+
 ## 后续必须澄清的问题
 
-真正落地 v1 前，需要补齐以下定义：
+继续深化 V2-V5 前，需要补齐以下定义：
 
 > 已确认口径：最小可行版本采用项目税前 IRR、固定单价 PPA、允许储能从电网充电、允许余电上网、时间粒度由 CSV 自动识别。未确认的数据如有需要先使用配置参数表示，并通过模拟数据注明含义。
 

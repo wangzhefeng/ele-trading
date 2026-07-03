@@ -5,7 +5,7 @@ from itertools import product
 
 import pandas as pd
 
-from invest_est_models.config_loader import CaseConfig, ProjectConfig
+from invest_est_models.config_loader import BaselineProjectConfig, CaseConfig, ProjectConfig
 from invest_est_models.dispatch import dispatch_rule_based
 from invest_est_models.finance import compute_npv, compute_payback_years, compute_project_irr
 from invest_est_models.settlement import settle_monthly
@@ -14,13 +14,14 @@ from invest_est_models.settlement import settle_monthly
 def run_capacity_search(base_timeseries: pd.DataFrame, case: CaseConfig) -> dict[str, object]:
     """执行 v1 粗网格容量搜索，返回候选方案、不可行原因和最优方案。"""
 
+    baseline = _baseline_metrics(base_timeseries, case)
     candidates: list[dict[str, object]] = []
     best_payload: dict[str, object] | None = None
     for project in _candidate_projects(case.project, case):
         scaled = _scale_resource_by_capacity(base_timeseries, base=case.project, candidate=project)
         dispatch = dispatch_rule_based(scaled, project.bess)
         monthly = settle_monthly(dispatch, project)
-        row = _evaluate_candidate(dispatch, monthly, project, case)
+        row = _evaluate_candidate(dispatch, monthly, project, case, baseline)
         candidates.append(row)
         if row["is_feasible"] and _is_better_candidate(row, best_payload):
             best_payload = {"row": row, "dispatch": dispatch, "monthly": monthly, "project": project}
@@ -78,6 +79,7 @@ def _evaluate_candidate(
     monthly: pd.DataFrame,
     project: ProjectConfig,
     case: CaseConfig,
+    baseline: dict[str, float | None],
 ) -> dict[str, object]:
     """计算单个候选方案的指标和约束满足状态。"""
 
@@ -91,6 +93,7 @@ def _evaluate_candidate(
     self_use_ratio = ppa_energy / renewable_generation if renewable_generation else 0.0
     export_ratio = export_energy / renewable_generation if renewable_generation else 0.0
     reasons = _infeasible_reasons(project_irr, owner_saving_pct, self_use_ratio, export_ratio, case)
+    objective = _objective_fields(case, project_irr, owner_saving_pct, baseline)
     return {
         "wind_capacity_kw": project.wind_capacity_kw,
         "pv_capacity_kw": project.pv_capacity_kw,
@@ -98,10 +101,12 @@ def _evaluate_candidate(
         "bess_energy_kwh": project.bess.energy_kwh,
         "ppa_price": project.ppa_price,
         "project_irr": project_irr,
+        "candidate_project_irr": project_irr,
         "npv_at_target_irr": compute_npv(monthly, project, discount_rate=case.search.min_project_irr),
         "payback_years": compute_payback_years(monthly, project),
         "owner_saving": owner_saving,
         "owner_saving_pct": owner_saving_pct,
+        "candidate_owner_saving_pct": owner_saving_pct,
         "renewable_generation_kwh": renewable_generation,
         "ppa_energy_kwh": ppa_energy,
         "export_energy_kwh": export_energy,
@@ -109,6 +114,7 @@ def _evaluate_candidate(
         "export_ratio": export_ratio,
         "is_feasible": not reasons,
         "infeasible_reasons": "; ".join(reasons),
+        **objective,
     }
 
 
@@ -137,15 +143,133 @@ def _infeasible_reasons(
 
 
 def _is_better_candidate(row: dict[str, object], best_payload: dict[str, object] | None) -> bool:
-    """最优方案排序规则：先 IRR，再业主节费比例。"""
+    """按 objective_mode 对可行候选方案排序。"""
 
     if best_payload is None:
         return True
     best = best_payload["row"]
+    return _ranking_key(row) > _ranking_key(best)
+
+
+def _ranking_key(row: dict[str, object]) -> tuple[float, float, float]:
+    """把目标模式转成可比较排序键，值越大代表方案越优。"""
+
+    mode = str(row["objective_mode"])
+    if mode == "owner_saving_first":
+        return (
+            float(row["owner_saving_pct"]),
+            _none_to_low(row["project_irr"]),
+            _none_to_low(row["npv_at_target_irr"]),
+        )
+    if mode == "investor_irr_uplift":
+        return (
+            _none_to_low(row["irr_uplift"]),
+            _none_to_low(row["candidate_project_irr"]),
+            float(row["candidate_owner_saving_pct"]),
+        )
     return (
-        float(row["project_irr"] or -1.0),
+        _none_to_low(row["project_irr"]),
         float(row["owner_saving_pct"]),
-    ) > (
-        float(best["project_irr"] or -1.0),
-        float(best["owner_saving_pct"]),
+        _none_to_low(row["npv_at_target_irr"]),
     )
+
+
+def _objective_fields(
+    case: CaseConfig,
+    project_irr: float | None,
+    owner_saving_pct: float,
+    baseline: dict[str, float | None],
+) -> dict[str, object]:
+    """根据目标模式补充输出字段，避免 CSV 结果脱离业务口径。"""
+
+    mode = case.search.objective_mode
+    if mode == "owner_saving_first":
+        return {
+            "objective_mode": mode,
+            "objective_value": owner_saving_pct,
+            "ranking_primary_metric": "owner_saving_pct",
+            "ranking_secondary_metric": "project_irr",
+            "constraint_min_project_irr": case.search.min_project_irr,
+            "constraint_min_owner_saving_pct": case.search.min_owner_saving_pct,
+            "baseline_project_irr": None,
+            "baseline_owner_saving_pct": None,
+            "irr_uplift": None,
+        }
+    if mode == "investor_irr_uplift":
+        baseline_irr = baseline["baseline_project_irr"]
+        irr_uplift = None if project_irr is None or baseline_irr is None else project_irr - baseline_irr
+        return {
+            "objective_mode": mode,
+            "objective_value": irr_uplift,
+            "ranking_primary_metric": "irr_uplift",
+            "ranking_secondary_metric": "candidate_project_irr",
+            "constraint_min_project_irr": case.search.min_project_irr,
+            "constraint_min_owner_saving_pct": case.search.min_owner_saving_pct,
+            "baseline_project_irr": baseline_irr,
+            "baseline_owner_saving_pct": baseline["baseline_owner_saving_pct"],
+            "irr_uplift": irr_uplift,
+        }
+    if mode != "investor_irr_first":
+        raise ValueError(f"Unsupported objective_mode: {mode}")
+    return {
+        "objective_mode": mode,
+        "objective_value": project_irr,
+        "ranking_primary_metric": "project_irr",
+        "ranking_secondary_metric": "owner_saving_pct",
+        "constraint_min_project_irr": case.search.min_project_irr,
+        "constraint_min_owner_saving_pct": case.search.min_owner_saving_pct,
+        "baseline_project_irr": None,
+        "baseline_owner_saving_pct": None,
+        "irr_uplift": None,
+    }
+
+
+def _baseline_metrics(base_timeseries: pd.DataFrame, case: CaseConfig) -> dict[str, float | None]:
+    """V5 模式先计算基准方案指标；其他模式返回空基准字段。"""
+
+    if case.search.objective_mode != "investor_irr_uplift":
+        return {"baseline_project_irr": None, "baseline_owner_saving_pct": None}
+    if case.baseline_project is None:
+        raise ValueError("baseline_project is required when objective_mode is investor_irr_uplift")
+    baseline_project = _project_from_baseline(case.project, case.baseline_project)
+    scaled = _scale_resource_by_capacity(base_timeseries, base=case.project, candidate=baseline_project)
+    dispatch = dispatch_rule_based(scaled, baseline_project.bess)
+    monthly = settle_monthly(dispatch, baseline_project)
+    baseline_irr = compute_project_irr(monthly, baseline_project)
+    if baseline_irr is None:
+        raise ValueError("baseline_project_irr is unavailable")
+    return {
+        "baseline_project_irr": baseline_irr,
+        "baseline_owner_saving_pct": _owner_saving_pct(monthly),
+    }
+
+
+def _project_from_baseline(base: ProjectConfig, baseline: BaselineProjectConfig) -> ProjectConfig:
+    """用 baseline_project 覆盖项目容量和价格，未配置字段沿用主项目。"""
+
+    bess = replace(
+        base.bess,
+        power_kw=baseline.bess_power_kw if baseline.bess_power_kw is not None else base.bess.power_kw,
+        energy_kwh=baseline.bess_energy_kwh if baseline.bess_energy_kwh is not None else base.bess.energy_kwh,
+    )
+    return replace(
+        base,
+        wind_capacity_kw=baseline.wind_capacity_kw if baseline.wind_capacity_kw is not None else base.wind_capacity_kw,
+        pv_capacity_kw=baseline.pv_capacity_kw if baseline.pv_capacity_kw is not None else base.pv_capacity_kw,
+        ppa_price=baseline.ppa_price if baseline.ppa_price is not None else base.ppa_price,
+        bess=bess,
+    )
+
+
+def _owner_saving_pct(monthly: pd.DataFrame) -> float:
+    """按当前首年月度结算口径计算业主节费比例。"""
+
+    baseline_cost = float(monthly["baseline_grid_cost"].sum())
+    owner_saving = float(monthly["owner_saving"].sum())
+    return owner_saving / baseline_cost if baseline_cost else 0.0
+
+
+def _none_to_low(value: object) -> float:
+    """排序辅助：不可用指标排在最后。"""
+
+    return float(value) if value is not None else -1.0

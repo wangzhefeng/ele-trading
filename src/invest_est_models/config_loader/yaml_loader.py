@@ -6,6 +6,7 @@ from typing import Any
 import yaml
 
 from .models import (
+    BaselineProjectConfig,
     BESSConfig,
     CapacitySearchConfig,
     CaseConfig,
@@ -37,12 +38,14 @@ def load_case_config(path: str | Path) -> CaseConfig:
         raw.get("search", {}),
         ("wind_capacity_kw", "pv_capacity_kw", "bess_power_kw", "bess_energy_kwh", "ppa_price"),
     ))
+    baseline_project = _load_baseline_project(raw.get("baseline_project"))
     return CaseConfig(
         name=str(raw.get("scenario", {}).get("name", config_path.stem)),
         paths=paths,
         project=project,
         sample_data=sample_data,
         search=search,
+        baseline_project=baseline_project,
     )
 
 
@@ -74,3 +77,11 @@ def _tuple_fields(raw: dict[str, Any], fields: tuple[str, ...]) -> dict[str, Any
         if field in data:
             data[field] = tuple(data[field])
     return data
+
+
+def _load_baseline_project(raw: dict[str, Any] | None) -> BaselineProjectConfig | None:
+    """读取 V5 基准方案配置；未配置时返回 None，保持 V1-V4 口径不变。"""
+
+    if raw is None:
+        return None
+    return BaselineProjectConfig(**dict(raw))

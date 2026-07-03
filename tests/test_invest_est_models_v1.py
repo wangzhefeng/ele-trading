@@ -1,11 +1,22 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import replace
 
 import pandas as pd
 import pytest
 
-from invest_est_models.config_loader import load_case_config
+from invest_est_models.capacity_search import run_capacity_search
+from invest_est_models.config_loader import (
+    BESSConfig,
+    BaselineProjectConfig,
+    CapacitySearchConfig,
+    CaseConfig,
+    FinanceConfig,
+    PathConfig,
+    ProjectConfig,
+    load_case_config,
+)
 from invest_est_models.app.run_capacity_search import run_search_from_yaml
 from invest_est_models.app.run_mvp_demo import run_case_from_yaml
 from invest_est_models.data_provider import (
@@ -73,3 +84,109 @@ def test_capacity_search_outputs_candidates_and_reasons(tmp_path: Path) -> None:
     assert "infeasible_reasons" in candidates.columns
     assert best is None or bool(best["is_feasible"])
     assert isinstance(infeasible, pd.DataFrame)
+
+
+def test_v2_yaml_loads_objective_mode() -> None:
+    case = load_case_config("src/invest_est_models/configs/v2_owner_saving_first_demo.yaml")
+
+    assert case.search.objective_mode == "owner_saving_first"
+
+
+def test_capacity_search_objective_mode_changes_best_candidate(tmp_path: Path) -> None:
+    timeseries = _ranking_demo_timeseries()
+    investor_case = _ranking_demo_case(tmp_path, "investor_irr_first")
+    owner_case = replace(investor_case, search=replace(investor_case.search, objective_mode="owner_saving_first"))
+
+    investor_result = run_capacity_search(timeseries, investor_case)
+    owner_result = run_capacity_search(timeseries, owner_case)
+
+    assert investor_result["best"]["ppa_price"] == 0.6
+    assert investor_result["best"]["objective_mode"] == "investor_irr_first"
+    assert investor_result["best"]["ranking_primary_metric"] == "project_irr"
+    assert owner_result["best"]["ppa_price"] == 0.3
+    assert owner_result["best"]["objective_mode"] == "owner_saving_first"
+    assert owner_result["best"]["ranking_primary_metric"] == "owner_saving_pct"
+
+
+def test_v5_investor_irr_uplift_outputs_baseline_metrics(tmp_path: Path) -> None:
+    timeseries = _ranking_demo_timeseries()
+    case = _ranking_demo_case(tmp_path, "investor_irr_uplift")
+
+    result = run_capacity_search(timeseries, case)
+    best = result["best"]
+
+    assert best["objective_mode"] == "investor_irr_uplift"
+    assert best["ranking_primary_metric"] == "irr_uplift"
+    assert best["baseline_project_irr"] is not None
+    assert best["candidate_project_irr"] == best["project_irr"]
+    assert best["irr_uplift"] == pytest.approx(best["candidate_project_irr"] - best["baseline_project_irr"])
+
+
+def _ranking_demo_timeseries() -> pd.DataFrame:
+    time = pd.date_range("2026-01-01", periods=24, freq="1h")
+    return pd.DataFrame(
+        {
+            "time": time,
+            "load_kw": [10.0] * len(time),
+            "price": [1.0] * len(time),
+            "price_type": ["flat"] * len(time),
+            "pv_kw": [0.0] * len(time),
+            "wind_kw": [10.0] * len(time),
+            "dt_hours": [1.0] * len(time),
+        }
+    )
+
+
+def _ranking_demo_case(tmp_path: Path, objective_mode: str) -> CaseConfig:
+    finance = FinanceConfig(
+        project_years=5,
+        capex_wind_per_kw=5.0,
+        capex_pv_per_kw=0.0,
+        capex_bess_power_per_kw=0.0,
+        capex_bess_energy_per_kwh=0.0,
+        fixed_om_pct_of_capex=0.0,
+        renewable_degradation_pct=0.0,
+        bess_replacement_year=None,
+    )
+    project = ProjectConfig(
+        wind_capacity_kw=100.0,
+        pv_capacity_kw=0.0,
+        ppa_price=0.5,
+        export_price=0.0,
+        bess=BESSConfig(power_kw=0.0, energy_kwh=0.0),
+        finance=finance,
+    )
+    search = CapacitySearchConfig(
+        enabled=True,
+        wind_capacity_kw=(100.0,),
+        pv_capacity_kw=(0.0,),
+        bess_power_kw=(0.0,),
+        bess_energy_kwh=(0.0,),
+        ppa_price=(0.3, 0.6),
+        min_project_irr=-0.5,
+        min_owner_saving_pct=0.0,
+        objective_mode=objective_mode,
+    )
+    paths = PathConfig(
+        load_csv=tmp_path / "load.csv",
+        price_csv=tmp_path / "price.csv",
+        resource_csv=tmp_path / "resource.csv",
+        monthly_output_csv=tmp_path / "monthly.csv",
+        dispatch_output_csv=tmp_path / "dispatch.csv",
+    )
+    baseline_project = None
+    if objective_mode == "investor_irr_uplift":
+        baseline_project = BaselineProjectConfig(
+            wind_capacity_kw=100.0,
+            pv_capacity_kw=0.0,
+            ppa_price=0.5,
+            bess_power_kw=0.0,
+            bess_energy_kwh=0.0,
+        )
+    return CaseConfig(
+        name=f"ranking_{objective_mode}",
+        paths=paths,
+        project=project,
+        search=search,
+        baseline_project=baseline_project,
+    )

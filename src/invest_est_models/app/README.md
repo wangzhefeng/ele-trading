@@ -10,6 +10,9 @@ PYTHONPATH=src ./.venv/bin/python -m invest_est_models.app.run_mvp_demo \
 
 PYTHONPATH=src ./.venv/bin/python -m invest_est_models.app.run_capacity_search \
   --config src/invest_est_models/configs/v1_capacity_search_demo.yaml
+
+PYTHONPATH=src ./.venv/bin/python -m invest_est_models.app.run_capacity_search \
+  --config src/invest_est_models/configs/v5_investor_irr_uplift_demo.yaml
 ```
 
 脚本职责：
@@ -32,6 +35,11 @@ v1 版本已实现：
 
 1. `run_capacity_search.py` 容量搜索入口。
 2. 终端打印候选方案数、可行方案数和最优方案摘要。
+
+V2-V5 版本已实现：
+
+1. 继续复用 `run_capacity_search.py`。
+2. 支持通过不同 YAML 场景运行投资方优先、业主节费优先和 IRR uplift 模式。
 
 后续待扩展：
 

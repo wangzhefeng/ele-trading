@@ -1,6 +1,6 @@
 scenario:
-  # 场景名称：v1 容量搜索演示。
-  name: v1_capacity_search_demo
+  # 场景名称：V2 业主节费比例优先排序演示。
+  name: v2_owner_saving_first_demo
 
 sample_data:
   # 是否运行前生成模拟 CSV；true 表示复用 data_provider 的样例数据。
@@ -18,17 +18,17 @@ paths:
   # 风光资源输入 CSV。
   resource_csv: dataset/sample_resource.csv
   # 单场景月度结算输出 CSV。
-  monthly_output_csv: results/v1_mvp_monthly_settlement.csv
+  monthly_output_csv: results/v2_mvp_monthly_settlement.csv
   # 单场景时序调度输出 CSV。
-  dispatch_output_csv: results/v1_mvp_dispatch_timeseries.csv
-  # v1 候选方案搜索结果输出 CSV。
-  candidate_output_csv: results/v1_candidate_results.csv
-  # v1 最优可行方案摘要输出 CSV。
-  best_summary_csv: results/v1_best_summary.csv
-  # v1 不可行方案原因输出 CSV。
-  infeasible_reasons_csv: results/v1_infeasible_reasons.csv
-  # v1 最优方案年度现金流输出 CSV。
-  annual_cashflows_csv: results/v1_annual_cashflows.csv
+  dispatch_output_csv: results/v2_mvp_dispatch_timeseries.csv
+  # V2 候选方案搜索结果输出 CSV。
+  candidate_output_csv: results/v2_candidate_results.csv
+  # V2 最优可行方案摘要输出 CSV。
+  best_summary_csv: results/v2_best_summary.csv
+  # V2 不可行方案原因输出 CSV。
+  infeasible_reasons_csv: results/v2_infeasible_reasons.csv
+  # V2 最优方案年度现金流输出 CSV。
+  annual_cashflows_csv: results/v2_annual_cashflows.csv
 
 project:
   # 基准风电装机容量，单位 kW；搜索时资源曲线按候选容量相对该值缩放。
@@ -102,10 +102,10 @@ finance:
   bess_replacement_cost_pct: 0.35
 
 search:
-  # 是否启用 v1 容量搜索。
+  # 是否启用容量搜索。
   enabled: true
-  # 目标模式：投资方 IRR 优先，业主节费比例作为次级排序指标和约束。
-  objective_mode: investor_irr_first
+  # 目标模式：业主节费比例优先，投资方 IRR 作为约束。
+  objective_mode: owner_saving_first
   # 风电容量候选值，单位 kW。
   wind_capacity_kw:
     - 800.0
