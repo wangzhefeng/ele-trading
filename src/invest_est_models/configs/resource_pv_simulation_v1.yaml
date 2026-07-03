@@ -1,0 +1,46 @@
+# 光伏 v1 资源仿真示例配置：clear_sky 模式不依赖外部气象文件。
+site:
+  # 场址纬度，单位度。
+  latitude: 41.0
+  # 场址经度，单位度。
+  longitude: 113.13
+  # 场址时区，用于构造本地时间索引。
+  timezone: Asia/Shanghai
+
+run:
+  # 仿真目标年份。
+  target_year: 2026
+  # 输出时间分辨率；1h 表示 8760 小时点。
+  freq: 1h
+  # 刷新模式说明；当前入口脚本暂不基于该字段做缓存控制。
+  refresh_mode: regenerate
+
+paths:
+  # 光伏出力 CSV 输出路径，字段为 time,pv_kw。
+  output: results/resource_simulation/pv_v1_power.csv
+  # 可选本地气象或回放输入；clear_sky 模式不需要。
+  weather_input:
+  # 本地气象文件时间列名。
+  weather_time_col: timestamp
+
+pv_simulation:
+  # 场址纬度，单位度。
+  latitude: 41.0
+  # 场址经度，单位度。
+  longitude: 113.13
+  # 场址时区。
+  timezone: Asia/Shanghai
+  # 光伏装机容量，单位 kWp。
+  capacity_kwp: 1000.0
+  # 组件倾角，单位度；null 表示按纬度自动取值。
+  tilt:
+  # 组件方位角，单位度；180 表示朝南。
+  azimuth: 180.0
+  # 系统综合损耗率，如逆变器、线损、灰尘等。
+  system_loss: 0.20
+  # 功率温度系数，单位 1/摄氏度。
+  temp_coeff: -0.004
+  # 云量折减系数，仅 clear_sky 模式使用。
+  cloud_factor: 0.75
+  # 仿真模式：clear_sky、weather_driven 或 replay。
+  mode: clear_sky

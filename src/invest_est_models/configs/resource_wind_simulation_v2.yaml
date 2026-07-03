@@ -1,0 +1,37 @@
+# 风电 v2 资源仿真示例配置：默认使用本地 demo 气象 CSV，避免运行示例时联网。
+site:
+  # 场址纬度，单位度。
+  latitude: 41.0
+  # 场址经度，单位度。
+  longitude: 113.13
+
+run:
+  # 仿真目标年份；未配置本地气象时用于 Open-Meteo 查询时间范围。
+  target_year: 2026
+  # 联网获取气象时请求的小时字段；本地气象输入时不使用。
+  hourly_fields:
+    - wind_speed
+    - temperature
+    - pressure
+
+paths:
+  # 本地气象输入 CSV，字段为 timestamp,wind_speed,temperature,pressure。
+  weather_input: dataset/resource_simulation/wind_weather_v2_demo.csv
+  # 本地气象文件时间列名。
+  weather_time_col: timestamp
+  # 风电出力 CSV 输出路径，字段为 time,wind_kw。
+  output: results/resource_simulation/wind_v2_power.csv
+
+wind_simulation:
+  # 风机轮毂高度，单位米。
+  hub_height: 100.0
+  # 风切变指数。
+  wind_shear_exp: 0.143
+  # 气象数据风速参考高度，单位米。
+  wind_speed_ref_height: 10.0
+  # 目标等效满发小时数，单位小时。
+  equiv_hours: 20.0
+  # 目标风场装机容量，单位 MW。
+  target_capacity_mw: 2.0
+  # 指定单机容量，单位 MW；null 表示自动匹配机型。
+  single_turbine_capacity_mw:

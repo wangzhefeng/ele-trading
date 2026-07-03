@@ -1,0 +1,52 @@
+# 风电 v1 资源仿真示例配置：默认使用本地 demo 气象 CSV，避免运行示例时联网。
+site:
+  # 场址纬度，单位度；未配置本地气象时用于 Open-Meteo 查询。
+  latitude: 41.0
+  # 场址经度，单位度；未配置本地气象时用于 Open-Meteo 查询。
+  longitude: 113.13
+
+run:
+  # 仿真目标年份。
+  target_year: 2026
+  # 刷新模式说明；当前入口脚本暂不基于该字段做缓存控制。
+  refresh_mode: regenerate
+
+paths:
+  # 本地气象输入 CSV，字段为 timestamp,wind_speed_100m,temperature_2m。
+  weather_input: dataset/resource_simulation/wind_weather_v1_demo.csv
+  # 本地气象文件时间列名。
+  weather_time_col: timestamp
+  # 风电出力 CSV 输出路径，字段为 time,wind_kw。
+  output: results/resource_simulation/wind_v1_power.csv
+
+wind_simulation:
+  # 仿真目标年份。
+  year: 2026
+  # 时间分辨率说明；当前由气象输入时间间隔决定。
+  freq: 1h
+  # 风场总装机容量，单位 MW。
+  farm_capacity_mw: 2.0
+  # 测风塔高度处年均风速校准目标，单位 m/s；null 表示不校准。
+  mean_wind_speed_target: 6.5
+  # 目标年等效满发小时数，单位小时。
+  target_full_load_hours: 20.0
+  # 气象数据风速测量高度，单位米。
+  meteo_height_m: 100.0
+  # 测风塔高度，单位米。
+  met_mast_height_m: 140.0
+  # 风机轮毂高度，单位米。
+  hub_height_m: 140.0
+  # 风切变指数。
+  shear_alpha: 0.2
+  # 单机额定功率，单位 kW。
+  rated_power_kw: 2000.0
+  # 切入风速，单位 m/s。
+  cut_in: 3.0
+  # 额定风速，单位 m/s。
+  rated_speed: 11.0
+  # 切出风速，单位 m/s。
+  cut_out: 25.0
+  # 最大出力与装机容量比值上限。
+  max_power_ratio: 1.2
+  # 运行模式：resource_simulation 表示可自动获取气象。
+  mode: resource_simulation

@@ -11,6 +11,8 @@
 5. 储能充放电受功率、容量、效率和 SOC 上下限约束。
 6. 储能无法消纳的剩余风光电量按余电上网处理。
 
+调度层消费的 `price_type` 已在 `data_provider` 和 `config_loader` 阶段统一为英文标准编码，例如 `valley`、`flat`、`peak`、`sharp_peak`。
+
 使用方式：
 
 ```python

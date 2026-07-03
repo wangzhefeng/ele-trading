@@ -38,10 +38,10 @@ class BESSConfig:
     initial_soc_pct: float = 0.5
     # 是否允许电网充电；MVP 口径已确认允许。
     allow_grid_charge: bool = True
-    # 允许从电网充电的 price_type 集合。
-    charge_price_types: tuple[str, ...] = ("valley", "flat")
-    # 允许放电供负荷的 price_type 集合。
-    discharge_price_types: tuple[str, ...] = ("peak", "尖峰", "高峰")
+    # 允许从电网充电的标准 price_type 集合；内部统一使用英文编码。
+    charge_price_types: tuple[str, ...] = ("deep_valley", "valley", "flat")
+    # 允许放电供负荷的标准 price_type 集合；内部统一使用英文编码。
+    discharge_price_types: tuple[str, ...] = ("peak", "sharp_peak")
 
 
 @dataclass(frozen=True)
@@ -144,7 +144,7 @@ class PathConfig:
 
     # 负荷 CSV 路径，字段为 time,value。
     load_csv: Path
-    # 电价 CSV 路径，字段为 time,price,price_type。
+    # 电价 CSV 路径，字段为 time,price,price_type；price_type 读取后统一为英文编码。
     price_csv: Path
     # 风光资源 CSV 路径，字段为 time,pv_kw,wind_kw。
     resource_csv: Path

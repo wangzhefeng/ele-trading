@@ -1,0 +1,41 @@
+# 光伏 v2 资源仿真示例配置：默认使用本地 demo 气象 CSV，避免运行示例时联网。
+site:
+  # 场址纬度，单位度。
+  latitude: 41.0
+  # 场址经度，单位度。
+  longitude: 113.13
+
+run:
+  # 仿真目标年份；未配置本地气象时用于 Open-Meteo 查询时间范围。
+  target_year: 2026
+  # 联网获取气象时请求的小时字段；本地气象输入时不使用。
+  hourly_fields:
+    - ghi
+    - temp_air
+    - wind_speed
+
+paths:
+  # 本地气象输入 CSV，字段为 timestamp,ghi,temp_air,wind_speed。
+  weather_input: dataset/resource_simulation/pv_weather_demo.csv
+  # 本地气象文件时间列名。
+  weather_time_col: timestamp
+  # 光伏出力 CSV 输出路径，字段为 time,pv_kw。
+  output: results/resource_simulation/pv_v2_power.csv
+
+pv_simulation:
+  # 场址纬度，单位度。
+  latitude: 41.0
+  # 场址经度，单位度。
+  longitude: 113.13
+  # 场址时区。
+  timezone: Asia/Shanghai
+  # 组件倾角，单位度；null 表示由算法默认设置。
+  tilt:
+  # 组件方位角，单位度；180 表示朝南。
+  azimuth: 180.0
+  # 海拔高度，单位米。
+  altitude: 0.0
+  # 目标等效发电小时数，单位小时。
+  equiv_hours: 1200.0
+  # 目标装机容量，单位 MW。
+  target_capacity_mw: 1.0

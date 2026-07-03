@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from .price_type import normalize_price_type
+
 
 def read_load_csv(path: str | Path) -> pd.DataFrame:
     """读取负荷 CSV，并把通用 value 字段规范为 load_kw。"""
@@ -13,9 +15,11 @@ def read_load_csv(path: str | Path) -> pd.DataFrame:
 
 
 def read_price_csv(path: str | Path) -> pd.DataFrame:
-    """读取分时电价 CSV，要求包含价格数值和价格类型。"""
+    """读取分时电价 CSV，并把中文或英文 price_type 统一为英文编码。"""
 
-    return _read_time_csv(path, required=("time", "price", "price_type"))
+    df = _read_time_csv(path, required=("time", "price", "price_type"))
+    df["price_type"] = df["price_type"].map(normalize_price_type)
+    return df
 
 
 def read_resource_csv(path: str | Path) -> pd.DataFrame:

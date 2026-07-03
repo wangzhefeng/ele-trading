@@ -57,6 +57,28 @@ def test_data_validation_rejects_duplicate_time(tmp_path: Path) -> None:
         validate_timeseries(df)
 
 
+def test_price_csv_normalizes_chinese_price_type(tmp_path: Path) -> None:
+    price_csv = tmp_path / "price.csv"
+    pd.DataFrame(
+        {
+            "time": pd.date_range("2026-01-01", periods=5, freq="1h"),
+            "price": [0.2, 0.3, 0.6, 0.9, 1.2],
+            "price_type": ["深谷", "谷", "平", "高峰", "尖峰"],
+        }
+    ).to_csv(price_csv, index=False)
+
+    df = read_price_csv(price_csv)
+
+    assert df["price_type"].tolist() == ["deep_valley", "valley", "flat", "peak", "sharp_peak"]
+
+
+def test_yaml_loader_normalizes_bess_price_type_aliases() -> None:
+    case = load_case_config("src/invest_est_models/configs/mvp_demo.yaml")
+
+    assert case.project.bess.charge_price_types == ("valley", "flat")
+    assert case.project.bess.discharge_price_types == ("peak", "sharp_peak")
+
+
 def test_finance_outputs_npv_payback_and_annual_table(tmp_path: Path) -> None:
     paths = generate_sample_csvs(tmp_path)
     case = load_case_config("src/invest_est_models/configs/mvp_demo.yaml")

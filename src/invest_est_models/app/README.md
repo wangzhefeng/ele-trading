@@ -13,6 +13,15 @@ PYTHONPATH=src ./.venv/bin/python -m invest_est_models.app.run_capacity_search \
 
 PYTHONPATH=src ./.venv/bin/python -m invest_est_models.app.run_capacity_search \
   --config src/invest_est_models/configs/v5_investor_irr_uplift_demo.yaml
+
+PYTHONPATH=src ./.venv/bin/python -m invest_est_models.app.run_pv_simulation_v1 \
+  --config src/invest_est_models/configs/resource_pv_simulation_v1.yaml
+
+PYTHONPATH=src ./.venv/bin/python -m invest_est_models.app.run_wind_simulation_v1 \
+  --config src/invest_est_models/configs/resource_wind_simulation_v1.yaml
+
+PYTHONPATH=src ./.venv/bin/python -m invest_est_models.app.build_resource_profile \
+  --config src/invest_est_models/configs/resource_profile_demo.yaml
 ```
 
 脚本职责：
@@ -22,6 +31,7 @@ PYTHONPATH=src ./.venv/bin/python -m invest_est_models.app.run_capacity_search \
 3. 直接运行最小可行版本或 v1 容量搜索测算流程。
 4. 按配置写出逐时调度结果和月度结算结果。
 5. 在终端打印项目税前 IRR 和目标 PPA 反求价格。
+6. 资源仿真入口负责生成 `time,pv_kw`、`time,wind_kw` 和 `time,pv_kw,wind_kw`。
 
 ## 实现进度
 
@@ -40,6 +50,14 @@ V2-V5 版本已实现：
 
 1. 继续复用 `run_capacity_search.py`。
 2. 支持通过不同 YAML 场景运行投资方优先、业主节费优先和 IRR uplift 模式。
+
+资源仿真入口已实现：
+
+1. `run_pv_simulation_v1.py`。
+2. `run_pv_simulation_v2.py`。
+3. `run_wind_simulation_v1.py`。
+4. `run_wind_simulation_v2.py`。
+5. `build_resource_profile.py`。
 
 后续待扩展：
 

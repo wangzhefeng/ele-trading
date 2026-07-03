@@ -1,0 +1,8 @@
+# 风光资源合并示例配置：把单资源 CSV 合并为测算链路需要的 time,pv_kw,wind_kw。
+paths:
+  # 光伏出力 CSV，字段为 time,pv_kw。
+  pv_csv: results/resource_simulation/pv_v1_power.csv
+  # 风电出力 CSV，字段为 time,wind_kw。
+  wind_csv: results/resource_simulation/wind_v1_power.csv
+  # 合并后的资源 CSV，字段为 time,pv_kw,wind_kw。
+  output: results/resource_simulation/resource_profile.csv

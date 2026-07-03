@@ -5,6 +5,8 @@ from typing import Any
 
 import yaml
 
+from invest_est_models.data_provider import normalize_price_types
+
 from .models import (
     BaselineProjectConfig,
     BESSConfig,
@@ -28,7 +30,7 @@ def load_case_config(path: str | Path) -> CaseConfig:
 
     # YAML 顶层分组与 dataclass 一一对应，避免 app 脚本中硬编码场景参数。
     project_raw = dict(raw.get("project", {}))
-    bess = BESSConfig(**_tuple_fields(raw.get("bess", {}), ("charge_price_types", "discharge_price_types")))
+    bess = BESSConfig(**_load_bess(raw.get("bess", {})))
     finance = FinanceConfig(**dict(raw.get("finance", {})))
     settlement = SettlementConfig(**dict(raw.get("settlement", {})))
     project = ProjectConfig(**project_raw, bess=bess, finance=finance, settlement=settlement)
@@ -76,6 +78,16 @@ def _tuple_fields(raw: dict[str, Any], fields: tuple[str, ...]) -> dict[str, Any
     for field in fields:
         if field in data:
             data[field] = tuple(data[field])
+    return data
+
+
+def _load_bess(raw: dict[str, Any]) -> dict[str, Any]:
+    """读取储能配置，并把充放电电价类型统一为英文编码。"""
+
+    data = _tuple_fields(raw, ("charge_price_types", "discharge_price_types"))
+    for field in ("charge_price_types", "discharge_price_types"):
+        if field in data:
+            data[field] = normalize_price_types(data[field])
     return data
 
 

@@ -61,15 +61,15 @@ bess:
   initial_soc_pct: 0.5
   # 是否允许电网充电。
   allow_grid_charge: true
-  # 允许充电的 price_type。
+  # 允许充电的标准 price_type；CSV 可写中文别名，读取后会统一为英文编码。
   charge_price_types:
+    - deep_valley
     - valley
     - flat
-  # 允许放电的 price_type。
+  # 允许放电的标准 price_type；peak=峰/高峰，sharp_peak=尖峰。
   discharge_price_types:
     - peak
-    - 尖峰
-    - 高峰
+    - sharp_peak
 
 settlement:
   # 每月固定基本电费模拟值，单位元/月。

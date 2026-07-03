@@ -24,7 +24,7 @@ def generate_sample_csvs(output_dir: str | Path, year: int = 2026, freq: str = "
     wind_kw = 280 + 90 * np.sin(2 * np.pi * (day_of_year + 30) / 365) + 30 * np.sin(2 * np.pi * hour / 24)
     wind_kw = np.maximum(0, wind_kw)
 
-    # 电价样例：按小时划分 peak/valley/flat，供规则储能调度使用。
+    # 电价样例：price_type 使用标准英文编码 valley/flat/peak，供规则储能调度使用。
     price_type = np.where((hour >= 10) & (hour <= 21), "peak", np.where((hour >= 0) & (hour <= 7), "valley", "flat"))
     price = np.where(price_type == "peak", 0.95, np.where(price_type == "valley", 0.35, 0.62))
 

@@ -38,7 +38,7 @@
 当前 `src/invest_est_models/` 已按原始需求中的“模型框架层次”和“输入边界条件”建立了可运行的模块骨架。对应关系如下：
 
 1. 基础输入层  
-   原始需求中的风光资源建模、负荷模型和电价模型，当前分别由 `data_provider/`、`configs/` 和 `config_loader/` 承接。风光资源暂不在本模块内重新仿真，而是通过 `time,pv_kw,wind_kw` 资源 CSV 接入，后续补充的风光仿真脚本只需满足该输出合同。负荷模型当前按用户确认的 `time,value` 全年典型负荷 CSV 接入。电价模型当前按 `time,price,price_type` 全年分时电价 CSV 接入，其他不确定电价或政策参数先放入 YAML 配置。
+   原始需求中的风光资源建模、负荷模型和电价模型，当前分别由 `resource_simulation/`、`data_provider/`、`configs/` 和 `config_loader/` 承接。风光资源已具备独立 PV/Wind v1/v2 仿真模块，可生成 `time,pv_kw`、`time,wind_kw` 并合并为 `time,pv_kw,wind_kw` 资源 CSV；外部资源 CSV 仍可直接接入。负荷模型当前按用户确认的 `time,value` 全年典型负荷 CSV 接入。电价模型当前按 `time,price,price_type` 全年分时电价 CSV 接入，其他不确定电价或政策参数先放入 YAML 配置。
 
 2. 运行仿真层  
    原始需求中的 8760 点位或 15 分钟动态平衡、储能调度策略仿真，由 `data_provider/` 和 `dispatch/` 承接。`data_provider/` 自动识别 `dt_hours`，使小时级和 15 分钟级数据可共用同一仿真链路；`dispatch/` 负责风光、负荷、储能、电网购电和余电上网之间的能量流计算。当前实现为规则型储能调度，v1 已支持电网充电、按 `price_type` 控制充放电时段和 SOC 边界约束。
@@ -61,7 +61,7 @@
 
 目标是把地理位置、资源条件和设备参数转换成逐时或 15 分钟发电序列。
 
-> 备注：用户已确认已有现成的风光资源仿真算法脚本，后续会补充到 `src/invest_est_models/` 内。本体系第一阶段不重写风光资源物理仿真算法，只分析补充进来的现有算法是否满足测算需求，重点检查输入参数、输出格式、时间粒度、容量口径和年利用小时反向约束是否可接入本测算闭环。最小可行版本先把风光资源视为已仿真的 CSV 输入，建议字段为 `time,pv_kw,wind_kw`。
+> 实现进度：已将 PV/Wind v1/v2 风光资源仿真算法迁移到 `src/invest_est_models/resource_simulation/`，并迁移最小 Open-Meteo 气象获取能力，运行时不依赖 `ele_trading.*`。当前可分别输出 `time,pv_kw`、`time,wind_kw`，再通过 `app/build_resource_profile.py` 合并为 `time,pv_kw,wind_kw`。外部资源 CSV 仍可按同一字段合同直接接入。
 
 光伏侧需要实现：
 
@@ -142,7 +142,7 @@ sum(wind_generation_t) / wind_capacity = target_full_load_hours
 
 目标是把行政分时分类电价、业主实际执行口径、PPA 价格、输配电价和上网电价转换为结算价格序列。
 
-> 备注：用户已确认分时电价不需要通过账单反推。最小可行版本中，电价作为每个场景的一整年输入 CSV，字段固定为 `time,price,price_type`，其中 `price` 按 `元/kWh` 解释，`price_type` 用于储能规则调度。其他暂不确定的电价数据，如输配电价、政府性基金、绿证收益、偏差考核等，后续如果算法需要，统一用配置参数表达，并在样例数据或配置说明中标明含义，暂不硬编码业务规则。
+> 备注：用户已确认分时电价不需要通过账单反推。最小可行版本中，电价作为每个场景的一整年输入 CSV，字段固定为 `time,price,price_type`，其中 `price` 按 `元/kWh` 解释，`price_type` 用于储能规则调度。当前数据契约将 `price_type` 统一为英文标准编码：`deep_valley`、`valley`、`flat`、`peak`、`sharp_peak`；CSV 或 YAML 中的常见中文别名会在读取阶段转换为英文编码，避免同一测算链路混用中英文。其他暂不确定的电价数据，如输配电价、政府性基金、绿证收益、偏差考核等，后续如果算法需要，统一用配置参数表达，并在样例数据或配置说明中标明含义，暂不硬编码业务规则。
 
 需要实现：
 
@@ -595,7 +595,7 @@ available_backup_energy >= critical_load * backup_duration
    已实现配置 dataclass 和 YAML 加载逻辑，包括 `ProjectConfig`、`BESSConfig`、`FinanceConfig`、`PathConfig`、`SampleDataConfig`、`CaseConfig`。每个配置字段已添加中文注释。
 
 3. `data_provider/`  
-   已实现 `data_loader.py` 和 `sample_generator.py`。支持读取 `time,value` 负荷 CSV、`time,price,price_type` 电价 CSV、`time,pv_kw,wind_kw` 风光资源 CSV，并能生成模拟数据。
+   已实现 `data_loader.py`、`price_type.py` 和 `sample_generator.py`。支持读取 `time,value` 负荷 CSV、`time,price,price_type` 电价 CSV、`time,pv_kw,wind_kw` 风光资源 CSV，并能生成模拟数据。电价 `price_type` 已统一为英文标准编码，兼容常见中文别名输入。
 
 4. `dispatch/`  
    已实现规则型储能调度。当前逻辑为风光优先供负荷，风光余电优先充储能，低价时段允许电网充电，高价时段储能放电供负荷，剩余风光按余电上网处理。
@@ -638,7 +638,7 @@ target_ppa_price=0.29445747461867944
 
 ### 当前未覆盖内容
 
-1. 未实现真实风光资源仿真脚本接入，只要求后续脚本输出 `time,pv_kw,wind_kw`。
+1. 已实现独立风光资源仿真模块；MVP 主链路仍以 `time,pv_kw,wind_kw` 资源 CSV 作为输入合同。
 2. 未实现容量搜索，当前只支持固定容量下测算和 PPA 反求。
 3. 未实现基本电费、需量电费、输配电价拆分、偏差考核、绿证和补贴。
 4. 未实现优化调度、保电约束、储能退化进入调度目标。
@@ -1136,4 +1136,4 @@ baseline_project:
    需要确认强制配储、自发自用比例、输配电价、余电上网限制、绿证收益等是否进入硬约束。当前不确定项先通过配置参数或模拟数据表示，不硬编码政策规则。
 
 7. 风光资源脚本接入  
-   用户后续会补充现有风光资源仿真算法脚本。接入前需要确认脚本输入参数、容量缩放口径、年利用小时反向约束方式和输出字段是否满足 `time,pv_kw,wind_kw` 合同。
+   已将现有 PV/Wind v1/v2 资源仿真算法迁移到 `resource_simulation/`。后续如继续补充新的资源脚本，需要确认输入参数、容量缩放口径、年利用小时反向约束方式和输出字段是否满足 `time,pv_kw,wind_kw` 合同。
