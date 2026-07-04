@@ -43,6 +43,20 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked as local markdown files under `.scratch/`; external PRs are not a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The triage vocabulary uses Chinese label strings: `待评估`, `需补充信息`, `可交给 agent`, `需人工实现`, `不处理`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repo uses a single-context domain docs layout. See `docs/agents/domain.md`.
+
 ## 电力交易项目特有约束
 
 以下为本项目的硬边界规则，违反会导致不可运行或错误结果。
