@@ -23,7 +23,7 @@
 ## 上下游关系
 
 - 上游：`data_provider` 提供历史价格、负荷、气象数据和样例 profile。
-- 下游：`scenario` 消费价格预测结果；`optimization` 和平级包 `investment_estimation`（投资测算/容量规划）消费风光预测或资源出力。
+- 下游：`scenario` 消费价格预测结果；`optimization` 消费风光预测或资源出力。
 
 ## 使用边界
 

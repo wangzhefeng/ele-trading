@@ -33,7 +33,7 @@
 ```text
 configs/*.yaml / data/* / weather source
 → data_provider loader / builder
-→ forecasting / optimization / evaluation（投资测算侧为平级包 `investment_estimation`）
+→ forecasting / optimization / evaluation
 → app demo 或 tests
 ```
 

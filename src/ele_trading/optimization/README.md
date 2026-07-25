@@ -1,6 +1,6 @@
 # optimization — 优化调度模块
 
-本模块承接价格、负荷、光伏、风电、储能参数和场景输入，输出申报、调度、容量搜索或成本收益结果。当前覆盖市场储能、用户侧、CVXPY 和 Two-stage 风险优化多条链路（分布式储能的容量搜索与收益测算 dataclass 位于平级包 `investment_estimation/todo/`）。
+本模块承接价格、负荷、光伏、风电、储能参数和场景输入，输出申报、调度、容量搜索或成本收益结果。当前覆盖市场储能、用户侧、CVXPY 和 Two-stage 风险优化多条链路。
 
 ## 当前文件
 
@@ -64,4 +64,4 @@
 
 ## 分布式储能调度
 
-`run_distributed_bess_dispatch()` 提供用户侧分布式储能调度内核，用 `DistributedBESSDispatchInput` 和 `DistributedBESSDispatchResult` 明确输入输出；实现文件为 `user_side_bess_distributed_dispatch_class.py`。容量搜索、收益测算和 CSV 导出由平级包 `investment_estimation/todo/bess_capacity_distributed_planner.py` 负责调用该内核。
+`run_distributed_bess_dispatch()` 提供用户侧分布式储能调度内核，用 `DistributedBESSDispatchInput` 和 `DistributedBESSDispatchResult` 明确输入输出；实现文件为 `user_side_bess_distributed_dispatch_class.py`。

@@ -1,8 +1,8 @@
 """价格感知调度：canonical 物理核的价值最大化兄弟。
 
-设计原则（见 docs/superpowers/specs/2026-07-02-root-layer-design.md §3）：
-canonical_dispatch 作为物理守恒 oracle 不动；本模块产出同一 ``DispatchSimulationResult``
-合同，但调度策略是**价格感知**的——放电优先供给高价时段，套利模式下还可向网充电。
+设计原则：canonical_dispatch 作为物理守恒 oracle 不动；本模块产出同一
+``DispatchSimulationResult`` 合同，但调度策略是**价格感知**的——放电优先供给
+高价时段，套利模式下还可向网充电。
 
 实现为**单次前向扫描 + 价格阈值**启发式：
 - ``mid = (price.min()+price.max())/2`` 作为充/放电分界；

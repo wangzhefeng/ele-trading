@@ -28,7 +28,6 @@
 | `optimization/user_side_pv_bess_dispatch.yaml` | `optimization/run_user_side_pv_bess_dispatch.py` | 用户侧 PV+storage 联合调度、储能、上网、策略偏好 |
 | `optimization/cvxp_bess_dispatch.yaml` | `optimization/run_cvxp_bess_dispatch.py` | CVXPY 储能调度 profile、需量价格、合成负荷/电价 |
 | `capacity_planning/dist_bess_dispatch.yaml` | `capacity_planning/run_dist_bess_dispatch.py` | 分布式储能数据目录、时间范围、preset、系统、搜索模式 |
-| `legacy/wind_pv_es_calc_data_bridge.yaml` | `legacy/run_legacy_data_preparation.py` | legacy 风光储数据桥接，生成 `df_2025`、PV、风电和总表 |
 | `legacy/wind_pv_legacy_profit_eval.yaml` | `legacy/run_wind_pv_legacy_profit_eval.py` | legacy 风光数据年度收益测算、成本年化和结果输出 |
 | `legacy/wind_pv_legacy_market_trading.yaml` | `legacy/run_wind_pv_legacy_market_trading.py` | legacy 风光数据交易调度窗口、储能、上网、价格和输出 |
 
@@ -39,6 +38,8 @@
 - 路径类参数使用相对项目根目录的路径，入口脚本负责解析为绝对路径。
 - 新增配置文件时，应同步补充对应入口、读取逻辑、测试和本 README。
 - `wind_pv_bess_irr_planning.yaml` 的 `resource_tuning.parallel_enabled`、`max_workers`、`incremental_write` 和 `retain_intermediate_diagnostics` 只控制 coarse/fine 资源场景的运行方式、增量摘要落盘和中间 diagnostics 保留策略，不改变 IRR、PPA 或最优解排序口径。
+
+> **已知缺口**：`legacy/run_wind_pv_legacy_*.py` 两个入口 `import run_legacy_data_preparation`，但该模块文件当前不在仓库中（pre-existing，见 LOG.md），故 legacy 链路暂无法端到端运行。
 
 ## 运行示例
 

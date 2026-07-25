@@ -24,13 +24,13 @@ uv sync
 
 ## 当前入口脚本
 
-入口脚本按职责分为：
+入口脚本按职责分为（共 20 个）：
 
-- `optimization/`：储能套利、MPC、Two-stage、用户侧调度和 CVXPY 调度 demo。
-- `capacity_planning/`：BESS、Wind+BESS、Wind+PV+BESS、IRR 和分布式储能容量规划（实现位于 `investment_estimation.todo`）。
-- `resource_simulation/`：PV 和 Wind 物理仿真（实现位于 `investment_estimation.todo.resource_simulation`）。
-- `evaluation/`：回测和评估入口。
-- `legacy/`：旧风光储兼容数据链路入口。
+- `optimization/`（7 个）：储能套利、MPC、Two-stage、用户侧调度和 CVXPY 调度 demo。
+- `capacity_planning/`（6 个）：BESS、Wind+BESS、Wind+PV+BESS、IRR 和分布式储能容量规划（实现位于 `investment_estimation.todo`）。
+- `resource_simulation/`（4 个）：PV 和 Wind 物理仿真（实现位于 `investment_estimation.todo.resource_simulation`）。
+- `evaluation/`（1 个）：回测和评估入口。
+- `legacy/`（2 个）：旧风光储兼容数据链路入口。
 
 | 脚本 | 配置 | 作用 |
 |------|------|------|
@@ -57,9 +57,11 @@ uv sync
 
 ## 使用边界
 
-- 新增入口时，应先确认对应算法已在 `src/ele_trading/` 中实现。
+- 新增入口时，应先确认对应算法已在 `src/ele_trading/` 或 `src/investment_estimation/` 中实现（容量规划/收益测算类算法在后者）。
 - 入口脚本可以做格式化输出、配置解析和样例数据组装，不应新增核心约束、目标函数或业务规则。
 - 重型链路如全年容量规划、分布式储能全量搜索适合人工验收；日常小改动优先运行相关单元测试和轻量入口。
+
+> **已知缺口**：`legacy/run_wind_pv_legacy_*.py` 两个入口 `import run_legacy_data_preparation`，该模块文件当前不在仓库中（pre-existing，见 LOG.md），legacy 链路暂无法端到端运行。
 
 ## 验证
 

@@ -153,7 +153,7 @@ uv run python app/capacity_planning/run_wind_pv_bess_capacity_planning_1.py
 uv run python -m pytest -q
 ```
 
-当前测试包含核心算法、样例数据构造、入口脚本、气象特征等切片。
+当前测试（322 项收集）包含核心算法、样例数据构造、入口脚本、投资测算与气象特征等切片。`tests/README.md` 有按模块的清单与冒烟边界；少量 pre-existing 失败（legacy 数据桥接、缺失模块等）见 `LOG.md`。
 
 ## 数据边界
 
@@ -162,7 +162,7 @@ uv run python -m pytest -q
 ## 协作边界
 
 - Agent 规则的唯一权威是根目录 `AGENTS.md`（含通用准则 + 第 5 节项目硬约束），根目录 `CLAUDE.md` 是指向它的短指针。不要在 `.agents/`、`.claude/`、`.hermes/` 等子目录重建指令副本。
-- 新算法实现放入 `src/ele_trading/`，入口脚本只负责组装配置、数据和日志输出。
+- 交易/调度侧新算法实现放入 `src/ele_trading/`，投资收益测算类放入 `src/investment_estimation/`；入口脚本只负责组装配置、数据和日志输出。
 - 交易/调度侧通用内核放在 `optimization/`；投资收益测算（IRR/NPV、容量搜索、月度结算、资源仿真及老版容量规划）放在平级的 `src/investment_estimation/`，其 `todo/` 为老版 `capacity_planning` 迁入的待整合暂存区。
 - 通用工具函数放入 `src/ele_trading/utils/`，包括 IO、日志、时间处理、绘图等。
 - `LOG.md` 为 append-only 状态记录；过期历史不回写，追加新状态说明。
