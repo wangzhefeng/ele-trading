@@ -8,9 +8,9 @@ import pytest
 
 from ele_trading.forecasting.load_forecast import LoadForecaster
 from ele_trading.forecasting.price_forecast import SimplePriceForecaster
-from ele_trading.forecasting.provider import SimpleForecastProvider
+from ele_trading.forecasting.provider import SimpleForecastProvider, assert_no_future_info
 from ele_trading.trading.contracts import MarketConfig
-from ele_trading.trading.dr_allocator import evaluate_dr_participation
+from ele_trading.trading.dr_allocator import estimate_arbitrage_opportunity_cost, evaluate_dr_participation
 
 
 @pytest.fixture
@@ -39,6 +39,27 @@ class TestDRAllocator:
         decision = evaluate_dr_participation(adjustable, dr_compensation, window, config)
         assert not decision.participate
         assert decision.reject_reason is not None
+
+    def test_opportunity_cost_from_plan(self, config):
+        """机会成本由日前计划实算：高价窗口放电计划的套利收益应被计入（§9）。"""
+        horizon = 96
+        p_real_pre = np.full(horizon, 300.0)
+        p_real_pre[40:60] = 800.0  # 响应窗口为高价时段
+        p_b_plan = np.zeros(horizon)
+        p_b_plan[40:60] = 3.0  # 计划窗口内 3MW 放电套利
+
+        cost = estimate_arbitrage_opportunity_cost(p_b_plan, p_real_pre, (40, 60))
+        expected = 3.0 * 800.0 * 0.25 * 20
+        assert cost == pytest.approx(expected)
+
+        # 用实算机会成本做决策：补偿低于实算成本时拒绝
+        adjustable = np.full(horizon, 3.0)
+        decision = evaluate_dr_participation(
+            adjustable, dr_compensation=500.0, window=(40, 60), config=config,
+            p_b_plan=p_b_plan, p_real_pre=p_real_pre,
+        )
+        # 补偿 500*15=7500 < 机会成本 12000 → 拒绝
+        assert not decision.participate
 
 
 class TestLoadForecaster:
@@ -116,3 +137,23 @@ class TestForecastProvider:
 
         # No NaN
         assert not result.point.isna().any()
+
+
+class TestForecastIssueTime:
+    def test_issue_time_injectable(self):
+        """显式 issue_time 应透传到 ForecastResult（§4.1 幂等可复现）。"""
+        provider = SimpleForecastProvider(SimplePriceForecaster(), LoadForecaster())
+        issue = pd.Timestamp("2026-07-01 00:00")
+        result = provider.get_price_forecast("dayah", horizon=96, issue_time=issue)
+        assert result.issue_time == issue
+
+    def test_no_future_info_rejected(self):
+        """issue_time 晚于决策时刻时应报错（§4.1 无前瞻约束）。"""
+        provider = SimpleForecastProvider(SimplePriceForecaster(), LoadForecaster())
+        result = provider.get_price_forecast(
+            "dayah", horizon=96, issue_time=pd.Timestamp("2026-07-01 12:00")
+        )
+        with pytest.raises(ValueError, match="future"):
+            assert_no_future_info(result, pd.Timestamp("2026-07-01 00:00"))
+        # 不晚于决策时刻时放行
+        assert_no_future_info(result, pd.Timestamp("2026-07-01 13:00"))

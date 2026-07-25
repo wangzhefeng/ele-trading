@@ -64,15 +64,16 @@ ele-trading/
 
 ### `trading`（蒙西交易主线）
 
-实现《策略算法框架详细设计 v1.3》的蒙西交易策略链，是当前开发主线。算法内核全部就位（39 个 trading 线测试全过），命令行入口 `app/trading/` 待建：
+实现《策略算法框架详细设计 v1.3》的蒙西交易策略链，是当前开发主线。算法内核与命令行入口均已就位：
 
 - `contracts.py`：8 个数据契约 dataclass（`MarketConfig`/`DayAheadPlan`/`IntradayPlan`/`SettlementReport` 等）。
-- `settlement_mengxi.py`：蒙西带状结算 `C`/`C2`/`Cpen_dayah`/`Cpen_long`。
-- `day_ahead_coupled.py`：日前储售联动（模式 A/B/C + 申报规则 + 风控裁剪）。
-- `intraday_rolling.py`：日内滚动重优化（终端 SOC、偏差考核线性化、平滑项）。
-- `mid_long_planner.py` / `monthly_trader.py`：中长期仓位结构与分月分解、集中竞价阶梯申报与缺口再平衡。
-- `dr_allocator.py`：需求响应参与决策（仅储能）。
-- `noisy_backcast.py` / `sample_data.py`：回测加噪预测与 96 点样例数据生成。
+- `settlement_mengxi.py`：蒙西带状结算 `C`/`C2`/`Cpen_dayah`/`Cpen_long` + 结算时段折算 `aggregate_to_settle_periods`。
+- `day_ahead_coupled.py`：日前储售联动（模式 A/B/C + 申报规则 + 风控裁剪三规则 + 不可倒送/互斥/限电禁放约束 + 约束提示）。
+- `intraday_rolling.py`：日内滚动重优化（终端 SOC、偏差考核线性化、平滑项、DR 履约锁定）。
+- `mid_long_planner.py` / `monthly_trader.py`：中长期仓位结构与分月分解、集中竞价阶梯申报与缺口再平衡（含降级量价走廊）。
+- `dr_allocator.py`：需求响应参与决策（仅储能，机会成本由日前计划实算）。
+- `noisy_backcast.py` / `sample_data.py`：回测加噪预测与 30 天 96 点样例数据生成。
+- 入口：`app/trading/run_{day_ahead,intraday,mid_long,monthly,dr}.py` + `app/evaluation/run_mengxi_backtest.py`（30 天 forecast-aware 回测，ΔCost 基线见 `data/trading/BACKTEST_NOTES.md`）。
 
 ### `data_provider`
 

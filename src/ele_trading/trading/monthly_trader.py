@@ -126,7 +126,7 @@ def rebalance_position_gap(
 
     return {
         "advice": advice,
-        "total_buy": sum(a["gap"] for a in advice if a["action"] == "buy"),
+        "total_buy": -sum(a["gap"] for a in advice if a["action"] == "buy"),
         "total_sell": sum(a["gap"] for a in advice if a["action"] == "sell"),
         "num_adjustments": sum(1 for a in advice if a["action"] != "hold"),
     }

@@ -9,6 +9,21 @@ from __future__ import annotations
 import numpy as np
 
 
+def aggregate_to_settle_periods(q: np.ndarray, settle_periods: int) -> np.ndarray:
+    """将 96 点决策电量聚合到结算时段（v1.3 §2.1）。
+
+    决策量（MWh/刻，电量）按 ``96 / settle_periods`` 点一组求和，保证能量守恒；
+    价格序列如需折算应按结算时段内电量加权平均（由调用方处理）。
+    """
+    n = len(q)
+    if settle_periods <= 0 or n % settle_periods != 0:
+        raise ValueError(f"settle_periods={settle_periods} must be a positive divisor of len(q)={n}")
+    if settle_periods == n:
+        return np.asarray(q, dtype=float).copy()
+    group = n // settle_periods
+    return np.asarray(q, dtype=float).reshape(settle_periods, group).sum(axis=1)
+
+
 def compute_settlement_C(
     q_long: np.ndarray,
     p_long: np.ndarray,

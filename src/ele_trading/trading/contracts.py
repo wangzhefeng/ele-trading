@@ -36,6 +36,11 @@ class MarketConfig:
     price_floor: float = 0.0
     price_cap: float = 1500.0
 
+    # 风控裁剪（v1.3 §6.4）
+    risk_max_step_ratio: float = 0.2  # 相邻刻申报量变化 ≤ max_step_ratio * Q_base
+    risk_daily_qty_band: float = 0.15  # 当日申报总量 ∈ 预测日总电量 × [1-band, 1+band]
+    risk_long_band_check: bool = True  # 申报量与 Q_long 合计越出中长期带时告警（不强制）
+
     # Strategy weights
     w_bes: float = 1.0
     w_pen: float = 1.0
@@ -56,6 +61,10 @@ class MarketConfig:
     deg_cost_per_mwh: float = 0.0
     bess_market_role: str = "behind_meter"  # or "independent"
     no_discharge_on_curtail: bool = False
+
+    # 日前优化模式（v1.3 §6.2/§6.5）
+    dayahead_mode: str = "B"  # A / B / C
+    dayahead_price_reporting: bool = False  # False=报量不报价（§3.5 第3条 TODO(rule-confirm)）
 
     # Mid-long term
     pos_tol_ratio: float = 0.05
@@ -105,6 +114,8 @@ class DayAheadPlan:
     expected_cost: float
     expected_revenue: float
     constraint_flags: dict[str, list[int]] = field(default_factory=dict)
+    # 分段申报价；报量不报价（dayahead_price_reporting=False，蒙西默认）时置 None
+    bid_prices: np.ndarray | None = None
 
 
 # ---------------------------------------------------------------------------

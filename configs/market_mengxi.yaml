@@ -21,6 +21,17 @@ bid:
   price_floor: 0.0  # 元/MWh (TODO(rule-confirm) #3)
   price_cap: 1500.0  # 元/MWh
 
+# 风控裁剪（v1.3 §6.4）
+risk:
+  max_step_ratio: 0.2  # 相邻刻申报量变化 ≤ max_step_ratio * Q_base
+  daily_qty_band: 0.15  # 当日申报总量 ∈ 预测日总电量 × [0.85, 1.15]
+  long_band_check: true  # 申报量与 Q_long 合计越出中长期带时告警（不强制）
+
+# 日前优化模式（v1.3 §6.2/§6.5）
+dayahead:
+  mode: B  # A=实时价套利 / B=有效边际电价(默认) / C=联合优化申报量
+  price_reporting: false  # 报量不报价（TODO(rule-confirm) #3）；true 时输出分段申报价
+
 # Strategy weights (§5.2)
 strategy:
   default: BALANCED

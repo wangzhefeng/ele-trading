@@ -103,3 +103,56 @@ class TestIntradayRolling:
         solve_intraday_rolling(q_load, p_real, q_dayah, p_dayah, soc_current, bess, config)
         elapsed = time.time() - start
         assert elapsed < 10.0
+
+    def test_no_reverse_power(self, bess, config):
+        """不可倒送：净负荷非负（§14.1）。"""
+        horizon = 48
+        q_load = np.full(horizon, 1.0)
+        p_real = np.full(horizon, 400.0)
+        q_dayah = np.full(horizon, 1.0)
+        p_dayah = np.full(horizon, 300.0)
+
+        plan = solve_intraday_rolling(q_load, p_real, q_dayah, p_dayah, 5.0, bess, config)
+        net_load = q_load + (plan.schedule.p_bc - plan.schedule.p_bd) * 0.25
+        assert net_load.min() >= -1e-9
+
+    def test_nan_input_rejected(self, bess, config):
+        """预测含 NaN 时报错（§11.4.2）。"""
+        horizon = 48
+        q_load = np.full(horizon, 10.0)
+        p_real = np.full(horizon, 300.0)
+        p_real[5] = np.nan
+        q_dayah = np.full(horizon, 10.0)
+        p_dayah = np.full(horizon, 300.0)
+
+        with pytest.raises(ValueError, match="NaN"):
+            solve_intraday_rolling(q_load, p_real, q_dayah, p_dayah, 5.0, bess, config)
+
+    def test_no_discharge_on_curtail(self, bess, config):
+        """限电时段禁放（§2.3）。"""
+        horizon = 48
+        q_load = np.full(horizon, 10.0)
+        p_real = np.full(horizon, 400.0)
+        q_dayah = np.full(horizon, 10.0)
+        p_dayah = np.full(horizon, 300.0)
+        t_curt = list(range(10, 20))
+
+        config.no_discharge_on_curtail = True
+        plan = solve_intraday_rolling(q_load, p_real, q_dayah, p_dayah, 5.0, bess, config, t_curt=t_curt)
+        assert plan.schedule.p_bd[t_curt].max() < 1e-9
+
+    def test_dr_lock(self, bess, config):
+        """DR 履约锁定：锁定时段 p_b 等于响应曲线（§9 DR_FULFILL）。"""
+        horizon = 48
+        q_load = np.full(horizon, 10.0)
+        p_real = np.full(horizon, 400.0)
+        q_dayah = np.full(horizon, 10.0)
+        p_dayah = np.full(horizon, 300.0)
+
+        dr_lock = np.full(horizon, np.nan)
+        dr_lock[10:14] = 2.0  # 锁定 4 刻以 2 MW 放电
+        plan = solve_intraday_rolling(
+            q_load, p_real, q_dayah, p_dayah, 5.0, bess, config, dr_lock_p_b=dr_lock
+        )
+        np.testing.assert_allclose(plan.schedule.p_b[10:14], 2.0, atol=1e-6)
+        assert "dr" in plan.adjustment.reasons

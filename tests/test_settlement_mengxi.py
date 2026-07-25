@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from ele_trading.trading.settlement_mengxi import (
+    aggregate_to_settle_periods,
     compute_cpen_dayah,
     compute_cpen_long,
     compute_settlement_C,
@@ -143,3 +144,24 @@ class TestCpenLong:
             m_long=1.2,
         )
         assert cpen == 0.0
+
+
+class TestSettlePeriodsAggregation:
+    """结算时段折算：96 点决策量聚合到 settle_periods 点后总量守恒（§14.1）。"""
+
+    def test_energy_conserved_96_to_48(self):
+        rng = np.random.default_rng(0)
+        q = rng.uniform(1, 5, 96)
+        out = aggregate_to_settle_periods(q, 48)
+        assert len(out) == 48
+        assert out.sum() == pytest.approx(q.sum())
+
+    def test_identity_when_96(self):
+        q = np.random.default_rng(1).uniform(1, 5, 96)
+        out = aggregate_to_settle_periods(q, 96)
+        np.testing.assert_allclose(out, q)
+
+    def test_rejects_non_divisor(self):
+        q = np.ones(96)
+        with pytest.raises(ValueError, match="divisor"):
+            aggregate_to_settle_periods(q, 50)

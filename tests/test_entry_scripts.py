@@ -177,3 +177,58 @@ def test_run_dist_bess_dispatch():
     """run_dist_bess_dispatch.py 需要外部 CSV 数据，仅手动验收。"""
     result = _run_script('capacity_planning/run_dist_bess_dispatch.py', timeout=300)
     assert result.returncode == 0
+
+
+# ---------------------------------------------------------------------------
+# 蒙西交易主线入口（v1.3 §11.4.6）
+# ---------------------------------------------------------------------------
+
+
+def test_run_day_ahead():
+    """app/trading/run_day_ahead.py 应退出码为 0 且输出计划落盘信息。"""
+    result = _run_script('trading/run_day_ahead.py')
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
+    assert '计划曲线已落盘' in combined
+
+
+def test_run_intraday():
+    """app/trading/run_intraday.py 应退出码为 0 且输出日内执行汇总。"""
+    result = _run_script('trading/run_intraday.py')
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
+    assert '日内执行' in combined
+
+
+def test_run_mid_long():
+    """app/trading/run_mid_long.py 应退出码为 0 且输出占比。"""
+    result = _run_script('trading/run_mid_long.py')
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
+    assert 'α_long' in combined
+
+
+def test_run_monthly():
+    """app/trading/run_monthly.py 应退出码为 0 且输出阶梯与走廊。"""
+    result = _run_script('trading/run_monthly.py')
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
+    assert '集中竞价阶梯申报' in combined
+    assert '量价走廊' in combined
+
+
+def test_run_dr():
+    """app/trading/run_dr.py 应退出码为 0 且输出参与决策。"""
+    result = _run_script('trading/run_dr.py')
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
+    assert '参与' in combined
+
+
+def test_run_mengxi_backtest():
+    """app/evaluation/run_mengxi_backtest.py 应退出码为 0 且 ΔCost>0、报告落盘。"""
+    result = _run_script('evaluation/run_mengxi_backtest.py', timeout=300)
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
+    assert 'ΔCost' in combined
+    assert '回测报告已落盘' in combined

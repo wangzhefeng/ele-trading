@@ -20,9 +20,11 @@ def load_market_config(path: str | Path) -> MarketConfig:
     flat = {}
     flat.update(raw.get("deviation", {}))
     flat.update(raw.get("bid", {}))
+    flat.update(raw.get("risk", {}))
     flat.update(raw.get("strategy", {}).get("weights", {}))
     flat["strategy"] = raw.get("strategy", {}).get("default", "BALANCED")
     flat.update(raw.get("bess", {}))
+    flat.update(raw.get("dayahead", {}))
     flat.update(raw.get("mid_long", {}))
     flat.update(raw.get("dr", {}))
     flat.update(raw.get("forecast", {}))
@@ -39,6 +41,9 @@ def load_market_config(path: str | Path) -> MarketConfig:
         "bias_k": "bias_k",
         "price_floor": "price_floor",
         "price_cap": "price_cap",
+        "max_step_ratio": "risk_max_step_ratio",
+        "daily_qty_band": "risk_daily_qty_band",
+        "long_band_check": "risk_long_band_check",
         "w_bes": "w_bes",
         "w_pen": "w_pen",
         "w_ecost": "w_ecost",
@@ -54,6 +59,8 @@ def load_market_config(path: str | Path) -> MarketConfig:
         "deg_cost_per_mwh": "deg_cost_per_mwh",
         "market_role": "bess_market_role",
         "no_discharge_on_curtail": "no_discharge_on_curtail",
+        "mode": "dayahead_mode",
+        "price_reporting": "dayahead_price_reporting",
         "pos_tol_ratio": "pos_tol_ratio",
         "cpen_long_applies_to_storage": "cpen_long_applies_to_storage",
         "aggregation": "dr_aggregation",
@@ -83,3 +90,11 @@ def _validate_config(config: MarketConfig) -> None:
         raise ValueError(f"Invalid price limits: [{config.price_floor}, {config.price_cap}]")
     if not (0 < config.dayahead_power_margin <= 1.0):
         raise ValueError(f"dayahead_power_margin must be in (0,1], got {config.dayahead_power_margin}")
+    if not (0 <= config.risk_max_step_ratio <= 1.0):
+        raise ValueError(f"risk.max_step_ratio must be in [0,1], got {config.risk_max_step_ratio}")
+    if not (0 <= config.risk_daily_qty_band < 1.0):
+        raise ValueError(f"risk.daily_qty_band must be in [0,1), got {config.risk_daily_qty_band}")
+    if config.dayahead_mode not in ("A", "B", "C"):
+        raise ValueError(f"dayahead.mode must be A/B/C, got {config.dayahead_mode}")
+    if config.settle_periods <= 0 or 96 % config.settle_periods != 0:
+        raise ValueError(f"settle_periods must be a positive divisor of 96, got {config.settle_periods}")

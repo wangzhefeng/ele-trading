@@ -96,3 +96,6 @@ class TestMonthlyTrader:
         assert advice[3]["action"] == "sell"  # small positive gap
         assert advice[4]["action"] == "sell"  # large positive gap
         assert result["num_adjustments"] == 4
+        # 汇总口径：补购/减持均为正电量
+        assert result["total_buy"] == pytest.approx(15.0)
+        assert result["total_sell"] == pytest.approx(15.0)
