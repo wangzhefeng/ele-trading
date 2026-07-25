@@ -8,8 +8,8 @@ from app.capacity_planning.run_wind_pv_bess_irr_planning import (
     _build_optimal_solution_df,
     _write_result_csv_with_cn_header,
 )
-from ele_trading.capacity_planning.wind_pv_bess_irr_planner import WindPVBESSIRRResult
-from ele_trading.capacity_planning.wind_pv_bess_irr_tuning import (
+from investment_estimation.todo.wind_pv_bess_irr_planner import WindPVBESSIRRResult
+from investment_estimation.todo.wind_pv_bess_irr_tuning import (
     _result_summary_row,
     run_wind_pv_bess_irr_resource_tuning,
 )
@@ -201,7 +201,7 @@ def _tiny_curves():
 
 
 def test_resource_tuning_serial_and_parallel_keep_stable_summary_order(tmp_path: Path):
-    from ele_trading.capacity_planning.wind_pv_bess_irr_planner import WindPVBESSIRRPlanConfig
+    from investment_estimation.todo.wind_pv_bess_irr_planner import WindPVBESSIRRPlanConfig
 
     df_load, idx, wind_unit, pv_unit = _tiny_curves()
     cfg = WindPVBESSIRRPlanConfig(

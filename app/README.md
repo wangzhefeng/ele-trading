@@ -27,8 +27,8 @@ uv sync
 入口脚本按职责分为：
 
 - `optimization/`：储能套利、MPC、Two-stage、用户侧调度和 CVXPY 调度 demo。
-- `capacity_planning/`：BESS、Wind+BESS、Wind+PV+BESS、IRR 和分布式储能容量规划。
-- `resource_simulation/`：PV 和 Wind 物理仿真。
+- `capacity_planning/`：BESS、Wind+BESS、Wind+PV+BESS、IRR 和分布式储能容量规划（实现位于 `investment_estimation.todo`）。
+- `resource_simulation/`：PV 和 Wind 物理仿真（实现位于 `investment_estimation.todo.resource_simulation`）。
 - `evaluation/`：回测和评估入口。
 - `legacy/`：旧风光储兼容数据链路入口。
 

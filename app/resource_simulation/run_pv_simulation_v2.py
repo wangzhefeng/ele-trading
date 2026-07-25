@@ -18,10 +18,10 @@ import argparse
 
 import pandas as pd
 
-from ele_trading.capacity_planning.resource_simulation import PVSimulator
+from investment_estimation.todo.resource_simulation import PVSimulator
 from ele_trading.data_provider.resource_weather import fetch_weather_open_meteo
-from ele_trading.utils.io import read_yaml
-from ele_trading.utils.log_util import logger
+from investment_estimation.utils.io import read_yaml
+from investment_estimation.utils.log_util import logger
 
 
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / 'configs' / 'resource_simulation' / 'pv_simulation_v2.yaml'

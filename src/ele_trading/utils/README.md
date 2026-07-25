@@ -15,7 +15,7 @@
 - **`log_util.py`** — 日志工具
 - **`day2month.py`** — 日期 → 月份映射
 - **`pv_es_plot.py`** — 光储策略绘图
-- **`charge_discharge_plot/`** — 充放电数据可视化（独立目录，自带数据与脚本）
+- **`bess_charge_discharge_plot.py`** — 储能充放电收益测算报告绘图（输入数据在 `data/bess_charge_discharge/`，输出图在 `results/bess_charge_discharge/`）
 
 ---
 
@@ -164,10 +164,10 @@ df = flatten_valley_price_diff(df)
 |------|------|
 | `plot_strategy_power_detail(...)` | 绘制光储策略功率详情图 |
 
-### charge_discharge_plot/
+### bess_charge_discharge_plot.py
 
-充放电数据可视化子目录，包含独立的绘图脚本和示例数据。
+储能充放电收益测算报告绘图脚本（`__main__` 直接运行，非库函数）。按夏/冬/其他月份分组，绘制典型日逐小时充放电功率与电价时段背景。
 
-- `data_visual.py` — 充放电数据可视化
-- `plot_data/` — 绘图数据（按项目组织）
-- `plot_results/` — 绘图输出（按项目组织）
+- 输入数据：`data/bess_charge_discharge/{proj1,wuhu}/`（电价、调度结果 CSV）
+- 输出图：`results/bess_charge_discharge/{proj1,wuhu}/`（季节对比 PNG）
+- 路径基于仓库根解析，任意目录下运行均可。

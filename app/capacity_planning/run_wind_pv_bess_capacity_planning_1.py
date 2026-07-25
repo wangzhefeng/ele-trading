@@ -18,16 +18,16 @@ if str(SRC_ROOT) not in sys.path:
 import numpy as np
 import pandas as pd
 
-from ele_trading.capacity_planning import (
-    WindPVBEssPlanConfig, WindPVBEssResult,
+from investment_estimation.todo import (
+    WindPVBESSPlanConfig, WindPVBESSResult,
     plan_wind_pv_bess,
 )
-from ele_trading.capacity_planning.resource_simulation import (
+from investment_estimation.todo.resource_simulation import (
     PVSimulator, SimulationResult,
     WindSimulator,
 )
-from ele_trading.utils.io import read_yaml
-from ele_trading.utils.log_util import logger
+from investment_estimation.utils.io import read_yaml
+from investment_estimation.utils.log_util import logger
 
 CONFIG_PATH = PROJECT_ROOT / 'configs' / 'capacity_planning' / 'wind_pv_bess_capacity_planning.yaml'
 
@@ -181,7 +181,7 @@ def main():
     logger.info(f'  约束: 自消纳率 ≥ {_fmt_pct(cst["self_use_ratio_min"])}，'
                 f'覆盖率 ≥ {_fmt_pct(cst["load_cover_ratio_min"])}')
 
-    cfg = WindPVBEssPlanConfig(
+    cfg = WindPVBESSPlanConfig(
         pv_capex_yuan_per_kwp=cost['pv_capex_yuan_per_kwp'],
         bess_capex_yuan_per_kwh=cost['bess_capex_yuan_per_kwh'],
         eta_roundtrip=bess['eta_roundtrip'],

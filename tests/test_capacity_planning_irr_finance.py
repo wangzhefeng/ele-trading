@@ -1,7 +1,7 @@
 import pytest
 
 from ele_trading.evaluation.metrics import compute_irr
-from ele_trading.capacity_planning.irr_finance import (
+from investment_estimation.todo.irr_finance import (
     backsolve_green_ppa_price,
     compute_target_irr_gap_metrics,
     evaluate_degraded_irr,
@@ -9,15 +9,15 @@ from ele_trading.capacity_planning.irr_finance import (
     evaluate_levelized_irr,
     required_levelized_cashflow,
 )
-from ele_trading.capacity_planning.pv_bess_irr_planner import (
+from investment_estimation.todo.pv_bess_irr_planner import (
     PVBESSIRRConfig,
     scan_pv_bess_irr,
 )
-from ele_trading.capacity_planning.wind_bess_irr_planner import (
+from investment_estimation.todo.wind_bess_irr_planner import (
     WindBESSIRRConfig,
     scan_wind_bess_irr,
 )
-from ele_trading.capacity_planning.irr_calculation import IRRCalculator
+from investment_estimation.todo.irr_calculation import IRRCalculator
 
 
 def test_evaluate_levelized_irr_builds_equal_annual_cashflows():
@@ -156,8 +156,8 @@ def test_irr_solver_rejects_spurious_root_for_no_irr_cashflow():
     回归：旧实现在该 eq_post 现金流上由 guess=0.30 收敛到 ~0.501，
     但该处 NPV 残差 ~1.97e4 万元（远非 0），属伪根。
     """
-    from ele_trading.capacity_planning.irr_calculation import compute_irr as newton_irr
-    from ele_trading.capacity_planning.irr_calculation import irr_robust
+    from investment_estimation.todo.irr_calculation import compute_irr as newton_irr
+    from investment_estimation.todo.irr_calculation import irr_robust
 
     calc = IRRCalculator(
         wind_capacity=103.0,

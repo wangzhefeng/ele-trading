@@ -106,7 +106,7 @@ def test_build_load_profile_from_raw_covers_target_year(tmp_path: Path):
 
 
 def test_load_or_build_pv_profile_clear_sky_returns_metadata():
-    from ele_trading.capacity_planning.resource_simulation import (
+    from investment_estimation.todo.resource_simulation import (
         PVProfileConfig,
         load_or_build_pv_profile,
     )
@@ -134,7 +134,7 @@ def test_load_or_build_pv_profile_clear_sky_returns_metadata():
 
 
 def test_load_or_build_wind_profile_from_local_weather_respects_cap():
-    from ele_trading.capacity_planning.resource_simulation import (
+    from investment_estimation.todo.resource_simulation import (
         WindProfileConfig,
         load_or_build_wind_profile,
     )

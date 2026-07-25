@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 import pytest
-from ele_trading.capacity_planning.wind_pv_bess_capacity_optimizer import (
+from investment_estimation.todo.wind_pv_bess_capacity_optimizer import (
     CapacityOptimizer,
     simulate_operation,
     CapacityPlanResult,

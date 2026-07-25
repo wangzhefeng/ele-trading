@@ -525,3 +525,43 @@ docs/
 - `python3 -m compileall src/ele_trading/capacity_planning`：通过（本次仅文档变更）
 - `rg -n "^## V[12] " src/ele_trading/capacity_planning/PLAN.md`：V1@5、V2@227，V1 章节体未改动
 - `rg -n "^## V[0-9]+|canonical|golden|oracle|TimeIndex|月度结算" src/ele_trading/capacity_planning/PLAN.md`：命中
+
+## 2026-07-25
+
+### 状态对齐 027 — invest_est_models 更名 investment_estimation，capacity_planning 整体并入 todo/
+
+#### 变更清单
+
+**T1 — 包更名 `invest_est_models` → `investment_estimation`**
+- `src/invest_est_models/` 整体 git mv 为 `src/investment_estimation/`；包内 8 个 .py 的绝对 import、11 个 .md、2 个测试文件（更名 `test_investment_estimation_*.py`，含 monkeypatch 字符串模块路径）同步改写。
+- setuptools `packages.find where=["src"]` 自动发现，pyproject 无需改动。
+
+**T2 — 自包含地基（先行，防 ImportError）**
+- 新建 `src/investment_estimation/utils/`：从 `ele_trading/utils/` 复制 8 个模块（`io`/`log_util`/`num_utils`/`time_index`/`time_splitting`/`data_alignment`/`pulp_utils`/`demand_charge`）+ `__init__.py` re-export。原 `ele_trading/utils` 保留（主包仍用）。
+- 新建 `src/investment_estimation/finance/metrics.py`：`compute_irr`（通用二分法 IRR），并入 `finance/__init__.py` 导出。
+
+**T3 — capacity_planning 整体并入 `investment_estimation/todo/`（迁移暂存区）**
+- `src/ele_trading/capacity_planning/` 全部 37 个 tracked 文件 git mv 至 `src/investment_estimation/todo/`（顶层 19 个 .py + `models/` + `resource_simulation/` + `README.md`/`PLAN.md`）。
+- todo/ 内跨包 import 全部改写为 `investment_estimation.utils` / `investment_estimation.finance` / `investment_estimation.resource_simulation`，0 处 `ele_trading` 残留；`from ..utils` 相对引用改为绝对。
+- `src/ele_trading/capacity_planning/` 目录已删除。capacity_planning 是 investment_estimation 的上一版；真正的电力市场交易算法本就在 `optimization/`。
+
+**T4 — app / tests 改指向（留根目录）**
+- `app/capacity_planning/`（6 个）+ `app/resource_simulation/`（4 个）入口 import 改指 `investment_estimation.todo[.resource_simulation]`，`ele_trading.utils.*` → `investment_estimation.utils.*`；`configs/` 10 个 yaml 路径不变。
+- 16 个引用 cp 的测试改指 `investment_estimation.todo[.X]`；2 个 invest 测试更名并改写。
+
+**T5 — 文档同步**
+- 根 `README.md`（结构图 + 模块职责 + 归属行）、`AGENTS.md`（:69 入口示例、:91 归属硬约束）、`configs/README.md`、`app/README.md`、`docs/architecture_notes.md`、`investment_estimation/README.md`（补两包关系说明）、`todo/README.md`/`PLAN.md`（补暂存区声明）、3 个 ele_trading 子包 README、`tests/README.md` 已同步。`docs/superpowers/specs/2026-07-02-*.md` 为带日期历史 spec，按 append-only 原则不回改。
+
+#### 遗留待办（未关闭）
+
+- **resource_simulation 重复**：`investment_estimation/resource_simulation/`（新版）与 `investment_estimation/todo/resource_simulation/`（老版 cp 迁入）并存，本次保留两份（pv_v2/wind_v2 字节一致），待后续去重。
+- **forecasting 物理预测暂挂起**：`forecasting/pv_forecast.py`、`wind_forecast.py` 的 physics 预测分支依赖 cp.resource_simulation，本次未改（延迟 import，仅 physics 分支触发），待 resource_simulation 正本归属确定后一并处理。
+- **todo/ 与新版模块合并去重**：todo/ 为暂存区，非最终形态。
+- **pre-existing 测试失败**：`tests/test_capacity_planning_v4_phase1.py::test_wind_pv_bess_irr_runner_requires_explicit_data_dir_or_demo` 引用 `app/capacity_planning/run_wind_pv_bess_irr_planning._resolve_data_dir`，该符号在 HEAD 的 app/src 全树不存在（pre-existing，与本次迁移无关），需单独实现 `_resolve_data_dir` 或修正测试。
+
+#### 当前验证状态
+
+- `uv run python -m compileall src/investment_estimation src/ele_trading app`：通过
+- `uv run python -m pytest -q`（12 个 cp 迁移测试 + 2 个 invest 测试）：99 通过，1 失败（上述 pre-existing `_resolve_data_dir`，非本次引入）
+- `grep "ele_trading" src/investment_estimation/todo/ --include='*.py'`：0 命中（todo/ 已自包含）
+- `grep "ele_trading.capacity_planning\|invest_est_models" src/ app/ tests/ --include='*.py'`：0 命中

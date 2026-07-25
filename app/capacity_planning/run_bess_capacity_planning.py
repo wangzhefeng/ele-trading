@@ -18,15 +18,15 @@ if str(SRC_ROOT) not in sys.path:
 import numpy as np
 import pandas as pd
 
-from ele_trading.capacity_planning import (
+from investment_estimation.todo import (
     plan_energy_system, BESSPlanConfig, UnitsConfig,
 )
-from ele_trading.capacity_planning.resource_simulation import (
+from investment_estimation.todo.resource_simulation import (
     PVSimulator, SimulationResult,
     WindSimulator,
 )
-from ele_trading.utils.io import read_yaml
-from ele_trading.utils.log_util import logger
+from investment_estimation.utils.io import read_yaml
+from investment_estimation.utils.log_util import logger
 
 CONFIG_PATH = PROJECT_ROOT / 'configs' / 'capacity_planning' / 'bess_capacity_planning.yaml'
 

@@ -18,10 +18,10 @@ import argparse
 
 import pandas as pd
 
-from ele_trading.capacity_planning.resource_simulation import WindProfileConfig, load_or_build_wind_profile
+from investment_estimation.todo.resource_simulation import WindProfileConfig, load_or_build_wind_profile
 from ele_trading.data_provider.resource_weather import fetch_weather_open_meteo
-from ele_trading.utils.io import read_yaml
-from ele_trading.utils.log_util import logger
+from investment_estimation.utils.io import read_yaml
+from investment_estimation.utils.log_util import logger
 
 
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / 'configs' / 'resource_simulation' / 'wind_simulation_v1.yaml'

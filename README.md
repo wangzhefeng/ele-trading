@@ -28,16 +28,24 @@
 
 ```text
 ele-trading/
-├── src/ele_trading/              # 核心 Python 包
+├── src/ele_trading/              # 核心 Python 包（电力市场交易与调度）
 │   ├── data_provider/            # 配置、样例数据、负荷、气象、时间序列处理
 │   ├── forecasting/              # 价格、风光功率和天气特征工程
 │   ├── scenario/                 # 价格场景采样与缩减
 │   ├── optimization/             # 储能、用户侧、CVXPY、Two-stage 优化
 │   ├── control/                  # 滚动调度封装
 │   ├── evaluation/               # 结算、偏差考核、指标、回测、仿真
-│   ├── capacity_planning/        # BESS/PV/Wind/风光储容量规划（含资源仿真与 models/ 共享引擎）
 │   ├── demand/                   # 最大需量计算
 │   └── utils/                    # IO、日志、时间、数据对齐、绘图工具
+├── src/investment_estimation/    # 投资收益测算包（独立自包含，不依赖 ele_trading）
+│   ├── data_provider/            # 投资测算数据接入
+│   ├── dispatch/                 # 投资测算专用调度
+│   ├── settlement/               # 月度结算
+│   ├── finance/                  # IRR/NPV/回收期等财务指标
+│   ├── capacity_search/          # 容量搜索
+│   ├── resource_simulation/      # 风光资源物理出力仿真
+│   ├── utils/                    # 自包含工具子集（迁移自 ele_trading.utils）
+│   └── todo/                     # 待整合的迁移暂存区（老版 capacity_planning 整体并入）
 ├── app/                          # 可直接运行的入口（按 optimization/evaluation/capacity_planning/resource_simulation/legacy 分目录）
 ├── configs/                      # YAML 配置（按 market/optimization/capacity_planning/resource_simulation/legacy 分目录）
 ├── data/                         # 最小样例数据、legacy 兼容数据
@@ -93,30 +101,15 @@ ele-trading/
 - `user_side_wind_dispatch.py`、`user_side_wind_bess_dispatch.py`、`user_side_wind_pv_bess_dispatch.py`：用户侧 Wind / Wind+BESS / Wind+PV+BESS 场景适配入口。
 - CVXPY BESS 调度 profile：用户侧 BESS 调度的凸优化版本。
 
-### `capacity_planning`
+### `investment_estimation`
 
-容量规划模块覆盖 BESS、PV+BESS、Wind+BESS、Wind+PV+BESS 四类场景，共 10 个 planner + 资源仿真子包 + 5 个规划 helper：
+投资收益测算包，与 `ele_trading` 主包**平级、完全自包含**（`grep ele_trading` 在包内 0 命中），覆盖风光储项目的投资测算闭环：负荷/电价/资源 → 调度 → 月度结算 → 财务（IRR/NPV/回收期）→ 容量搜索。
 
-- **第一组 BESS sizing**：`bess_capacity_distributed_planner.py`（多节点 LP）、`bess_capacity_economic_planner.py`（MILP 联合优化）、`bess_capacity_operating_planner.py`（CVXPY 运营优化）。
-- **第二组 PV+BESS**：`pv_bess_planner.py`（二分搜索最小容量）、`pv_bess_irr_planner.py`（三段式 IRR 扫描）。
-- **第三组 Wind+BESS**：`wind_bess_planner.py`（二分搜索）、`wind_bess_irr_planner.py`（两段式 IRR 扫描）。
-- **第四组 Wind+PV+BESS 联合**：`wind_pv_bess_capacity_optimizer.py`（最低成本）、`wind_pv_bess_capacity_planner.py`（最小储能）、`wind_pv_bess_irr_planner.py`（IRR 目标型 + 电价反推）。
-- **资源仿真**（`resource_simulation/`）：PV/Wind 物理出力仿真，供容量规划和物理预测模式复用。
-- **容量规划公共合同**：`interfaces.py` 合并容量规划实际使用的分布式容量搜索配置、单节点 BESS CVXPY 调度合同和分布式 BESS 调度合同，用于避免 capacity planning 反向依赖 `optimization/`。
-- **共享引擎**（`models/`）：`cvxp_bess_dispatch.py`（单节点 BESS CVXPY 调度）、`distributed_bess_dispatch.py`（多节点分布式 BESS 调度）、`dispatch_algo.py`（Numba 贪心年度调度）、`resource_bess_planner_core.py`（单源 PV/Wind 贪心 + 二分搜索）、`simulation_model.py`（策略回放仿真）。
-- **辅助**：`feasibility_analyzer.py`（电价-负荷匹配评分）、`multi_node_scanner.py`（多节点 MILP 扫描）。
+- **新版闭环**：`data_provider/`（数据接入）、`dispatch/`（规则调度）、`settlement/`（月度结算）、`finance/`（IRR/NPV/回收期/PPA 反推）、`capacity_search/`（容量搜索）、`resource_simulation/`（风光物理出力仿真）、`config_loader/`（YAML 配置）、`app/`（包内入口）。
+- **`todo/`（迁移暂存区）**：老版 `ele_trading/capacity_planning` 的全部投资收益测算内容已整体并入此处，等待与上述新版模块合并去重（非最终形态）。含 BESS/PV+BESS/Wind+BESS/Wind+PV+BESS 多类 planner、资源仿真副本、容量扫描、场景编排与 `models/` 共享调度引擎。
+- **两包关系**：`capacity_planning` 是 `investment_estimation` 的上一版。新版 `investment_estimation` 为纯投资测算、自带 utils 子集与 `finance.compute_irr`，不反向依赖 `ele_trading`。
 
-长期建设计划维护在 `src/ele_trading/capacity_planning/PLAN.md`，当前权威基线为 V2：先建一条 canonical 物理+结算链（时序调度→月度结算→财务）并用 golden/oracle 验证，再迁源码；V1 保留为历史。
-
-详见 `src/ele_trading/capacity_planning/README.md`。
-
-### `capacity_planning.resource_simulation`
-
-风光资源物理出力仿真现归属 `capacity_planning` 子包，输出统一 `SimulationResult`（kW 时序），PV/风电各两版：
-
-- 光伏：`pv_simulation_v1.py`（配置驱动，清晰天空/气象/回放，含缓存）、`pv_simulation_v2.py`（PVSimulator 类）。
-- 风电：`wind_simulation_v1.py`（配置驱动，自动获取气象 + FLH 校准）、`wind_simulation_v2.py`（WindSimulator 类）。
-- 共用模型：`models.py`（`SimulationResult`）。
+详见 `src/investment_estimation/README.md` 与 `src/investment_estimation/todo/README.md`（迁移暂存区说明）。
 
 ### `evaluation`、`control`、`demand`、`utils`
 
@@ -170,6 +163,6 @@ uv run python -m pytest -q
 
 - Agent 规则的唯一权威是根目录 `AGENTS.md`（含通用准则 + 第 5 节项目硬约束），根目录 `CLAUDE.md` 是指向它的短指针。不要在 `.agents/`、`.claude/`、`.hermes/` 等子目录重建指令副本。
 - 新算法实现放入 `src/ele_trading/`，入口脚本只负责组装配置、数据和日志输出。
-- 交易/调度侧通用内核放在 `optimization/`；容量规划专用内核、副本、容量扫描、场景编排、收益测算和文件导出放在 `capacity_planning/`。
+- 交易/调度侧通用内核放在 `optimization/`；投资收益测算（IRR/NPV、容量搜索、月度结算、资源仿真及老版容量规划）放在平级的 `src/investment_estimation/`，其 `todo/` 为老版 `capacity_planning` 迁入的待整合暂存区。
 - 通用工具函数放入 `src/ele_trading/utils/`，包括 IO、日志、时间处理、绘图等。
 - `LOG.md` 为 append-only 状态记录；过期历史不回写，追加新状态说明。

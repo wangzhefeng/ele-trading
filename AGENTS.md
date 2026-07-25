@@ -66,7 +66,7 @@ This repo uses a single-context domain docs layout. See `docs/agents/domain.md`.
 - Two-stage + CVaR 模型需系统安装 `glpk`（`brew install glpk`）或 `cbc`。
 - 调度/优化模型统一通过建模框架构建（PuLP+CBC 为调度类默认，Pyomo+SCIP 用于容量 sizing 类，CVXPY 用于凸规划变体），禁止直接调用底层求解器 C API。
 - `cvxpy` 是可选依赖：CVXPY 路径通过 `__getattr__` 延迟导入，缺失时 PuLP/Pyomo 路径正常可用，不阻塞项目主链路。
-- 入口脚本需使用 `app/<分类>/` 目录下的 `run_*.py`（如 `app/capacity_planning/`、`app/optimization/`），不得在测试或 notebook 中直接调用求解器。
+- 入口脚本需使用 `app/<分类>/` 目录下的 `run_*.py`（如 `app/capacity_planning/`、`app/optimization/`、`app/resource_simulation/`），不得在测试或 notebook 中直接调用求解器。`app/capacity_planning/` 与 `app/resource_simulation/` 下的入口指向 `investment_estimation.todo`。
 
 ### 场景模块兼容
 
@@ -88,7 +88,7 @@ This repo uses a single-context domain docs layout. See `docs/agents/domain.md`.
 - `configs/` 中的 YAML 文件必须与对应入口脚本的参数字段一一对应。
 - `dt` 参数在 15 分钟颗粒度场景下必须设为 0.25，并在配置中明确注释。
 - 新增环境变量或配置字段必须同步更新 `configs/README.md`。
-- 交易/调度侧通用内核归属 `src/ele_trading/optimization/`；容量规划实际使用的公共合同、资源输入、规划专用调度模型、容量扫描、场景编排、收益测算和 CSV 导出归属 `src/ele_trading/capacity_planning/`。
+- 交易/调度侧通用内核归属 `src/ele_trading/optimization/`；投资收益测算（IRR/NPV、容量扫描、场景编排、收益测算、资源仿真、CSV 导出及老版容量规划的全部内容）归属平级自包含包 `src/investment_estimation/`，其中老版 `ele_trading/capacity_planning` 已整体并入 `src/investment_estimation/todo/`（待整合暂存区）。`src/ele_trading/capacity_planning/` 已删除，不要在 `ele_trading` 下重建容量规划/收益测算模块。
 - 项目级 agent 规则的唯一权威是根目录 `AGENTS.md`；`CLAUDE.md` 为指针，不在此文件之外另立内容副本。
 
 ### 数据边界

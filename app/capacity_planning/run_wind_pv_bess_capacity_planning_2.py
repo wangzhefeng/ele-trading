@@ -21,17 +21,17 @@ if str(SRC_ROOT) not in sys.path:
 import numpy as np
 import pandas as pd
 
-from ele_trading.capacity_planning.resource_simulation import (
+from investment_estimation.todo.resource_simulation import (
     PVSimulator, SimulationResult,
     WindSimulator,
 )
-from ele_trading.capacity_planning.wind_pv_bess_capacity_optimizer import (
+from investment_estimation.todo.wind_pv_bess_capacity_optimizer import (
     CapacityOptimizer, CapacityPlanResult, simulate_operation,
 )
 from ele_trading.forecasting.pv_forecast import PVPowerForecaster
 from ele_trading.forecasting.wind_forecast import WindPowerForecaster
-from ele_trading.utils.io import read_yaml
-from ele_trading.utils.log_util import logger
+from investment_estimation.utils.io import read_yaml
+from investment_estimation.utils.log_util import logger
 
 CONFIG_PATH = PROJECT_ROOT / 'configs' / 'capacity_planning' / 'capacity_planning.yaml'
 

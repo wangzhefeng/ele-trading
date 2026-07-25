@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from ele_trading.capacity_planning.irr_finance import (
+from investment_estimation.todo.irr_finance import (
     ReplacementEvent,
     build_project_cashflows,
     compute_npv,
@@ -11,7 +11,7 @@ from ele_trading.capacity_planning.irr_finance import (
 
 
 def test_cashflow_degenerates_to_levelized_when_no_extras():
-    from ele_trading.capacity_planning.irr_finance import evaluate_levelized_irr
+    from investment_estimation.todo.irr_finance import evaluate_levelized_irr
 
     base = evaluate_levelized_irr(
         total_capex_yuan=1000, annual_revenue_yuan=200, annual_opex_yuan=20, life_years=10

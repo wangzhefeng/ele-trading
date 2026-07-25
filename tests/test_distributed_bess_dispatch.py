@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 import ele_trading.optimization as optimization
-from ele_trading.capacity_planning import bess_capacity_distributed_planner as dist_module
+from investment_estimation.todo import bess_capacity_distributed_planner as dist_module
 from ele_trading.optimization.interfaces import (
     DistributedBESSDemandChargeConfig,
     DistributedBESSDispatchInput,

@@ -8,10 +8,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ele_trading.capacity_planning.tariff import DemandChargeConfig, Tariff
-from ele_trading.capacity_planning.models.canonical_dispatch import canonical_dispatch
-from ele_trading.capacity_planning.models.physics_contract import BESSPhysicsContract
-from ele_trading.capacity_planning.settlement import settle_monthly
+from investment_estimation.todo.tariff import DemandChargeConfig, Tariff
+from investment_estimation.todo.models.canonical_dispatch import canonical_dispatch
+from investment_estimation.todo.models.physics_contract import BESSPhysicsContract
+from investment_estimation.todo.settlement import settle_monthly
 
 
 def _dispatch():
@@ -81,7 +81,7 @@ def test_tou_prices_grid_buy_matches_manual():
 
 
 def test_price_aware_self_consumption_conserves_energy_and_prefers_peak_discharge():
-    from ele_trading.capacity_planning.models.price_aware_dispatch import (
+    from investment_estimation.todo.models.price_aware_dispatch import (
         DispatchMode,
         price_aware_dispatch,
     )
@@ -122,7 +122,7 @@ def test_price_aware_self_consumption_conserves_energy_and_prefers_peak_discharg
 
 
 def test_price_aware_arbitrage_charges_from_grid_at_valley():
-    from ele_trading.capacity_planning.models.price_aware_dispatch import (
+    from investment_estimation.todo.models.price_aware_dispatch import (
         DispatchMode,
         price_aware_dispatch,
     )
@@ -159,7 +159,7 @@ def test_price_aware_arbitrage_charges_from_grid_at_valley():
 
 def test_price_advantage_rewards_peak_discharge():
     # price_advantage = Σ discharge_kwh[t]*(price[t] - 月均价)；放电偏峰时应为正
-    from ele_trading.capacity_planning.models.price_aware_dispatch import (
+    from investment_estimation.todo.models.price_aware_dispatch import (
         DispatchMode,
         price_aware_dispatch,
     )

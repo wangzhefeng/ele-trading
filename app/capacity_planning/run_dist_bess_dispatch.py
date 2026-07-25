@@ -17,10 +17,10 @@ SRC_ROOT = PROJECT_ROOT / 'src'
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from ele_trading.capacity_planning import DistBESSDispatchInput
-from ele_trading.capacity_planning import run_dist_bess_dispatch
-from ele_trading.utils.io import read_yaml
-from ele_trading.utils.log_util import logger
+from investment_estimation.todo import DistBESSDispatchInput
+from investment_estimation.todo import run_dist_bess_dispatch
+from investment_estimation.utils.io import read_yaml
+from investment_estimation.utils.log_util import logger
 
 CONFIG_PATH = PROJECT_ROOT / 'configs' / 'capacity_planning' / 'dist_bess_dispatch.yaml'
 

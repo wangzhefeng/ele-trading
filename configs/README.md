@@ -7,8 +7,8 @@
 配置按入口职责分目录：
 
 - `optimization/`：优化和调度入口配置。
-- `capacity_planning/`：容量规划、IRR 和分布式储能搜索配置。
-- `resource_simulation/`：PV/Wind 物理仿真配置。
+- `capacity_planning/`：容量规划、IRR 和分布式储能搜索配置（对应入口指向 `investment_estimation.todo`）。
+- `resource_simulation/`：PV/Wind 物理仿真配置（对应入口指向 `investment_estimation.todo.resource_simulation`）。
 - `market/`：市场、场景和结算规则样例。
 - `legacy/`：旧风光储兼容链路配置。
 

@@ -4,12 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ele_trading.capacity_planning.wind_pv_bess_planner import (
+from investment_estimation.todo.wind_pv_bess_planner import (
     WindPVBESSPlanConfig,
     dispatch_annual,
     evaluate_fixed_wind_pv_bess_capacity,
 )
-from ele_trading.capacity_planning.wind_pv_bess_irr_planner import (
+from investment_estimation.todo.wind_pv_bess_irr_planner import (
     WindPVBESSIRRPlanConfig,
     WindPVBESSIRRResult,
     plan_wind_pv_bess_for_target_irr,

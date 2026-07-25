@@ -21,7 +21,7 @@ def guarded_import(name, *args, **kwargs):
         raise ImportError("blocked cvxpy for lazy import test")
     return real_import(name, *args, **kwargs)
 builtins.__import__ = guarded_import
-import ele_trading.capacity_planning as cp
+import investment_estimation.todo as cp
 assert cp.plan_wind_pv_bess_for_target_irr
 assert cp.solve_capacity_sizing
 print("OK")
@@ -42,8 +42,8 @@ print("OK")
 
 
 def test_canonical_dispatch_24h_oracle_conserves_energy_and_soc():
-    from ele_trading.capacity_planning.models.canonical_dispatch import canonical_dispatch
-    from ele_trading.capacity_planning.models.physics_contract import BESSPhysicsContract
+    from investment_estimation.todo.models.canonical_dispatch import canonical_dispatch
+    from investment_estimation.todo.models.physics_contract import BESSPhysicsContract
 
     idx = pd.date_range("2026-01-01", periods=24, freq="h")
     load_kw = np.full(24, 100.0)
@@ -78,9 +78,9 @@ def test_canonical_dispatch_24h_oracle_conserves_energy_and_soc():
 
 
 def test_monthly_settlement_sums_to_time_step_totals_and_uses_peak_net_load():
-    from ele_trading.capacity_planning.models.canonical_dispatch import canonical_dispatch
-    from ele_trading.capacity_planning.models.physics_contract import BESSPhysicsContract
-    from ele_trading.capacity_planning.settlement import settle_monthly
+    from investment_estimation.todo.models.canonical_dispatch import canonical_dispatch
+    from investment_estimation.todo.models.physics_contract import BESSPhysicsContract
+    from investment_estimation.todo.settlement import settle_monthly
 
     idx = pd.date_range("2026-01-31 22:00:00", periods=4, freq="h")
     load_kw = np.array([100.0, 100.0, 100.0, 100.0])
@@ -111,8 +111,8 @@ def test_monthly_settlement_sums_to_time_step_totals_and_uses_peak_net_load():
 
 
 def test_dispatch_annual_python_fallback_simulates_bess_when_numba_disabled():
-    from ele_trading.capacity_planning.models.dispatch_algo import dispatch_annual
-    from ele_trading.capacity_planning.wind_pv_bess_irr_planner import WindPVBESSIRRPlanConfig
+    from investment_estimation.todo.models.dispatch_algo import dispatch_annual
+    from investment_estimation.todo.wind_pv_bess_irr_planner import WindPVBESSIRRPlanConfig
 
     load = np.array([100.0, 100.0, 100.0, 100.0])
     pv = np.array([200.0, 200.0, 0.0, 0.0])
