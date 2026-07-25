@@ -12,10 +12,10 @@ DATA_ROOT = PACKAGE_ROOT / 'data'
 def get_sample_paths() -> dict[str, Path]:
     """返回项目内置样例数据路径。"""
     return {
-        'day_ahead_prices': DATA_ROOT / 'raw' / 'sample_day_ahead_prices.csv',
-        'intraday_prices': DATA_ROOT / 'raw' / 'sample_intraday_prices.csv',
-        'bess_config': DATA_ROOT / 'raw' / 'sample_bess_config.yaml',
-        'price_scenarios': DATA_ROOT / 'scenarios' / 'sample_price_scenarios.csv',
+        'day_ahead_prices': DATA_ROOT / 'trading' / 'prices' / 'sample_day_ahead_prices.csv',
+        'intraday_prices': DATA_ROOT / 'trading' / 'prices' / 'sample_intraday_prices.csv',
+        'bess_config': DATA_ROOT / 'trading' / 'config' / 'sample_bess_config.yaml',
+        'price_scenarios': DATA_ROOT / 'trading' / 'scenarios' / 'sample_price_scenarios.csv',
     }
 
 
