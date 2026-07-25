@@ -565,3 +565,34 @@ docs/
 - `uv run python -m pytest -q`（12 个 cp 迁移测试 + 2 个 invest 测试）：99 通过，1 失败（上述 pre-existing `_resolve_data_dir`，非本次引入）
 - `grep "ele_trading" src/investment_estimation/todo/ --include='*.py'`：0 命中（todo/ 已自包含）
 - `grep "ele_trading.capacity_planning\|invest_est_models" src/ app/ tests/ --include='*.py'`：0 命中
+
+## 2026-07-25
+
+### 蒙西电力交易主线（v1.3）实现落地
+
+依据 `docs/策略算法框架详细设计_v1.md`（v1.3）完成蒙西交易策略链的 Phase 0–7 开发，算法内核全部落地于新建的 `src/ele_trading/trading/` 子包。
+
+**已实现（trading 线 39 个单元测试全过）**
+
+- 数据契约与配置：`trading/contracts.py`（8 个 dataclass）、`trading/config_loader.py` + `configs/market_mengxi.yaml`（§3.1/§3.2）。
+- 结算：`trading/settlement_mengxi.py`（C/C2/Cpen_dayah/Cpen_long，§5）；广东分层偏差考核 `compute_deviation_penalty` 已从 `evaluation/settlement.py` 移除，蒙西带状为唯一结算实现。
+- 日前：`trading/day_ahead_coupled.py`（模式 A/B/C + 申报规则 + 风控裁剪，§6）。
+- 日内：`trading/intraday_rolling.py`（终端 SOC、偏差考核线性化、平滑项，§7）。
+- 回测：`evaluation/backtest.py` 增 `run_mengxi_backtest()`（forecast-aware 两阶段、ΔCost、机会损失、oracle upside，§10）。
+- 中长期/月度：`trading/mid_long_planner.py`、`trading/monthly_trader.py`（仓位结构、阶梯申报、缺口再平衡，§8）。
+- 需求响应：`trading/dr_allocator.py`（仅储能，§9）。
+- 预测：`forecasting/provider.py`（ForecastProvider 接口）、`forecasting/load_forecast.py`（负荷预测）；回测用 `trading/noisy_backcast.py` 加噪。
+- 样例数据：`trading/sample_data.py` 生成 96 点日清分样例至 `data/trading/`；交易样例数据已迁至 `data/trading/`，结果输出约定至 `results/trading/`。
+
+**已知缺口**
+
+- **入口脚本未建**：`app/trading/` 目录尚不存在（v1.3 §11.1/§11.4.6 列了 7 个 `run_*.py`）。算法内核可经 Python API 直接调用，补薄入口脚本（解析配置→调内核→写 `results/trading/`）即可命令行演示。新会话接手时此为首个待办。
+
+**文档同步**
+
+- `docs/策略算法框架详细设计_v1.md`（v1.3，重构后权威版本，附 v1.2→v1.3 变更清单）；新增 `src/ele_trading/trading/README.md`；更新根 `README.md`、`src/ele_trading/evaluation/README.md`、`src/ele_trading/forecasting/README.md`、`configs/README.md`、`AGENTS.md`。重构前快照 `docs/策略算法框架详细设计_v1_backup.md`（v1.2，未跟踪）已删除。
+
+**验证状态**
+
+- `uv run python -m pytest -q`：341 passed, 7 failed, 7 skipped（355 收集）。
+- 7 个失败均为 **pre-existing**（经 HEAD f89a8f8 干净 worktree 对照验证，非本轮回归）：`test_legacy_data_bridge` ×2、`test_run_wind_pv_legacy_*` ×2（即 app/README 已声明的 `run_legacy_data_preparation` 缺失）、`test_yaml_config_loading`、`test_capacity_planning_v4_phase1`（`_resolve_data_dir` 缺失）、`test_run_wind_bess_capacity_planning`。属 legacy/capacity_planning 清理范畴，可另起任务。

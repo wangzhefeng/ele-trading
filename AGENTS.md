@@ -66,7 +66,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ### 偏差考核参数
 
-- `compute_deviation_penalty()` 的 `dead_band_pct`、`tier1_threshold_pct` 参数必须与 `configs/market_*.yaml` 保持一致。
+- 结算口径以蒙西带状为唯一实现：`trading/settlement_mengxi.py` 的 `compute_settlement_C`/`compute_settlement_C2`/`compute_cpen_dayah`/`compute_cpen_long`（v1.3 §5）。广东式分层偏差考核 `compute_deviation_penalty()` 已从 `evaluation/settlement.py` 移除，勿再加回。
+- 蒙西偏差带、考核系数、申报风控等市场参数统一经 `configs/market_mengxi.yaml` + `trading/config_loader.load_market_config()` 加载，字段与 `trading/contracts.MarketConfig` 一一对应；标 `TODO(rule-confirm)` 的参数为待规则确认的默认值（v1.3 §3.5）。
 - 禁止在代码中硬编码市场参数（如罚款系数、价格限幅）。
 
 ### 配置与数据一致性
@@ -74,7 +75,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `configs/` 中的 YAML 文件必须与对应入口脚本的参数字段一一对应。
 - `dt` 参数在 15 分钟颗粒度场景下必须设为 0.25，并在配置中明确注释。
 - 新增环境变量或配置字段必须同步更新 `configs/README.md`。
-- 交易/调度侧通用内核归属 `src/ele_trading/optimization/`；投资收益测算（IRR/NPV、容量扫描、场景编排、收益测算、资源仿真、CSV 导出及老版容量规划的全部内容）归属平级自包含包 `src/investment_estimation/`，其中老版 `ele_trading/capacity_planning` 已整体并入 `src/investment_estimation/todo/`（待整合暂存区）。`src/ele_trading/capacity_planning/` 已删除，不要在 `ele_trading` 下重建容量规划/收益测算模块。
+- 交易/调度侧通用内核归属 `src/ele_trading/optimization/`；蒙西电力交易主线（中长期/月度/日前/日内/结算/回测/DR，v1.3 设计）归属 `src/ele_trading/trading/` 子包；投资收益测算（IRR/NPV、容量扫描、场景编排、收益测算、资源仿真、CSV 导出及老版容量规划的全部内容）归属平级自包含包 `src/investment_estimation/`，其中老版 `ele_trading/capacity_planning` 已整体并入 `src/investment_estimation/todo/`（待整合暂存区）。`src/ele_trading/capacity_planning/` 已删除，不要在 `ele_trading` 下重建容量规划/收益测算模块。
 - 项目级 agent 规则的唯一权威是根目录 `AGENTS.md`；`CLAUDE.md` 为指针，不在此文件之外另立内容副本。
 
 ### 数据边界

@@ -18,6 +18,7 @@
 
 当前主要链路：
 
+- **蒙西交易链路（主线）**：中长期仓位 → 月度阶梯申报 → 日前储售联动 → 日内滚动 → 蒙西带状结算 → forecast-aware 回测，外加需求响应与加噪回测预测。实现在 `src/ele_trading/trading/`，设计依据 `docs/策略算法框架详细设计_v1.md`。
 - **市场储能链路**：价格读取、储能套利、MPC、Two-stage + CVaR、结算、回测。
 - **用户侧链路**：负荷/电价/PV 样例构造，储能、PV-only、PV+storage、Wind-only、Wind+BESS、Wind+PV+BESS 调度与需量电费核算。
 - **分布式储能链路**：多变压器、多柜组合、容量搜索、调度模拟和收益汇总。
@@ -29,12 +30,13 @@
 ```text
 ele-trading/
 ├── src/ele_trading/              # 核心 Python 包（电力市场交易与调度）
+│   ├── trading/                  # 蒙西交易主线（中长期/月度/日前/日内/结算/回测/DR）
 │   ├── data_provider/            # 配置、样例数据、负荷、气象、时间序列处理
-│   ├── forecasting/              # 价格、风光功率和天气特征工程
+│   ├── forecasting/              # 价格、负荷、风光功率、ForecastProvider 接口和天气特征工程
 │   ├── scenario/                 # 价格场景采样与缩减
 │   ├── optimization/             # 储能、用户侧、CVXPY、Two-stage 优化
 │   ├── control/                  # 滚动调度封装
-│   ├── evaluation/               # 结算、偏差考核、指标、回测、仿真
+│   ├── evaluation/               # 结算、指标、回测（含蒙西 forecast-aware 回测）、仿真
 │   ├── demand/                   # 最大需量计算
 │   └── utils/                    # IO、日志、时间、数据对齐、绘图工具
 ├── src/investment_estimation/    # 投资收益测算包（独立自包含，不依赖 ele_trading）
@@ -60,6 +62,18 @@ ele-trading/
 
 ## 核心模块
 
+### `trading`（蒙西交易主线）
+
+实现《策略算法框架详细设计 v1.3》的蒙西交易策略链，是当前开发主线。算法内核全部就位（39 个 trading 线测试全过），命令行入口 `app/trading/` 待建：
+
+- `contracts.py`：8 个数据契约 dataclass（`MarketConfig`/`DayAheadPlan`/`IntradayPlan`/`SettlementReport` 等）。
+- `settlement_mengxi.py`：蒙西带状结算 `C`/`C2`/`Cpen_dayah`/`Cpen_long`。
+- `day_ahead_coupled.py`：日前储售联动（模式 A/B/C + 申报规则 + 风控裁剪）。
+- `intraday_rolling.py`：日内滚动重优化（终端 SOC、偏差考核线性化、平滑项）。
+- `mid_long_planner.py` / `monthly_trader.py`：中长期仓位结构与分月分解、集中竞价阶梯申报与缺口再平衡。
+- `dr_allocator.py`：需求响应参与决策（仅储能）。
+- `noisy_backcast.py` / `sample_data.py`：回测加噪预测与 96 点样例数据生成。
+
 ### `data_provider`
 
 负责把 CSV/YAML、合成样例、负荷曲线、气象数据和 legacy 数据桥接成统一输入。重点文件包括：
@@ -72,7 +86,7 @@ ele-trading/
 
 ### `forecasting`
 
-包含统一 `ForecastOutput`、简单价格预测、PV/风电功率预测、可兼容的 renewable stub，以及天气特征工程：
+包含统一 `ForecastOutput`、`ForecastProvider` 接口（蒙西链路预测抽象）、价格/负荷预测、PV/风电功率预测、可兼容的 renewable stub，以及天气特征工程：
 
 - PV 支持 `harmonic` 谐波回归和 `physics` 物理仿真。
 - 风电支持 `statistical` 统计模型和 `physics` 物理仿真。
@@ -113,7 +127,7 @@ ele-trading/
 
 ### `evaluation`、`control`、`demand`、`utils`
 
-- `evaluation`：收益结算、偏差考核、IRR、扩展储能指标、简单回测、仿真模型。
+- `evaluation`：收益结算（蒙西带状）、IRR、扩展储能指标、简单回测与蒙西 forecast-aware 回测、仿真模型。
 - `control`：基于 MPC 的滚动调度包装。
 - `demand`：固定窗口/滑动窗口最大需量和需量电费计算。
 - `src/ele_trading/utils`：包内 YAML、日志、时间切分、时间索引、数据对齐工具。
@@ -153,7 +167,7 @@ uv run python app/capacity_planning/run_wind_pv_bess_capacity_planning_1.py
 uv run python -m pytest -q
 ```
 
-当前测试（322 项收集）包含核心算法、样例数据构造、入口脚本、投资测算与气象特征等切片。`tests/README.md` 有按模块的清单与冒烟边界；少量 pre-existing 失败（legacy 数据桥接、缺失模块等）见 `LOG.md`。
+当前测试（355 项收集，341 passed）包含蒙西交易主线（结算/日前/日内/回测/中长期/DR/预测 39 项）、核心算法、样例数据构造、入口脚本、投资测算与气象特征等切片。`tests/README.md` 有按模块的清单与冒烟边界；少量 pre-existing 失败（legacy 数据桥接、缺失模块等 7 项）见 `LOG.md`。
 
 ## 数据边界
 
@@ -163,6 +177,6 @@ uv run python -m pytest -q
 
 - Agent 规则的唯一权威是根目录 `AGENTS.md`（含通用准则 + 第 5 节项目硬约束），根目录 `CLAUDE.md` 是指向它的短指针。不要在 `.agents/`、`.claude/`、`.hermes/` 等子目录重建指令副本。
 - 交易/调度侧新算法实现放入 `src/ele_trading/`，投资收益测算类放入 `src/investment_estimation/`；入口脚本只负责组装配置、数据和日志输出。
-- 交易/调度侧通用内核放在 `optimization/`；投资收益测算（IRR/NPV、容量搜索、月度结算、资源仿真及老版容量规划）放在平级的 `src/investment_estimation/`，其 `todo/` 为老版 `capacity_planning` 迁入的待整合暂存区。
+- 交易/调度侧通用内核放在 `optimization/`；蒙西电力交易主线（中长期/日前/日内/结算/回测/DR）放在 `trading/` 子包；投资收益测算（IRR/NPV、容量搜索、月度结算、资源仿真及老版容量规划）放在平级的 `src/investment_estimation/`，其 `todo/` 为老版 `capacity_planning` 迁入的待整合暂存区。
 - 通用工具函数放入 `src/ele_trading/utils/`，包括 IO、日志、时间处理、绘图等。
 - `LOG.md` 为 append-only 状态记录；过期历史不回写，追加新状态说明。

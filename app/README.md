@@ -34,8 +34,8 @@ uv sync
 
 | 脚本 | 配置 | 作用 |
 |------|------|------|
-| `optimization/run_bess_arbitrage.py` | 默认样例数据（`data/raw/`） | 单市场储能套利 demo，输出目标值、充放电功率和 SOC |
-| `optimization/run_mpc_demo.py` | 默认样例数据（`data/raw/`） | 储能 MPC 滚动优化 demo |
+| `optimization/run_bess_arbitrage.py` | 默认样例数据（`data/trading/prices/`） | 单市场储能套利 demo，输出目标值、充放电功率和 SOC |
+| `optimization/run_mpc_demo.py` | 默认样例数据（`data/trading/prices/`） | 储能 MPC 滚动优化 demo |
 | `optimization/run_two_stage_skeleton.py` | 内置最小场景 | Two-stage + CVaR 4 时段、3 场景求解演示 |
 | `evaluation/run_backtest.py` | 默认样例数据 | 最小回测，串联滚动调度、收益结算和指标汇总 |
 | `optimization/run_user_side_bess_dispatch.py` | `configs/optimization/user_side_bess_dispatch.yaml` | 用户侧储能成本优化，含能量电费和需量电费 |

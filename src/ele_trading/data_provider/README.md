@@ -22,8 +22,10 @@
 
 ## 数据来源
 
-- `data/raw/`：价格和储能最小样例。
-- `data/scenarios/`：价格场景样例。
+- `data/trading/prices/`：交易线价格最小样例（日前/日内，含 96 点）。
+- `data/trading/config/`：交易线储能最小样例配置。
+- `data/trading/scenarios/`：价格场景样例（Two-stage 骨架演示输入）。
+- `data/trading/daily_sample_*.csv`：蒙西 96 点日清分样例（`ele_trading.trading.sample_data` 生成）。
 - `data/wind_pv_es_calc/`：legacy 风光储测算兼容数据。
 - `configs/*.yaml`：入口脚本和样例构造参数。
 - 外部天气源：Open-Meteo、NetCDF、Mongo 或本地测点文件。

@@ -7,7 +7,9 @@
 | 文件 | 职责 |
 |------|------|
 | `base.py` | 定义统一 `ForecastOutput`，包含点预测和可选上下界 |
+| `provider.py` | `ForecastProvider` Protocol 统一接口 + `SimpleForecastProvider` 参考实现（v1.3 §4.1），供优化链路面向抽象编程 |
 | `price_forecast.py` | `SimplePriceForecaster`，基于历史均值和波动生成价格预测 |
+| `load_forecast.py` | 负荷预测（AR+climatology 模式，v1.3 §4.3），产出敞口负荷预测 |
 | `renewable_forecast.py` | renewable 预测抽象类和 stub，保留兼容接口 |
 | `pv_forecast.py` | `PVPowerForecaster`，支持 `harmonic` 和 `physics` 两种模式 |
 | `wind_forecast.py` | `WindPowerForecaster`，支持 `statistical` 和 `physics` 两种模式 |
@@ -23,7 +25,7 @@
 ## 上下游关系
 
 - 上游：`data_provider` 提供历史价格、负荷、气象数据和样例 profile。
-- 下游：`scenario` 消费价格预测结果；`optimization` 消费风光预测或资源出力。
+- 下游：`scenario` 消费价格预测结果；`optimization` 消费风光预测或资源出力；`trading/` 蒙西链路经 `ForecastProvider` 消费价格/负荷预测（回测时用 `trading/noisy_backcast.py` 加噪替代）。
 
 ## 使用边界
 

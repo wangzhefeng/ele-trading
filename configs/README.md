@@ -16,7 +16,8 @@
 |------|------------------|------|
 | `optimization/bess.yaml` | `optimization/run_bess_arbitrage.py`、`optimization/run_mpc_demo.py` | 基础储能 SOC、功率、效率、退化成本、时间步长 |
 | `market/market.yaml` | 数据/市场样例 | 基础日前市场元信息 |
-| `market/market_guangdong.yaml` | `evaluation.settlement`、Two-stage 规则参考 | 广东现货市场 15 分钟颗粒度、价格限幅、偏差考核分层参数 |
+| `market/market_guangdong.yaml` | 用户侧调度规则参考（偏差考核已移除） | 广东现货市场 15 分钟颗粒度、价格限幅样例 |
+| `market_mengxi.yaml` | `trading/config_loader.load_market_config()` → 蒙西交易主线全模块 | 蒙西带状结算、偏差带、申报风控、策略权重、储能运行、中长期/DR/预测标定参数（v1.3 §3.1.1，待规则确认项标 `TODO(rule-confirm)`） |
 | `market/scenario.yaml` | `scenario` 模块 | 价格场景数量、噪声、随机种子和权重样例 |
 | `capacity_planning/capacity_planning.yaml` | `capacity_planning/run_wind_pv_bess_capacity_planning_2.py` | 风光储联合容量规划三场景演示、约束、搜索步长和成本参数 |
 | `capacity_planning/bess_capacity_planning.yaml` | `capacity_planning/run_bess_capacity_planning.py` | 固定风光容量下 BESS 最小容量规划 |
@@ -33,7 +34,7 @@
 
 ## 配置边界
 
-- 市场规则参数放入 `market/market_*.yaml`，例如偏差死区、分层阈值、价格上下限。
+- 市场规则参数放入 `market/market_*.yaml`，例如偏差死区、分层阈值、价格上下限；蒙西交易主线的完整市场配置在根级 `market_mengxi.yaml`（经 `trading/config_loader` 加载，字段与 `MarketConfig` 一一对应）。
 - 设备物理参数放入对应设备或调度配置，例如 `optimization/bess.yaml`、`*_dispatch.yaml`、`*_capacity_planning.yaml`。
 - 路径类参数使用相对项目根目录的路径，入口脚本负责解析为绝对路径。
 - 新增配置文件时，应同步补充对应入口、读取逻辑、测试和本 README。
