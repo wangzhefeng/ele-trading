@@ -1,25 +1,19 @@
 # optimization — 优化调度模块
 
-本模块承接价格、负荷、光伏、风电、储能参数和场景输入，输出申报、调度、容量搜索或成本收益结果。当前覆盖市场储能、用户侧、CVXPY 和 Two-stage 风险优化多条链路。
+本模块承接活动市场储能和场景输入，输出储能套利、MPC 和 Two-stage 风险优化结果。用户侧、分布式和 CVXPY 路径已归档，不属于活动 API。
 
 ## 当前文件
 
 | 文件 | 职责 |
 |------|------|
-| `interfaces.py` | 统一 dataclass 和枚举，包括储能、用户侧、CVXPY 输入输出 |
-| `bess_arbitrage.py` | 单市场储能套利和容量 sizing |
-| `user_side_bess_distributed_dispatch_class.py` | 用户侧分布式储能调度共享内核，多变压器/多储能节点联合优化 |
+| `contracts.py` | 活动通用结果契约：`BESSArbitrageResult`、`MPCStepResult` |
+| `bess_model.py` | PuLP 共享 SOC、效率、功率、terminal、throughput、no-export 约束 |
+| `risk.py` | CVaR 辅助变量与风险目标 helper |
+| `solver.py` | typed PuLP/CBC 求解状态边界 |
+| `bess_arbitrage.py` | 复用共享 BESS kernel 的确定性单市场储能套利 |
 | `mpc_bess.py` | 单窗口 MPC 和滚动 MPC |
-| `two_stage_cvar.py` | Two-stage + CVaR 场景优化模型 |
-| `user_side_bess_dispatch.py` | 用户侧储能调度，最小化购电、需量和循环成本 |
-| `user_side_renewable_dispatch_class.py` | 用户侧通用可再生能源无储能调度共享内核 |
-| `user_side_renewable_bess_dispatch_class.py` | 用户侧通用可再生能源+BESS 调度共享内核 |
-| `user_side_pv_dispatch.py` | 用户侧 PV-only 场景适配入口 |
-| `user_side_pv_bess_dispatch.py` | 用户侧 PV+BESS 场景适配入口 |
-| `user_side_wind_dispatch.py` | 用户侧 Wind-only 场景适配入口 |
-| `user_side_wind_bess_dispatch.py` | 用户侧 Wind+BESS 场景适配入口 |
-| `user_side_wind_pv_bess_dispatch.py` | 用户侧 Wind+PV+BESS 场景适配入口 |
-| `user_side_bess_dispatch_cvxpy.py` | 用户侧 BESS 调度的 CVXPY 版本 profile |
+| `two_stage_cvar.py` | 消费 `ScenarioSet` 的可运行 Two-stage + CVaR 优化 |
+| `todo/` | 归档用户侧、分布式和 CVXPY 模块；显式导入，且 CVXPY 需要 `archived-user-side` extra |
 
 ## 市场储能套利
 
@@ -37,31 +31,24 @@
 
 ## Two-stage + CVaR
 
-`build_two_stage_cvar_model()` 构造日前申报 + 实时场景调节模型：
+`solve_two_stage_cvar()` 通过 PuLP+CBC 构造并求解日前申报 + 实时场景调节：
 
 - 第一阶段：日前申报量。
 - 第二阶段：各场景下充放电、SOC、偏差和收益。
-- 风险项：CVaR 线性化，目标兼顾期望收益和尾部风险。
+- 风险项：以场景成本为 loss 的加权 CVaR 线性化。
+- 正负偏差考核系数必须由上层显式传入，optimization 不提供市场默认值。
+- 返回 typed solve status、第一阶段 bid、场景 recourse、期望成本、VaR、
+  CVaR 和来源 trace metadata；失败时不返回伪造的零计划。
+
+`build_two_stage_cvar_model()` 仅为当前旧示例入口保留未求解 PuLP model
+adapter，不是 v2 主 API；其 `kappa_pos` / `kappa_neg` 同样必须显式传入。
 
 演示入口为 `app/optimization/run_two_stage_skeleton.py`。
 
-## 用户侧模型
+## 归档用户侧、分布式与 CVXPY 模块
 
-用户侧模型是电表后视角，目标通常是最小化综合用能成本。
-
-- `run_user_side_bess_dispatch()`：负荷 + 购电价格 + 储能，考虑需量电费、循环成本、终端 SOC 和禁止反送电。
-- `run_user_side_pv_dispatch()`：负荷 + PV + 购售电规则，计算 PV 自用、上网、弃光和购电。
-- `run_user_side_pv_bess_dispatch()`：负荷 + PV + 储能 + 可选策略偏好，联合决定 PV 分流、储能动作、购电和上网。
-- `run_user_side_wind_dispatch()`：负荷 + Wind + 购售电规则，计算风电自用、上网、弃风和购电。
-- `run_user_side_wind_bess_dispatch()`：负荷 + Wind + 储能，联合决定风电分流、储能动作、购电和上网。
-- `run_user_side_wind_pv_bess_dispatch()`：负荷 + Wind + PV + 储能，把风光总出力作为 renewable 统一调度，并保留 PV/Wind 原始预测。
-
-`user_side_renewable_dispatch_class.py` 和 `user_side_renewable_bess_dispatch_class.py` 是共享内核；PV/Wind 场景入口只负责字段映射和兼容输出。PV/BESS 链路的样例输入由 `data_provider/*_sample.py` 和 `configs/user_side_*.yaml` 提供；Wind 相关链路当前先提供算法层 API。
-
-## CVXPY 储能调度
-
-`run_cvxp_bess_dispatch()` 提供 CVXPY 版本储能调度实现，用 `CvxpBESSDispatchInput` 和 `CvxpBESSDispatchResult` 明确输入输出。入口为 `app/optimization/run_cvxp_bess_dispatch.py`。
-
-## 分布式储能调度
-
-`run_distributed_bess_dispatch()` 提供用户侧分布式储能调度内核，用 `DistributedBESSDispatchInput` 和 `DistributedBESSDispatchResult` 明确输入输出；实现文件为 `user_side_bess_distributed_dispatch_class.py`。
+归档实现位于 `optimization/todo/`，样例输入位于
+`data_provider/todo/`，入口和配置分别位于 `app/optimization/todo/` 与
+`configs/optimization/todo/`。活动代码不得导入它们；需要运行 CVXPY
+归档模块时先执行 `uv sync --extra archived-user-side`。归档详情、依赖和恢复
+条件见各自 `todo/README.md`。

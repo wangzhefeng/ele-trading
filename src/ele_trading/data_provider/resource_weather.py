@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from .time_series_ops import ensure_datetime_column
+from .quality import ensure_datetime_column
 
 
 def fetch_weather_open_meteo(

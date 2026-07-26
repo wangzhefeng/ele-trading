@@ -29,15 +29,12 @@ SAMPLE_BESS = {
 
 def load_daily_samples() -> dict:
     """加载 data/trading/daily_sample_*.csv → {日期: DataFrame}。"""
-    import pandas as pd
+    from ele_trading.trading.sample_data import (
+        SampleTradingDataProvider,
+    )
 
-    calendar = {}
-    for path in sorted(DATA_TRADING.glob("daily_sample_*.csv")):
-        day = pd.Timestamp(path.stem.replace("daily_sample_", ""))
-        calendar[day] = pd.read_csv(path)
-    if not calendar:
-        raise FileNotFoundError(
-            f"no daily_sample_*.csv under {DATA_TRADING}; "
-            "run `uv run python -m ele_trading.trading.sample_data` first"
-        )
-    return calendar
+    provider = SampleTradingDataProvider(DATA_TRADING)
+    return {
+        day: provider.frame_for_day(day)
+        for day in provider.available_days
+    }

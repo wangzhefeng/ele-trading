@@ -1,100 +1,117 @@
-"""Load and validate Mengxi market configuration."""
+"""Load the one-to-one active Mengxi market configuration."""
 
 from __future__ import annotations
 
+from dataclasses import fields
+from math import isfinite
 from pathlib import Path
+from typing import Any
 
 from ele_trading.trading.contracts import MarketConfig
 from ele_trading.utils.io import read_yaml
 
 
+def _flatten_sections(raw: dict[str, Any]) -> dict[str, Any]:
+    flat: dict[str, Any] = {}
+    for section_name, section in raw.items():
+        if not isinstance(section, dict):
+            raise ValueError(f"config section {section_name!r} must be a mapping")
+        for key, value in section.items():
+            if isinstance(value, dict):
+                raise ValueError(
+                    f"config field {section_name}.{key} must not be nested"
+                )
+            if key in flat:
+                raise ValueError(f"duplicate config field {key!r}")
+            flat[key] = value
+    return flat
+
+
 def load_market_config(path: str | Path) -> MarketConfig:
-    """Load MarketConfig from YAML file with validation."""
-    path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f"Config file not found: {path}")
+    """Load YAML only when its leaves map exactly to ``MarketConfig``."""
+    config_path = Path(path)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    raw = read_yaml(config_path)
+    if not isinstance(raw, dict):
+        raise ValueError("market config must be a mapping")
 
-    raw = read_yaml(path)
+    flat = _flatten_sections(raw)
+    expected = {field.name for field in fields(MarketConfig)}
+    actual = set(flat)
+    if actual != expected:
+        missing = sorted(expected - actual)
+        unknown = sorted(actual - expected)
+        raise ValueError(
+            f"MarketConfig/YAML fields differ: missing={missing}, unknown={unknown}"
+        )
 
-    # Flatten nested structure
-    flat = {}
-    flat.update(raw.get("deviation", {}))
-    flat.update(raw.get("bid", {}))
-    flat.update(raw.get("risk", {}))
-    flat.update(raw.get("strategy", {}).get("weights", {}))
-    flat["strategy"] = raw.get("strategy", {}).get("default", "BALANCED")
-    flat.update(raw.get("bess", {}))
-    flat.update(raw.get("dayahead", {}))
-    flat.update(raw.get("mid_long", {}))
-    flat.update(raw.get("dr", {}))
-    flat.update(raw.get("forecast", {}))
-    flat.update(raw.get("market", {}))
-
-    # Rename to match MarketConfig fields
-    field_map = {
-        "lam_l": "lam_l",
-        "lam_u": "lam_u",
-        "lam_l_long": "lam_l_long",
-        "lam_u_long": "lam_u_long",
-        "m_long": "m_long",
-        "gap": "gap",
-        "bias_k": "bias_k",
-        "price_floor": "price_floor",
-        "price_cap": "price_cap",
-        "max_step_ratio": "risk_max_step_ratio",
-        "daily_qty_band": "risk_daily_qty_band",
-        "long_band_check": "risk_long_band_check",
-        "w_bes": "w_bes",
-        "w_pen": "w_pen",
-        "w_ecost": "w_ecost",
-        "w_xu": "w_xu",
-        "w_dr": "w_dr",
-        "strategy": "strategy",
-        "settlement_mode": "settlement_mode",
-        "settle_periods": "settle_periods",
-        "soc_terminal_min": "soc_terminal_min",
-        "exclusive_charge_discharge": "exclusive_charge_discharge",
-        "dayahead_power_margin": "dayahead_power_margin",
-        "throughput_max_ratio": "throughput_max_ratio",
-        "deg_cost_per_mwh": "deg_cost_per_mwh",
-        "market_role": "bess_market_role",
-        "no_discharge_on_curtail": "no_discharge_on_curtail",
-        "mode": "dayahead_mode",
-        "price_reporting": "dayahead_price_reporting",
-        "pos_tol_ratio": "pos_tol_ratio",
-        "cpen_long_applies_to_storage": "cpen_long_applies_to_storage",
-        "aggregation": "dr_aggregation",
-        "sca_price": "sca_price",
-        "sca_power": "sca_power",
-    }
-
-    kwargs = {}
-    for yaml_key, field_name in field_map.items():
-        if yaml_key in flat:
-            kwargs[field_name] = flat[yaml_key]
-
-    config = MarketConfig(**kwargs)
+    config = MarketConfig(**flat)
     _validate_config(config)
     return config
 
 
+def _finite_non_negative(name: str, value: object) -> None:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not isfinite(value)
+        or value < 0
+    ):
+        raise ValueError(f"{name} must be finite and non-negative")
+
+
 def _validate_config(config: MarketConfig) -> None:
-    """Validate configuration values."""
-    if config.settlement_mode != "mengxi_band":
-        raise ValueError(f"Only mengxi_band settlement supported, got {config.settlement_mode}")
-    if not (0 < config.lam_l < config.lam_u):
-        raise ValueError(f"Invalid deviation band: [{config.lam_l}, {config.lam_u}]")
-    if not (0 < config.lam_l_long < config.lam_u_long):
-        raise ValueError(f"Invalid mid-long band: [{config.lam_l_long}, {config.lam_u_long}]")
-    if config.price_floor >= config.price_cap:
-        raise ValueError(f"Invalid price limits: [{config.price_floor}, {config.price_cap}]")
-    if not (0 < config.dayahead_power_margin <= 1.0):
-        raise ValueError(f"dayahead_power_margin must be in (0,1], got {config.dayahead_power_margin}")
-    if not (0 <= config.risk_max_step_ratio <= 1.0):
-        raise ValueError(f"risk.max_step_ratio must be in [0,1], got {config.risk_max_step_ratio}")
-    if not (0 <= config.risk_daily_qty_band < 1.0):
-        raise ValueError(f"risk.daily_qty_band must be in [0,1), got {config.risk_daily_qty_band}")
-    if config.dayahead_mode not in ("A", "B", "C"):
-        raise ValueError(f"dayahead.mode must be A/B/C, got {config.dayahead_mode}")
-    if config.settle_periods <= 0 or 96 % config.settle_periods != 0:
-        raise ValueError(f"settle_periods must be a positive divisor of 96, got {config.settle_periods}")
+    if config.market_name != "mengxi":
+        raise ValueError("market_name must be mengxi")
+    if config.settlement_mode != "mengxi_single":
+        raise ValueError("settlement_mode must be mengxi_single")
+    if config.dt != 0.25:
+        raise ValueError("dt must be 0.25 for 15-minute trading")
+    if (
+        config.settle_periods <= 0
+        or 96 % config.settle_periods != 0
+    ):
+        raise ValueError("settle_periods must be a positive divisor of 96")
+    if not (
+        0.0
+        < config.long_recovery_lower_ratio
+        < config.long_recovery_upper_ratio
+    ):
+        raise ValueError("invalid long-recovery ratio band")
+    _finite_non_negative(
+        "long_recovery_multiplier",
+        config.long_recovery_multiplier,
+    )
+    _finite_non_negative("pos_tol_ratio", config.pos_tol_ratio)
+
+    if config.scenario_method not in {"lhs", "mc"}:
+        raise ValueError("scenario_method must be lhs or mc")
+    if config.scenario_count <= 0:
+        raise ValueError("scenario_count must be positive")
+    if not 0.0 < config.scenario_cvar_alpha < 1.0:
+        raise ValueError("scenario_cvar_alpha must be within (0, 1)")
+    for name in (
+        "two_stage_scenario_deviation_cost_positive",
+        "two_stage_scenario_deviation_cost_negative",
+        "scenario_cvar_weight",
+        "operational_power_margin",
+        "throughput_max_ratio",
+        "deg_cost_per_mwh",
+        "dr_compensation_per_mwh",
+        "dr_penalty_per_mwh",
+        "dr_minimum_margin",
+        "dr_minimum_response_mwh",
+        "monthly_trade_unit_mwh",
+        "solver_time_limit_seconds",
+        "solver_mip_gap",
+    ):
+        _finite_non_negative(name, getattr(config, name))
+    if not 0.0 < config.operational_power_margin <= 1.0:
+        raise ValueError("operational_power_margin must be within (0, 1]")
+    if not 0 <= config.dr_window_start < config.dr_window_end <= 96:
+        raise ValueError("DR window must be within the 96-period day")
+    if config.monthly_price_floor >= config.monthly_price_cap:
+        raise ValueError("monthly price floor must be below the cap")
+    if config.solver_name not in {"cbc", "glpk"}:
+        raise ValueError("solver_name must be cbc or glpk")

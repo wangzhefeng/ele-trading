@@ -1,32 +1,31 @@
-"""Mengxi electricity-trading main line.
-
-This subpackage implements the v1 design document's trading strategy chain:
-day-ahead coupled optimization, intraday rolling, settlement, mid-long-term
-planning, monthly trading, and demand response.
-"""
+"""Active Mengxi single-settlement trading chain."""
 
 from ele_trading.trading.contracts import (
     BidLadder,
     CorridorAdvice,
-    DayAheadPlan,
+    DecisionTrace,
     DRDecision,
-    ForecastResult,
     IntradayAdjustment,
     IntradayPlan,
     MarketConfig,
+    MarketForecastBundle,
+    OperationalPlan,
     PositionPlan,
+    PositionState,
     SettlementReport,
 )
 
 __all__ = [
     "BidLadder",
     "CorridorAdvice",
-    "DayAheadPlan",
+    "DecisionTrace",
     "DRDecision",
-    "ForecastResult",
     "IntradayAdjustment",
     "IntradayPlan",
     "MarketConfig",
+    "MarketForecastBundle",
+    "OperationalPlan",
     "PositionPlan",
+    "PositionState",
     "SettlementReport",
 ]

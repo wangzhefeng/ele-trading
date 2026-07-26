@@ -27,9 +27,9 @@ class TestMidLongPlanner:
 
         plan = plan_mid_long_position(q_load, p_long, p_spot, budget, config)
         assert 0.7 <= plan.alpha_long <= 0.9
-        assert plan.alpha_dayah > 0
         assert plan.alpha_real > 0
-        assert abs(plan.alpha_long + plan.alpha_dayah + plan.alpha_real - 1.0) < 1e-6
+        assert abs(plan.alpha_long + plan.alpha_real - 1.0) < 1e-6
+        assert not hasattr(plan, "alpha_dayah")
         assert len(plan.q_long_monthly) == 12
         assert plan.budget_used > 0
 
@@ -74,8 +74,8 @@ class TestMonthlyTrader:
 
     def test_price_clipping(self, config):
         """Prices should be clipped to market limits."""
-        config.price_floor = 300.0
-        config.price_cap = 310.0
+        config.monthly_price_floor = 300.0
+        config.monthly_price_cap = 310.0
         ladder = build_bid_ladder(
             q_low=100.0, q_high=200.0,
             p_low=280.0, p_high=320.0,

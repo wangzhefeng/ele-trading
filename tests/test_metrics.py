@@ -2,7 +2,7 @@
 
 import numpy as np
 import pandas as pd
-from ele_trading.evaluation.metrics import (
+from ele_trading.trading.metrics import (
     summarize_bess_metrics,
     compute_extended_metrics,
     compute_rainflow_degradation,
@@ -124,5 +124,4 @@ def test_rainflow_constant_soc():
     result = compute_rainflow_degradation(soc, e_cap=10.0)
     assert result['rainflow_efc'] == 0.0
     assert result['total_throughput'] == 0.0
-
 

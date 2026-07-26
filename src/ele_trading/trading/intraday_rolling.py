@@ -1,182 +1,279 @@
-"""Intraday rolling storage optimization (v1.3 §7).
-
-Reuses the rolling-window pattern from mpc_bess but replaces the objective
-with the weighted combination of arbitrage, deviation penalty, and demand control.
-"""
+"""Rolling single-settlement physical rescheduling."""
 
 from __future__ import annotations
 
+from typing import Mapping
+
 import numpy as np
-from pulp import LpBinary, LpMinimize, LpProblem, LpVariable, PULP_CBC_CMD, lpSum, value
+import pandas as pd
 
-from ele_trading.trading.contracts import DayAheadPlan, IntradayAdjustment, IntradayPlan, MarketConfig
-from ele_trading.utils import check_pulp_status
+from ele_trading.scenario.contracts import ScenarioSet
+from ele_trading.trading.contracts import (
+    DecisionTrace,
+    IntradayAdjustment,
+    IntradayPlan,
+    MarketConfig,
+    OperationalPlan,
+)
+from ele_trading.trading.day_ahead_coupled import (
+    solve_day_ahead_operational,
+)
+from ele_trading.trading.settlement_mengxi import (
+    compute_contract_difference,
+)
 
-DT = 0.25  # 15 min 决策粒度（v1.3 §2.1）
+
+def _remaining_previous_schedule(
+    previous_plan: OperationalPlan,
+    executed_count: int,
+    remaining_horizon: int,
+) -> pd.DataFrame:
+    schedule = previous_plan.resource_schedule
+    if len(schedule) == executed_count + remaining_horizon:
+        remaining = schedule.iloc[executed_count:]
+    elif len(schedule) == remaining_horizon:
+        remaining = schedule
+    else:
+        raise ValueError(
+            "previous plan must cover the full or remaining rolling horizon"
+        )
+    return remaining.reset_index(drop=True).copy()
+
+
+def _clip_fallback(
+    previous_remaining: pd.DataFrame,
+    *,
+    load_forecast: np.ndarray,
+    price_forecast: np.ndarray,
+    current_soc: float,
+    bess: Mapping[str, float],
+    config: MarketConfig,
+    decision_time: pd.Timestamp | None,
+    reason: str,
+    q_long: np.ndarray | None,
+    p_long: np.ndarray | None,
+    p_ref: np.ndarray | None,
+    dr_adjustment: float,
+) -> OperationalPlan:
+    p_charge: list[float] = []
+    p_discharge: list[float] = []
+    soc_values = [float(np.clip(
+        current_soc,
+        float(bess["socmin"]),
+        float(bess["socmax"]),
+    ))]
+    for step, previous_net in enumerate(
+        previous_remaining["p_net"].to_numpy(dtype=float)
+    ):
+        soc = soc_values[-1]
+        if previous_net < 0.0:
+            max_by_soc = (
+                (float(bess["socmax"]) - soc)
+                / (float(bess["p_bceff"]) * config.dt)
+            )
+            charge = min(
+                -previous_net,
+                float(bess["p_bcmax"]),
+                max(0.0, max_by_soc),
+            )
+            discharge = 0.0
+        else:
+            max_by_soc = (
+                (soc - float(bess["socmin"]))
+                * float(bess["p_bdeff"])
+                / config.dt
+            )
+            max_by_load = max(0.0, float(load_forecast[step]) / config.dt)
+            charge = 0.0
+            discharge = min(
+                previous_net,
+                float(bess["p_bdmax"]),
+                max_by_soc,
+                max_by_load,
+            )
+        next_soc = (
+            soc
+            + float(bess["p_bceff"]) * charge * config.dt
+            - discharge * config.dt / float(bess["p_bdeff"])
+        )
+        p_charge.append(charge)
+        p_discharge.append(discharge)
+        soc_values.append(
+            float(
+                np.clip(
+                    next_soc,
+                    float(bess["socmin"]),
+                    float(bess["socmax"]),
+                )
+            )
+        )
+
+    schedule = pd.DataFrame(
+        {
+            "p_charge": p_charge,
+            "p_discharge": p_discharge,
+            "p_net": np.asarray(p_discharge) - np.asarray(p_charge),
+        }
+    )
+    energy_cost = float(
+        np.sum(
+            (
+                load_forecast
+                - schedule["p_net"].to_numpy(dtype=float) * config.dt
+            )
+            * price_forecast
+        )
+    )
+    degradation_cost = float(
+        np.sum(
+            (
+                schedule["p_charge"].to_numpy(dtype=float)
+                + schedule["p_discharge"].to_numpy(dtype=float)
+            )
+            * config.dt
+            * config.deg_cost_per_mwh
+        )
+    )
+    if q_long is None:
+        contract_difference = 0.0
+    else:
+        assert p_long is not None
+        assert p_ref is not None
+        contract_difference = float(
+            np.sum(
+                compute_contract_difference(
+                    q_long,
+                    p_long,
+                    p_ref=p_ref,
+                )
+            )
+        )
+    trace = DecisionTrace(
+        decision_time=decision_time or pd.Timestamp.now(tz="UTC"),
+        input_versions={},
+        model_versions={"dispatch": "single-settlement-intraday-v1"},
+        config_version="runtime-config",
+        solver_name="fallback",
+        solver_version="n/a",
+        solver_status="fallback",
+        objective_components={
+            "energy_cost": energy_cost,
+            "degradation_cost": degradation_cost,
+            "contract_difference": contract_difference,
+            "dr_adjustment": float(dr_adjustment),
+        },
+        active_constraints={},
+        fallback_used=True,
+        fallback_reason=reason,
+    )
+    return OperationalPlan(
+        resource_schedule=schedule,
+        soc=pd.Series(soc_values, name="soc"),
+        expected_cost=(
+            energy_cost
+            + degradation_cost
+            + contract_difference
+            + dr_adjustment
+        ),
+        expected_risk=0.0,
+        constraint_trace={},
+        decision_trace=trace,
+    )
 
 
 def solve_intraday_rolling(
-    q_real_load: np.ndarray,  # remaining window load (after mid-long deduction)
-    p_real_pre: np.ndarray,  # remaining window real price forecast
-    q_dayah: np.ndarray,  # cleared day-ahead bid (for deviation penalty)
-    p_dayah: np.ndarray,  # cleared day-ahead price
-    soc_current: float,
-    bess: dict,
+    *,
+    load_forecast: np.ndarray,
+    realtime_price_forecast: np.ndarray,
+    current_soc: float,
+    bess: Mapping[str, float],
     config: MarketConfig,
-    prev_p_b: np.ndarray | None = None,  # previous plan for smoothness
-    t_curt: list[int] | None = None,  # 限电时段（no_discharge_on_curtail=True 时生效）
-    dr_lock_p_b: np.ndarray | None = None,  # DR 履约时段锁定功率曲线（DR_FULFILL）
+    previous_plan: OperationalPlan,
+    executed_prefix: pd.DataFrame,
+    decision_time: pd.Timestamp | None = None,
+    input_versions: Mapping[str, str] | None = None,
+    q_long: np.ndarray | None = None,
+    p_long: np.ndarray | None = None,
+    p_ref: np.ndarray | None = None,
+    scenario_set: ScenarioSet | None = None,
+    dr_adjustment: float = 0.0,
+    config_version: str = "runtime-config",
+    solver=None,
 ) -> IntradayPlan:
-    """Solve one intraday rolling window.
-
-    Objective: w_bes*arbitrage + w_pen*deviation_penalty (+ smoothness)
-    """
-    _check_no_nan(q_real_load, "q_real_load")
-    _check_no_nan(p_real_pre, "p_real_pre")
-    _check_no_nan(q_dayah, "q_dayah")
-    _check_no_nan(p_dayah, "p_dayah")
-
-    horizon = len(q_real_load)
-
-    m = LpProblem("intraday_rolling", LpMinimize)
-
-    # BESS variables (full power available intraday)
-    p_bc = {t: LpVariable(f"p_bc_{t}", lowBound=0, upBound=bess["p_bcmax"]) for t in range(horizon)}
-    p_bd = {t: LpVariable(f"p_bd_{t}", lowBound=0, upBound=bess["p_bdmax"]) for t in range(horizon)}
-    soc = {t: LpVariable(f"soc_{t}", lowBound=bess["socmin"], upBound=bess["socmax"]) for t in range(horizon)}
-
-    # Deviation penalty auxiliary variables
-    q_aux = {t: LpVariable(f"q_aux_{t}", lowBound=0) for t in range(horizon)}
-
-    # 限电时段禁放（v1.3 §2.3）
-    if config.no_discharge_on_curtail and t_curt:
-        for t in t_curt:
-            if 0 <= t < horizon:
-                m += p_bd[t] == 0
-
-    # 充放互斥（MILP，默认关闭；v1.3 §2.3）
-    if config.exclusive_charge_discharge:
-        cap_p = max(bess["p_bcmax"], bess["p_bdmax"])
-        z = {t: LpVariable(f"z_chg_{t}", cat=LpBinary) for t in range(horizon)}
-        for t in range(horizon):
-            m += p_bc[t] <= cap_p * z[t]
-            m += p_bd[t] <= cap_p * (1 - z[t])
-
-    # SOC dynamics + 不可倒送（v1.3 §2.3）
-    for t in range(horizon):
-        if t == 0:
-            m += soc[t] == soc_current + bess["p_bceff"] * p_bc[t] * DT - (p_bd[t] * DT) / bess["p_bdeff"]
-        else:
-            m += soc[t] == soc[t - 1] + bess["p_bceff"] * p_bc[t] * DT - (p_bd[t] * DT) / bess["p_bdeff"]
-        m += q_real_load[t] + (p_bc[t] - p_bd[t]) * DT >= 0
-
-    # Terminal SOC constraint
-    terminal_min = config.soc_terminal_min if config.soc_terminal_min is not None else bess["socini"]
-    m += soc[horizon - 1] >= terminal_min
-
-    # DR 履约锁定：响应时段 p_b 固定为响应曲线（DR_FULFILL，v1.3 §9）
-    if dr_lock_p_b is not None:
-        for t in range(min(len(dr_lock_p_b), horizon)):
-            if not np.isnan(dr_lock_p_b[t]):
-                m += p_bd[t] - p_bc[t] == dr_lock_p_b[t]
-
-    # Deviation penalty linearization (v1.3 §7.1)
-    for t in range(horizon):
-        q_real_t = q_real_load[t] + (p_bc[t] - p_bd[t]) * DT
-        if p_real_pre[t] > p_dayah[t]:
-            m += q_aux[t] >= (q_dayah[t] - config.lam_u * q_real_t) * (p_real_pre[t] - p_dayah[t])
-        else:
-            m += q_aux[t] >= (config.lam_l * q_real_t - q_dayah[t]) * (p_dayah[t] - p_real_pre[t])
-
-    # Objective components
-    obj_bes = lpSum(
-        p_real_pre[t] * (p_bd[t] - p_bc[t]) * DT
-        - config.deg_cost_per_mwh * (p_bc[t] + p_bd[t]) * DT
-        for t in range(horizon)
+    """Freeze execution and optimize only the remaining physical schedule."""
+    load = np.asarray(load_forecast, dtype=float)
+    price = np.asarray(realtime_price_forecast, dtype=float)
+    if (
+        load.ndim != 1
+        or price.shape != load.shape
+        or not len(load)
+        or not np.isfinite(load).all()
+        or not np.isfinite(price).all()
+    ):
+        raise ValueError(
+            "remaining load and price forecasts must be aligned finite vectors"
+        )
+    frozen_prefix = executed_prefix.copy(deep=True)
+    previous_remaining = _remaining_previous_schedule(
+        previous_plan,
+        len(frozen_prefix),
+        len(load),
     )
-    obj_pen = lpSum(q_aux[t] for t in range(horizon))
+    bess_current = {**bess, "socini": float(current_soc)}
 
-    # Smoothness penalty (if previous plan provided) - linearized with auxiliary vars
-    obj_smooth = 0
-    if prev_p_b is not None and len(prev_p_b) == horizon:
-        smooth_weight = 0.1
-        delta_pos = {t: LpVariable(f"delta_pos_{t}", lowBound=0) for t in range(horizon)}
-        delta_neg = {t: LpVariable(f"delta_neg_{t}", lowBound=0) for t in range(horizon)}
-        for t in range(horizon):
-            p_b_t = p_bd[t] - p_bc[t]
-            m += delta_pos[t] >= p_b_t - prev_p_b[t]
-            m += delta_neg[t] >= prev_p_b[t] - p_b_t
-        obj_smooth = lpSum(smooth_weight * (delta_pos[t] + delta_neg[t]) for t in range(horizon))
+    try:
+        schedule = solve_day_ahead_operational(
+            load,
+            price,
+            bess_current,
+            config,
+            q_long=q_long,
+            p_long=p_long,
+            p_ref=p_ref,
+            scenario_set=scenario_set,
+            dr_adjustment=dr_adjustment,
+            decision_time=decision_time,
+            input_versions=input_versions,
+            config_version=config_version,
+            solver=solver,
+        )
+        fallback_used = False
+    except RuntimeError as exc:
+        schedule = _clip_fallback(
+            previous_remaining,
+            load_forecast=load,
+            price_forecast=price,
+            current_soc=current_soc,
+            bess=bess,
+            config=config,
+            decision_time=decision_time,
+            reason=str(exc),
+            q_long=q_long,
+            p_long=p_long,
+            p_ref=p_ref,
+            dr_adjustment=dr_adjustment,
+        )
+        fallback_used = True
 
-    m += -config.w_bes * obj_bes + config.w_pen * obj_pen + obj_smooth
-
-    m.solve(PULP_CBC_CMD(msg=False))
-    check_pulp_status(m, "intraday rolling")
-
-    p_bc_arr = np.array([value(p_bc[t]) for t in range(horizon)])
-    p_bd_arr = np.array([value(p_bd[t]) for t in range(horizon)])
-    p_b_arr = p_bd_arr - p_bc_arr
-    soc_arr = np.array([soc_current] + [value(soc[t]) for t in range(horizon)])
-
-    # Compute adjustment metrics
-    delta_p_b = p_b_arr - (prev_p_b if prev_p_b is not None else np.zeros(horizon))
-    delta_revenue = float(-value(m.objective))  # minimize → negative is revenue
-
-    # 调整原因（v1.3 §7.2 输出增量）
-    reasons = []
-    if np.abs(delta_p_b).max() > 0.1:
-        reasons.append("price_change")
-    if prev_p_b is not None and len(prev_p_b) == horizon:
-        # 平滑项显著激活说明负荷/价差结构较上版变化大
-        smooth_val = float(np.abs(delta_p_b).sum())
-        if smooth_val > 0.1 * horizon * bess["p_bdmax"] * 0.1:
-            reasons.append("load_change")
-    if soc_arr[-1] <= terminal_min + 0.01:
-        reasons.append("soc_limit")
-    if dr_lock_p_b is not None and np.any(~np.isnan(dr_lock_p_b)):
-        reasons.append("dr")
-
-    schedule = DayAheadPlan(
-        p_bc=p_bc_arr,
-        p_bd=p_bd_arr,
-        p_b=p_b_arr,
-        soc=soc_arr,
-        q_dayah=q_dayah,  # carry over
-        expected_cost=float(value(m.objective)),
-        expected_revenue=delta_revenue,
-        constraint_flags=_collect_constraint_flags(p_bc_arr, p_bd_arr, soc_arr, q_real_load, bess),
-    )
-
+    previous_net = previous_remaining["p_net"].reset_index(drop=True)
+    new_net = schedule.resource_schedule["p_net"].reset_index(drop=True)
+    delta = new_net - previous_net
+    reasons: list[str] = []
+    if fallback_used:
+        reasons.append("solve_failure")
+    elif not np.allclose(delta, 0.0, atol=1e-9, rtol=0.0):
+        reasons.append("forecast_update")
     adjustment = IntradayAdjustment(
-        p_b_new=p_b_arr,
-        delta_p_b=delta_p_b,
-        delta_revenue=delta_revenue,
-        reasons=reasons,
+        p_net_new=new_net,
+        delta_p_net=delta,
+        expected_cost_delta=(
+            schedule.expected_cost - previous_plan.expected_cost
+        ),
+        reasons=tuple(reasons),
     )
-
-    return IntradayPlan(schedule=schedule, adjustment=adjustment)
-
-
-def _check_no_nan(arr: np.ndarray, name: str) -> None:
-    """预测输入含 NaN 时默认报错，不容忍静默前向填充（v1.3 §11.4.2）。"""
-    if np.isnan(arr).any():
-        raise ValueError(f"{name} contains NaN; optimization modules reject NaN forecasts (v1.3 §11.4.2)")
-
-
-def _collect_constraint_flags(
-    p_bc_arr: np.ndarray,
-    p_bd_arr: np.ndarray,
-    soc_arr: np.ndarray,
-    q_load: np.ndarray,
-    bess: dict,
-) -> dict[str, list[int]]:
-    """求解后审计约束激活时段（v1.3 §6.5 约束提示）。"""
-    tol = 1e-3
-    flags: dict[str, list[int]] = {}
-    flags["soc_at_max"] = [t for t in range(len(soc_arr)) if soc_arr[t] >= bess["socmax"] - tol]
-    flags["soc_at_min"] = [t for t in range(len(soc_arr)) if soc_arr[t] <= bess["socmin"] + tol]
-    flags["p_c_at_limit"] = [t for t in range(len(p_bc_arr)) if p_bc_arr[t] >= bess["p_bcmax"] - tol]
-    flags["p_d_at_limit"] = [t for t in range(len(p_bd_arr)) if p_bd_arr[t] >= bess["p_bdmax"] - tol]
-    net_load = q_load + (p_bc_arr - p_bd_arr) * DT
-    flags["no_reverse_active"] = [t for t in range(len(q_load)) if net_load[t] <= tol]
-    return {k: v for k, v in flags.items() if v}
+    return IntradayPlan(
+        schedule=schedule,
+        executed_prefix=frozen_prefix,
+        adjustment=adjustment,
+        fallback_used=fallback_used,
+    )

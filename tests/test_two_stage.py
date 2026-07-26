@@ -1,13 +1,14 @@
 """Two-stage + CVaR 模型测试。"""
 
-import pytest
-from pyomo.environ import SolverFactory
+from pulp import value
+
+from ele_trading.optimization.solver import SolveStatus, solve_pulp_model
 from ele_trading.optimization.two_stage_cvar import build_two_stage_cvar_model
 
 
 def _solver():
-    """返回可用的求解器。"""
-    return SolverFactory('glpk')
+    """返回统一的 PuLP/CBC typed 求解边界。"""
+    return solve_pulp_model
 
 
 def test_build_and_solve():
@@ -24,12 +25,10 @@ def test_build_and_solve():
         soc0=5.0, soc_min=1.0, soc_max=10.0,
         p_ch_max=3.0, p_dis_max=3.0,
         eta_ch=0.95, eta_dis=0.95, deg_cost=0.01,
+        kappa_pos=0.25, kappa_neg=0.25,
     )
-    solver = _solver()
-    result = solver.solve(m)
-    # 检查终止条件为 optimal
-    from pyomo.environ import TerminationCondition
-    assert str(result.solver.termination_condition) == str(TerminationCondition.optimal)
+    result = _solver()(m)
+    assert result.status is SolveStatus.OPTIMAL
 
 
 def test_objective_is_finite():
@@ -46,10 +45,10 @@ def test_objective_is_finite():
         soc0=5.0, soc_min=1.0, soc_max=10.0,
         p_ch_max=3.0, p_dis_max=3.0,
         eta_ch=0.95, eta_dis=0.95, deg_cost=0.01,
+        kappa_pos=0.25, kappa_neg=0.25,
     )
-    solver = _solver()
-    solver.solve(m)
-    obj_val = m.obj()
+    _solver()(m)
+    obj_val = value(m.objective)
     assert obj_val is not None
     assert abs(obj_val) < 1e12
 
@@ -69,9 +68,10 @@ def test_cvar_coefficient_present():
         soc0=5.0, soc_min=1.0, soc_max=10.0,
         p_ch_max=3.0, p_dis_max=3.0,
         eta_ch=0.95, eta_dis=0.95, deg_cost=0.01,
+        kappa_pos=0.25, kappa_neg=0.25,
         alpha=alpha, lam=1.0,
     )
-    solver = _solver()
-    solver.solve(m)
+    result = _solver()(m)
     # 模型能求解即表明 CVaR 约束结构合理
-    assert m.obj() is not None
+    assert result.status is SolveStatus.OPTIMAL
+    assert value(m.objective) is not None

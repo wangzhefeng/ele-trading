@@ -1,67 +1,52 @@
-# Mengxi electricity market configuration (v1 design document §5.1)
-# All parameters marked TODO(rule-confirm) use default values pending written confirmation.
+# Active Mengxi single-settlement configuration.
+# Values marked TODO(rule-confirm) are placeholders pending written rules.
 
 market:
-  name: mengxi
-  settlement_mode: mengxi_band  # only mengxi_band supported
+  market_name: mengxi
+  settlement_mode: mengxi_single
   settle_periods: 96
+  dt: 0.25  # 15-minute periods
 
-# Deviation bands (TODO(rule-confirm) #1, #2)
-deviation:
-  lam_l: 0.95
-  lam_u: 1.05
-  lam_l_long: 0.90
-  lam_u_long: 1.05
-  m_long: 1.2
+long_recovery:
+  long_recovery_lower_ratio: 0.90  # TODO(rule-confirm)
+  long_recovery_upper_ratio: 1.05  # TODO(rule-confirm)
+  long_recovery_multiplier: 1.20  # TODO(rule-confirm)
+  long_recovery_applies_to_storage: true  # TODO(rule-confirm)
+  pos_tol_ratio: 0.05  # TODO(rule-confirm)
 
-# Bid and risk controls
-bid:
-  gap: 3.0  # 元/MWh
-  bias_k: 1
-  price_floor: 0.0  # 元/MWh (TODO(rule-confirm) #3)
-  price_cap: 1500.0  # 元/MWh
+scenario:
+  two_stage_scenario_deviation_cost_positive: 0.25  # TODO(rule-confirm)
+  two_stage_scenario_deviation_cost_negative: 0.25  # TODO(rule-confirm)
+  scenario_method: lhs
+  scenario_count: 20
+  scenario_seed: 7
+  scenario_cvar_alpha: 0.95
+  scenario_cvar_weight: 0.0
 
-# 风控裁剪（v1.3 §6.4）
-risk:
-  max_step_ratio: 0.2  # 相邻刻申报量变化 ≤ max_step_ratio * Q_base
-  daily_qty_band: 0.15  # 当日申报总量 ∈ 预测日总电量 × [0.85, 1.15]
-  long_band_check: true  # 申报量与 Q_long 合计越出中长期带时告警（不强制）
-
-# 日前优化模式（v1.3 §6.2/§6.5）
-dayahead:
-  mode: B  # A=实时价套利 / B=有效边际电价(默认) / C=联合优化申报量
-  price_reporting: false  # 报量不报价（TODO(rule-confirm) #3）；true 时输出分段申报价
-
-# Strategy weights (§5.2)
-strategy:
-  default: BALANCED
-  weights:
-    w_bes: 1.0
-    w_pen: 1.0
-    w_ecost: 0.0
-    w_xu: 0.0
-    w_dr: 0.0
-
-# BESS operational constraints (§4.3)
 bess:
-  soc_terminal_min: null  # null → use socini
-  exclusive_charge_discharge: false
-  dayahead_power_margin: 0.8
-  throughput_max_ratio: 1.0  # 0 to disable
-  deg_cost_per_mwh: 0.0
-  market_role: behind_meter  # or independent
+  soc_terminal_min: null
+  exclusive_charge_discharge: true
+  operational_power_margin: 0.80
+  throughput_max_ratio: 1.0
+  deg_cost_per_mwh: 0.0  # TODO(rule-confirm)
+  bess_market_role: behind_meter
   no_discharge_on_curtail: false
 
-# Mid-long term
-mid_long:
-  pos_tol_ratio: 0.05
-  cpen_long_applies_to_storage: true
-
-# Demand response
 dr:
-  aggregation: aggregator  # or vpp / independent
+  dr_aggregation: aggregator
+  dr_compensation_per_mwh: 2000.0  # TODO(rule-confirm)
+  dr_penalty_per_mwh: 3000.0  # TODO(rule-confirm)
+  dr_minimum_margin: 0.0  # TODO(rule-confirm)
+  dr_minimum_response_mwh: 0.1  # TODO(rule-confirm)
+  dr_window_start: 72  # TODO(rule-confirm)
+  dr_window_end: 80  # TODO(rule-confirm)
 
-# Forecast calibration for backtest noise injection (§15.5)
-forecast:
-  sca_price: 0.10
-  sca_power: 0.05
+monthly:
+  monthly_price_floor: 0.0  # TODO(rule-confirm)
+  monthly_price_cap: 1500.0  # TODO(rule-confirm)
+  monthly_trade_unit_mwh: 1.0  # TODO(rule-confirm)
+
+solver:
+  solver_name: cbc
+  solver_time_limit_seconds: 30.0
+  solver_mip_gap: 0.0

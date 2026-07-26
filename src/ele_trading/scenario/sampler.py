@@ -29,6 +29,8 @@ def generate_price_scenarios(
     """
     if num_scenarios <= 0:
         raise ValueError('num_scenarios 必须大于 0')
+    if method not in {'lhs', 'mc'}:
+        raise ValueError("method must be 'lhs' or 'mc'")
 
     T = len(point_forecast)
     base = np.asarray(point_forecast, dtype=float)

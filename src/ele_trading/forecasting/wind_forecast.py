@@ -6,6 +6,10 @@ import numpy as np
 import pandas as pd
 
 from .base import ForecastOutput
+from .renewable_forecast import (
+    calibrate_equivalent_hours,
+    wind_power_curve,
+)
 
 
 class WindPowerForecaster:
@@ -29,6 +33,12 @@ class WindPowerForecaster:
     ) -> None:
         if mode not in ('physics', 'statistical'):
             raise ValueError(f"mode must be 'physics' or 'statistical', got {mode!r}")
+        if hub_height <= 0.0 or wind_speed_ref_height <= 0.0:
+            raise ValueError(
+                "hub_height and wind_speed_ref_height must be positive"
+            )
+        if wind_shear_exp < 0.0:
+            raise ValueError("wind_shear_exp must not be negative")
         self.mode = mode
         self.hub_height = hub_height
         self.wind_shear_exp = wind_shear_exp
@@ -61,14 +71,24 @@ class WindPowerForecaster:
             capacity_mw: Installed capacity (MW).
             equiv_hours: Annual equivalent full-load hours for calibration.
         """
-        from ele_trading.capacity_planning.resource_simulation.wind_simulation_v2 import WindSimulator
-        sim = WindSimulator(
-            hub_height=self.hub_height,
-            wind_shear_exp=self.wind_shear_exp,
-            wind_speed_ref_height=self.wind_speed_ref_height,
-        )
-        result = sim.simulate(weather_df, equiv_hours=equiv_hours, target_capacity_mw=capacity_mw)
-        point = (result.power_series / 1000.0).tolist()  # kW → MW
+        if capacity_mw <= 0.0:
+            raise ValueError("capacity_mw must be positive")
+        if "wind_speed" in weather_df:
+            speed = weather_df["wind_speed"].to_numpy(dtype=float)
+            reference_height = self.wind_speed_ref_height
+        elif "wind_speed_100m" in weather_df:
+            speed = weather_df["wind_speed_100m"].to_numpy(dtype=float)
+            reference_height = 100.0
+        else:
+            raise ValueError("weather_df must contain wind_speed")
+        hub_speed = speed * (
+            self.hub_height / reference_height
+        ) ** self.wind_shear_exp
+        point = calibrate_equivalent_hours(
+            wind_power_curve(hub_speed, capacity_mw),
+            capacity_mw,
+            equiv_hours,
+        ).tolist()
         horizon = len(point)
         lower = [min(max(0.0, p * 0.75), capacity_mw) for p in point]
         upper = [min(capacity_mw, p * 1.25) for p in point]

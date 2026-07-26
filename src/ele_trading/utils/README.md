@@ -8,14 +8,10 @@
 - **`time_splitting.py`** — 时间范围拆分（月份、日粒度）
 - **`time_process.py`** — 时间处理辅助（内部使用）
 - **`data_alignment.py`** — 时间序列对齐与规范化
-- **`energy_price.py`** — 电价相关工具
-- **`demand_charge.py`** — 需量电费计算工具
 - **`num_utils.py`** — 数值清洗和浮点扫描工具
 - **`io.py`** — 文件读写（YAML、文本）
 - **`log_util.py`** — 日志工具
 - **`day2month.py`** — 日期 → 月份映射
-- **`pv_es_plot.py`** — 光储策略绘图
-- **`bess_charge_discharge_plot.py`** — 储能充放电收益测算报告绘图（输入数据在 `data/bess_charge_discharge/`，输出图在 `results/bess_charge_discharge/`）
 
 ---
 
@@ -33,18 +29,12 @@ from ele_trading.utils import (
     # data_alignment
     as_time_series, normalize_time_and_load, align_to_time, align_and_merge,
     ensure_datetime_index, read_time_value_csv,
-    # energy_price
-    flatten_valley_price_diff,
-    # demand_charge
-    monthly_peak_demand_cost,
     # num_utils
     clean_value, clean_list, inclusive_float_range,
     # io
     read_yaml, write_text,
     # log_util
     logger,
-    # pv_es_plot
-    plot_strategy_power_detail,
 )
 ```
 
@@ -94,39 +84,6 @@ from ele_trading.utils import (
 | `ensure_datetime_index(df, ...)` | 返回以 DatetimeIndex 排序的 DataFrame 副本 |
 | `read_time_value_csv(path, ...)` | 读取 time/value CSV 并按时间范围返回 Series |
 
-### energy_price.py
-
-电价相关工具。
-
-#### `flatten_valley_price_diff(df, *, price_col='elePrice', type_col='eleType', valley_types=('谷', '深谷'), inplace=False)`
-
-将谷/深谷电价展平为上一个谷值电价。
-
-在电价 DataFrame 中，谷和深谷时段通常有不同电价。此函数将深谷电价替换为前一个谷电价，使所有谷时段电价一致。适用于需要统一谷时段电价进行收益计算的场景。
-
-**参数：**
-
-- `df` — 包含电价和电价类型的 DataFrame
-- `price_col` — 电价列名
-- `type_col` — 电价类型列名（如 '峰'、'谷'、'深谷'、'平'）
-- `valley_types` — 需要展平的类型值
-- `inplace` — 是否原地修改
-
-**返回：** 处理后的 DataFrame
-
-**示例：**
-
-```python
-from ele_trading.utils.energy_price import flatten_valley_price_diff
-df = flatten_valley_price_diff(df)
-```
-
-### demand_charge.py
-
-| 函数 | 说明 |
-|------|------|
-| `monthly_peak_demand_cost(load, demand_price, ...)` | 按月最大需量合计计算需量电费 |
-
 ### num_utils.py
 
 | 函数 | 说明 |
@@ -155,19 +112,3 @@ df = flatten_valley_price_diff(df)
 ### day2month.py
 
 日期到月份的映射。
-
-### pv_es_plot.py
-
-光储策略绘图。
-
-| 函数 | 说明 |
-|------|------|
-| `plot_strategy_power_detail(...)` | 绘制光储策略功率详情图 |
-
-### bess_charge_discharge_plot.py
-
-储能充放电收益测算报告绘图脚本（`__main__` 直接运行，非库函数）。按夏/冬/其他月份分组，绘制典型日逐小时充放电功率与电价时段背景。
-
-- 输入数据：`data/bess_charge_discharge/{proj1,wuhu}/`（电价、调度结果 CSV）
-- 输出图：`results/bess_charge_discharge/{proj1,wuhu}/`（季节对比 PNG）
-- 路径基于仓库根解析，任意目录下运行均可。

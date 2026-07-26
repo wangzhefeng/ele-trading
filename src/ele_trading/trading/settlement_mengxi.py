@@ -1,133 +1,167 @@
-"""Mengxi band-style settlement (§10.1).
-
-Implements the quantity-price settlement C, difference settlement C2,
-day-ahead deviation penalty Cpen_dayah, and mid-long-term recovery Cpen_long.
-"""
+"""Active Mengxi single-settlement calculations."""
 
 from __future__ import annotations
 
 import numpy as np
 
-
-def aggregate_to_settle_periods(q: np.ndarray, settle_periods: int) -> np.ndarray:
-    """将 96 点决策电量聚合到结算时段（v1.3 §2.1）。
-
-    决策量（MWh/刻，电量）按 ``96 / settle_periods`` 点一组求和，保证能量守恒；
-    价格序列如需折算应按结算时段内电量加权平均（由调用方处理）。
-    """
-    n = len(q)
-    if settle_periods <= 0 or n % settle_periods != 0:
-        raise ValueError(f"settle_periods={settle_periods} must be a positive divisor of len(q)={n}")
-    if settle_periods == n:
-        return np.asarray(q, dtype=float).copy()
-    group = n // settle_periods
-    return np.asarray(q, dtype=float).reshape(settle_periods, group).sum(axis=1)
+from ele_trading.trading.contracts import (
+    DecisionTrace,
+    MarketConfig,
+    SettlementReport,
+)
 
 
-def compute_settlement_C(
+def _aligned_arrays(*values: np.ndarray) -> tuple[np.ndarray, ...]:
+    arrays = tuple(np.asarray(value, dtype=float) for value in values)
+    if not arrays or any(array.shape != arrays[0].shape for array in arrays):
+        raise ValueError("settlement inputs must use identical shapes")
+    if any(not np.isfinite(array).all() for array in arrays):
+        raise ValueError("settlement inputs must contain finite values")
+    return arrays
+
+
+def compute_energy_cost(
+    q_real: np.ndarray,
+    p_real: np.ndarray,
+) -> np.ndarray:
+    """Return period energy cost ``Q_real * p_real``."""
+    q_real_arr, p_real_arr = _aligned_arrays(q_real, p_real)
+    return q_real_arr * p_real_arr
+
+
+def compute_contract_difference(
     q_long: np.ndarray,
     p_long: np.ndarray,
-    q_dayah: np.ndarray,
-    p_dayah: np.ndarray,
-    q_real: np.ndarray,
-    p_real: np.ndarray,
+    *,
+    p_ref: np.ndarray,
 ) -> np.ndarray:
-    """Quantity-price settlement (main caliber).
-
-    C[t] = Q_long[t]*p_long[t]
-         + (Q_dayah[t]-Q_long[t])*p_dayah[t]
-         + (Q_real[t]-Q_dayah[t])*p_real[t]
-    """
-    return (
-        q_long * p_long
-        + (q_dayah - q_long) * p_dayah
-        + (q_real - q_dayah) * p_real
+    """Return period contract difference ``Q_long * (p_long - p_ref)``."""
+    q_long_arr, p_long_arr, p_ref_arr = _aligned_arrays(
+        q_long,
+        p_long,
+        p_ref,
     )
+    return q_long_arr * (p_long_arr - p_ref_arr)
 
 
-def compute_settlement_C2(
-    q_long: np.ndarray,
-    p_long: np.ndarray,
-    q_dayah: np.ndarray,
-    p_dayah: np.ndarray,
-    q_real: np.ndarray,
-    p_real: np.ndarray,
-) -> np.ndarray:
-    """Difference settlement (validation caliber).
-
-    C2[t] = (Q_long[t]-Q_real[t])*(p_long[t]-p_dayah[t])
-          + (Q_dayah[t]-Q_real[t])*(p_dayah[t]-p_real[t])
-          + Q_real[t]*p_long[t]
-    """
-    return (
-        (q_long - q_real) * (p_long - p_dayah)
-        + (q_dayah - q_real) * (p_dayah - p_real)
-        + q_real * p_long
-    )
-
-
-def compute_cpen_dayah(
-    q_dayah: np.ndarray,
-    p_dayah: np.ndarray,
-    q_real: np.ndarray,
-    p_real: np.ndarray,
-    lam_l: float,
-    lam_u: float,
-) -> np.ndarray:
-    """Day-ahead over/under-recovery (band caliber).
-
-    If Q_dayah > lam_u*Q_real and p_dayah < p_real:
-        Cpen = (Q_dayah - lam_u*Q_real) * (p_real - p_dayah)
-    If Q_dayah < lam_l*Q_real and p_dayah > p_real:
-        Cpen = (lam_l*Q_real - Q_dayah) * (p_dayah - p_real)
-    Else 0.
-    """
-    cpen = np.zeros_like(q_dayah, dtype=float)
-
-    # Over-declaration band breach with favorable price spread
-    mask_over = (q_dayah > lam_u * q_real) & (p_dayah < p_real)
-    cpen[mask_over] = (q_dayah[mask_over] - lam_u * q_real[mask_over]) * (
-        p_real[mask_over] - p_dayah[mask_over]
-    )
-
-    # Under-declaration band breach with unfavorable price spread
-    mask_under = (q_dayah < lam_l * q_real) & (p_dayah > p_real)
-    cpen[mask_under] = (lam_l * q_real[mask_under] - q_dayah[mask_under]) * (
-        p_dayah[mask_under] - p_real[mask_under]
-    )
-
-    return cpen
-
-
-def compute_cpen_long(
+def compute_long_recovery(
+    *,
     q_long_month: float,
     p_long_month: float,
     q_real_month: float,
-    p_spot_month: float,
-    lam_l_long: float,
-    lam_u_long: float,
-    m_long: float,
+    p_ref_month: float,
+    config: MarketConfig,
 ) -> float:
-    """Mid-long-term monthly recovery.
-
-    sign_ratio = Q_long_month / Q_real_month
-    If sign_ratio > lam_u_long and p_long_month < p_spot_month:
-        Cpen = m_long * (Q_long_month - lam_u_long*Q_real_month) * (p_spot_month - p_long_month)
-    If sign_ratio < lam_l_long and p_long_month > p_spot_month:
-        Cpen = m_long * (lam_l_long*Q_real_month - Q_long_month) * (p_long_month - p_spot_month)
-    Else 0.
-    """
-    if q_real_month <= 0:
+    """Apply the configured monthly long-position shortage/excess rule."""
+    values = np.asarray(
+        [q_long_month, p_long_month, q_real_month, p_ref_month],
+        dtype=float,
+    )
+    if not np.isfinite(values).all():
+        raise ValueError("long-recovery inputs must be finite")
+    if q_real_month <= 0.0:
         return 0.0
 
-    sign_ratio = q_long_month / q_real_month
-
-    if sign_ratio > lam_u_long and p_long_month < p_spot_month:
-        return m_long * (q_long_month - lam_u_long * q_real_month) * (
-            p_spot_month - p_long_month
+    ratio = q_long_month / q_real_month
+    if (
+        ratio > config.long_recovery_upper_ratio
+        and p_long_month < p_ref_month
+    ):
+        return (
+            config.long_recovery_multiplier
+            * (
+                q_long_month
+                - config.long_recovery_upper_ratio * q_real_month
+            )
+            * (p_ref_month - p_long_month)
         )
-    if sign_ratio < lam_l_long and p_long_month > p_spot_month:
-        return m_long * (lam_l_long * q_real_month - q_long_month) * (
-            p_long_month - p_spot_month
+    if (
+        ratio < config.long_recovery_lower_ratio
+        and p_long_month > p_ref_month
+    ):
+        return (
+            config.long_recovery_multiplier
+            * (
+                config.long_recovery_lower_ratio * q_real_month
+                - q_long_month
+            )
+            * (p_long_month - p_ref_month)
         )
     return 0.0
+
+
+def build_settlement_report(
+    *,
+    q_real: np.ndarray,
+    p_real: np.ndarray,
+    q_long: np.ndarray,
+    p_long: np.ndarray,
+    p_ref: np.ndarray,
+    long_recovery: float = 0.0,
+    dr_adjustment: float = 0.0,
+    degradation_cost: float = 0.0,
+    execution_adjustment: float = 0.0,
+    baseline_cost: float = 0.0,
+    trace: DecisionTrace | None = None,
+) -> SettlementReport:
+    """Build an itemized report with each signed adjustment counted once."""
+    scalar_items = np.asarray(
+        [
+            long_recovery,
+            dr_adjustment,
+            degradation_cost,
+            execution_adjustment,
+            baseline_cost,
+        ],
+        dtype=float,
+    )
+    if not np.isfinite(scalar_items).all():
+        raise ValueError("settlement adjustments must be finite")
+
+    energy_cost = float(np.sum(compute_energy_cost(q_real, p_real)))
+    contract_difference = float(
+        np.sum(
+            compute_contract_difference(
+                q_long,
+                p_long,
+                p_ref=p_ref,
+            )
+        )
+    )
+    total_cost = float(
+        energy_cost
+        + contract_difference
+        + long_recovery
+        + dr_adjustment
+        + degradation_cost
+        + execution_adjustment
+    )
+    return SettlementReport(
+        energy_cost=energy_cost,
+        contract_difference=contract_difference,
+        long_recovery=float(long_recovery),
+        dr_adjustment=float(dr_adjustment),
+        degradation_cost=float(degradation_cost),
+        execution_adjustment=float(execution_adjustment),
+        total_cost=total_cost,
+        baseline_cost=float(baseline_cost),
+        delta_cost=float(baseline_cost - total_cost),
+        trace=trace,
+    )
+
+
+def aggregate_to_settle_periods(
+    quantity: np.ndarray,
+    settle_periods: int,
+) -> np.ndarray:
+    """Aggregate interval energy while preserving the total quantity."""
+    values = np.asarray(quantity, dtype=float)
+    if (
+        settle_periods <= 0
+        or values.ndim != 1
+        or len(values) % settle_periods != 0
+    ):
+        raise ValueError(
+            "settle_periods must be a positive divisor of the horizon"
+        )
+    return values.reshape(settle_periods, -1).sum(axis=1)

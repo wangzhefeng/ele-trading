@@ -1,78 +1,22 @@
-from __future__ import annotations
+"""Deprecated generic loader imports.
 
-from pathlib import Path
-from typing import Iterable, List
+New code should use ``market_data`` and ``asset_data`` directly. This module
+contains no investment profile or resource-capacity semantics.
+"""
 
-import pandas as pd
-
-from ele_trading.utils.io import read_yaml
-from .schemas import (
-    CaseDataset,
-    LoadProfileBuildConfig,
-    PriceSeries,
-    PVProfileConfig,
-    RenewableProfileResult,
-    ScenarioRecord,
-    BESSConfig,
-    WindProfileConfig,
+from .asset_data import BESSConfig, load_bess_config
+from .market_data import (
+    load_observed_power_series,
+    load_price_scenarios,
+    load_price_series,
+    scenario_weights,
 )
 
-
-def load_price_series(path: str | Path, time_col: str, price_col: str, label: str) -> PriceSeries:
-    """从 CSV 读取价格序列。"""
-    df = pd.read_csv(path)
-    return PriceSeries(
-        timestamps=df[time_col].astype(int).tolist(),
-        prices=df[price_col].astype(float).tolist(),
-        label=label,
-    )
-
-
-def load_bess_config(path: str | Path) -> BESSConfig:
-    """读取储能参数配置。"""
-    return BESSConfig(**read_yaml(path))
-
-
-def load_price_scenarios(path: str | Path) -> List[ScenarioRecord]:
-    """读取价格场景表。"""
-    df = pd.read_csv(path)
-    return [ScenarioRecord(**row) for row in df.to_dict(orient='records')]
-
-
-def scenario_weights(records: Iterable[ScenarioRecord]) -> dict[str, float]:
-    """汇总每个场景的权重。"""
-    weights: dict[str, float] = {}
-    for record in records:
-        weights[record.scenario] = float(record.weight)
-    return weights
-
-
-def load_load_profile(path: str | Path) -> pd.DataFrame:
-    df = pd.read_csv(path)
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    return df
-
-
-def load_load_profile_build_config(path: str | Path) -> LoadProfileBuildConfig:
-    return LoadProfileBuildConfig(**read_yaml(path))
-
-
-def load_pv_profile_config(path: str | Path) -> PVProfileConfig:
-    return PVProfileConfig(**read_yaml(path))
-
-
-def load_wind_profile_config(path: str | Path) -> WindProfileConfig:
-    return WindProfileConfig(**read_yaml(path))
-
-
-def load_renewable_profile(path: str | Path, value_col: str) -> RenewableProfileResult:
-    df = pd.read_csv(path)
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    series = pd.Series(df[value_col].astype(float).values, index=df["timestamp"], name=value_col)
-    return RenewableProfileResult(power_series=series, metadata={"source": str(path)}, quality_flags=None)
-
-
-def load_case_dataset(path: str | Path) -> CaseDataset:
-    df = pd.read_csv(path)
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    return CaseDataset(frame=df, metadata={"source": str(path), "rows": len(df)})
+__all__ = [
+    "BESSConfig",
+    "load_bess_config",
+    "load_observed_power_series",
+    "load_price_scenarios",
+    "load_price_series",
+    "scenario_weights",
+]

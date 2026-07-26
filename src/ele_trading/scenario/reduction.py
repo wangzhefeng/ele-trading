@@ -1,59 +1,503 @@
+"""Backward Kantorovich/Wasserstein L1 scenario reduction."""
+
 from __future__ import annotations
 
+from dataclasses import asdict, dataclass
+from typing import overload
+
 import numpy as np
+import pandas as pd
 from scipy.spatial.distance import cdist
 
+from .contracts import Scenario, ScenarioSet
 from .sampler import PriceScenario
 
 
-def normalize_weights(scenarios: list[PriceScenario]) -> list[PriceScenario]:
-    """把场景权重归一化到 1。"""
-    total = sum(s.weight for s in scenarios)
-    if total <= 0:
-        raise ValueError('场景权重和必须大于 0')
-    return [PriceScenario(name=s.name, prices=s.prices, weight=s.weight / total) for s in scenarios]
+@dataclass(frozen=True, slots=True)
+class ReductionDiagnostics:
+    """Distribution and event-retention evidence for one reduction."""
+
+    original_count: int
+    retained_count: int
+    wasserstein_l1: float
+    probability_transfers: dict[str, str]
+    mean_drift: dict[str, float]
+    quantile_drift: dict[str, float]
+    critical_peak_scenario_id: str
+    critical_ramp_scenario_id: str
+    critical_events_retained: bool
 
 
-def reduce_scenarios(scenarios: list[PriceScenario], top_k: int) -> list[PriceScenario]:
-    """Kantorovich/Wasserstein 后向缩减。
+def normalize_weights(
+    scenarios: list[PriceScenario],
+) -> list[PriceScenario]:
+    """Normalize legacy price-scenario weights to one."""
+    weights = np.asarray(
+        [scenario.weight for scenario in scenarios],
+        dtype=float,
+    )
+    if (
+        not np.isfinite(weights).all()
+        or (weights < 0.0).any()
+        or float(weights.sum()) <= 0.0
+    ):
+        raise ValueError("场景权重必须有限、非负且权重和大于 0")
+    total = float(weights.sum())
+    return [
+        PriceScenario(
+            name=scenario.name,
+            prices=list(scenario.prices),
+            weight=float(scenario.weight) / total,
+        )
+        for scenario in scenarios
+    ]
 
-    迭代剔除「转移代价最小」的场景（Heitsch & Römisch 2003）：
-    1. 计算所有场景间 L1 距离矩阵。
-    2. 每轮找出使 Kantorovich 距离增量最小的场景并剔除。
-    3. 将其权重转移给距离最近的保留场景。
-    4. 重复直至剩余 top_k 个场景，最后归一化权重。
-    """
-    if top_k <= 0:
-        raise ValueError('top_k 必须大于 0')
-    if top_k >= len(scenarios):
-        return normalize_weights(list(scenarios))
 
-    prices_matrix = np.array([s.prices for s in scenarios], dtype=float)  # (N, T)
-    weights = np.array([s.weight for s in scenarios], dtype=float)
-    names = [s.name for s in scenarios]
-    dist_matrix = cdist(prices_matrix, prices_matrix, metric='cityblock')  # (N, N) L1
+def _joint_vectors(scenario_set: ScenarioSet) -> np.ndarray:
+    """Return unit-normalized joint trajectories for L1 comparison."""
+    target_blocks: list[np.ndarray] = []
+    for target in scenario_set.units:
+        matrix = np.vstack(
+            [
+                item.trajectories[target].to_numpy(dtype=float)
+                for item in scenario_set.scenarios
+            ]
+        )
+        value_range = float(matrix.max() - matrix.min())
+        scale = value_range if value_range > 1e-12 else 1.0
+        target_blocks.append(matrix / scale)
+    return np.hstack(target_blocks)
 
-    active = list(range(len(scenarios)))
 
-    while len(active) > top_k:
-        best_candidate = None
+def _critical_event_indices(
+    scenario_set: ScenarioSet,
+) -> tuple[int, int]:
+    targets = set(scenario_set.units)
+    load_target = next(
+        (
+            target
+            for target in ("load", "load_power")
+            if target in targets
+        ),
+        None,
+    )
+    if load_target is not None:
+        event_matrix = np.vstack(
+            [
+                item.trajectories[load_target].to_numpy(dtype=float)
+                for item in scenario_set.scenarios
+            ]
+        )
+        for renewable_target in (
+            "wind",
+            "wind_power",
+            "pv",
+            "pv_power",
+            "solar",
+            "solar_power",
+        ):
+            if renewable_target in targets:
+                event_matrix -= np.vstack(
+                    [
+                        item.trajectories[
+                            renewable_target
+                        ].to_numpy(dtype=float)
+                        for item in scenario_set.scenarios
+                    ]
+                )
+    else:
+        event_target = (
+            "price"
+            if "price" in targets
+            else next(iter(scenario_set.units))
+        )
+        event_matrix = np.vstack(
+            [
+                item.trajectories[event_target].to_numpy(dtype=float)
+                for item in scenario_set.scenarios
+            ]
+        )
+
+    peak_scores = event_matrix.max(axis=1)
+    peak_index = int(np.argmax(peak_scores))
+    if scenario_set.horizon < 2:
+        return peak_index, peak_index
+    ramp_scores = np.abs(np.diff(event_matrix, axis=1)).max(axis=1)
+    if float(ramp_scores.max()) <= 1e-12:
+        return peak_index, peak_index
+    return peak_index, int(np.argmax(ramp_scores))
+
+
+def _weighted_quantile(
+    values: np.ndarray,
+    weights: np.ndarray,
+    quantile: float,
+) -> float:
+    order = np.argsort(values, kind="stable")
+    ordered_values = values[order]
+    ordered_weights = weights[order]
+    cumulative = np.cumsum(ordered_weights)
+    index = int(np.searchsorted(cumulative, quantile, side="left"))
+    return float(ordered_values[min(index, len(values) - 1)])
+
+
+def _distribution_drift(
+    original: ScenarioSet,
+    reduced: ScenarioSet,
+    quantiles: tuple[float, ...],
+) -> tuple[dict[str, float], dict[str, float]]:
+    original_weights = np.asarray(
+        [item.probability for item in original.scenarios],
+        dtype=float,
+    )
+    reduced_weights = np.asarray(
+        [item.probability for item in reduced.scenarios],
+        dtype=float,
+    )
+    mean_drift: dict[str, float] = {}
+    quantile_drift: dict[str, float] = {}
+    for target in original.units:
+        original_values = np.vstack(
+            [
+                item.trajectories[target].to_numpy(dtype=float)
+                for item in original.scenarios
+            ]
+        )
+        reduced_values = np.vstack(
+            [
+                item.trajectories[target].to_numpy(dtype=float)
+                for item in reduced.scenarios
+            ]
+        )
+        original_mean = original_weights @ original_values
+        reduced_mean = reduced_weights @ reduced_values
+        mean_drift[target] = float(
+            np.max(np.abs(original_mean - reduced_mean))
+        )
+
+        largest_quantile_drift = 0.0
+        for time_index in range(original.horizon):
+            for quantile in quantiles:
+                before = _weighted_quantile(
+                    original_values[:, time_index],
+                    original_weights,
+                    quantile,
+                )
+                after = _weighted_quantile(
+                    reduced_values[:, time_index],
+                    reduced_weights,
+                    quantile,
+                )
+                largest_quantile_drift = max(
+                    largest_quantile_drift,
+                    abs(before - after),
+                )
+        quantile_drift[target] = float(largest_quantile_drift)
+    return mean_drift, quantile_drift
+
+
+def _reduce_scenario_set(
+    scenario_set: ScenarioSet,
+    top_k: int,
+    *,
+    quantiles: tuple[float, ...],
+    max_mean_drift: float | None,
+    max_quantile_drift: float | None,
+    preserve_critical_events: bool,
+) -> tuple[ScenarioSet, ReductionDiagnostics]:
+    if not isinstance(top_k, int) or top_k <= 0:
+        raise ValueError("top_k must be a positive integer")
+    if any(not 0.0 < quantile < 1.0 for quantile in quantiles):
+        raise ValueError("diagnostic quantiles must be within (0, 1)")
+    if (
+        max_mean_drift is not None
+        and (
+            not np.isfinite(max_mean_drift)
+            or max_mean_drift < 0.0
+        )
+    ):
+        raise ValueError("max_mean_drift must be finite and non-negative")
+    if (
+        max_quantile_drift is not None
+        and (
+            not np.isfinite(max_quantile_drift)
+            or max_quantile_drift < 0.0
+        )
+    ):
+        raise ValueError(
+            "max_quantile_drift must be finite and non-negative"
+        )
+
+    count = len(scenario_set.scenarios)
+    target_count = min(top_k, count)
+    vectors = _joint_vectors(scenario_set)
+    distances = cdist(vectors, vectors, metric="cityblock")
+    original_weights = np.asarray(
+        [item.probability for item in scenario_set.scenarios],
+        dtype=float,
+    )
+    peak_index, ramp_index = _critical_event_indices(scenario_set)
+    protected = (
+        {peak_index, ramp_index}
+        if preserve_critical_events
+        else set()
+    )
+    if len(protected) > target_count:
+        raise ValueError(
+            "top_k is too small to retain distinct critical peak/ramp events"
+        )
+
+    active = list(range(count))
+    while len(active) > target_count:
+        removable = [index for index in active if index not in protected]
+        if not removable:
+            raise ValueError(
+                "top_k is too small to retain critical peak/ramp events"
+            )
+        best_candidate: int | None = None
         best_cost = np.inf
-
-        for i in active:
-            others = [j for j in active if j != i]
-            nearest_dist = min(dist_matrix[i, j] for j in others)
-            cost = weights[i] * nearest_dist
-            if cost < best_cost:
+        for candidate in removable:
+            trial = [index for index in active if index != candidate]
+            nearest_distances = distances[:, trial].min(axis=1)
+            cost = float(original_weights @ nearest_distances)
+            if cost < best_cost - 1e-12:
                 best_cost = cost
-                best_candidate = i
-
-        others = [j for j in active if j != best_candidate]
-        nearest = min(others, key=lambda j: dist_matrix[best_candidate, j])
-        weights[nearest] += weights[best_candidate]
+                best_candidate = candidate
+        assert best_candidate is not None
         active.remove(best_candidate)
 
-    reduced = [
-        PriceScenario(name=names[i], prices=prices_matrix[i].tolist(), weight=float(weights[i]))
-        for i in active
+    assignments: dict[int, int] = {}
+    for original_index in range(count):
+        if original_index in active:
+            assignments[original_index] = original_index
+        else:
+            nearest_position = int(
+                np.argmin(distances[original_index, active])
+            )
+            assignments[original_index] = active[nearest_position]
+    retained_weights = {
+        retained_index: float(
+            sum(
+                original_weights[original_index]
+                for original_index, assigned_index in assignments.items()
+                if assigned_index == retained_index
+            )
+        )
+        for retained_index in active
+    }
+    total = sum(retained_weights.values())
+    retained_weights = {
+        index: weight / total
+        for index, weight in retained_weights.items()
+    }
+
+    probability_transfers = {
+        scenario_set.scenarios[original_index].scenario_id:
+            scenario_set.scenarios[assigned_index].scenario_id
+        for original_index, assigned_index in assignments.items()
+        if original_index != assigned_index
+    }
+    reduced_scenarios = tuple(
+        Scenario(
+            scenario_id=scenario_set.scenarios[index].scenario_id,
+            probability=retained_weights[index],
+            issue_time=scenario_set.scenarios[index].issue_time,
+            trajectories={
+                target: trajectory.copy()
+                for target, trajectory
+                in scenario_set.scenarios[index].trajectories.items()
+            },
+            seed=scenario_set.scenarios[index].seed,
+            source_versions=dict(
+                scenario_set.scenarios[index].source_versions
+            ),
+        )
+        for index in active
+    )
+    preliminary = ScenarioSet(
+        horizon=scenario_set.horizon,
+        valid_time_index=scenario_set.valid_time_index,
+        units=dict(scenario_set.units),
+        scenarios=reduced_scenarios,
+        metadata=dict(scenario_set.metadata),
+    )
+    mean_drift, quantile_drift = _distribution_drift(
+        scenario_set,
+        preliminary,
+        quantiles,
+    )
+    wasserstein_l1 = float(
+        sum(
+            original_weights[original_index]
+            * distances[original_index, assigned_index]
+            for original_index, assigned_index in assignments.items()
+        )
+    )
+    retained_ids = {
+        item.scenario_id for item in preliminary.scenarios
+    }
+    peak_id = scenario_set.scenarios[peak_index].scenario_id
+    ramp_id = scenario_set.scenarios[ramp_index].scenario_id
+    diagnostics = ReductionDiagnostics(
+        original_count=count,
+        retained_count=len(preliminary.scenarios),
+        wasserstein_l1=wasserstein_l1,
+        probability_transfers=probability_transfers,
+        mean_drift=mean_drift,
+        quantile_drift=quantile_drift,
+        critical_peak_scenario_id=peak_id,
+        critical_ramp_scenario_id=ramp_id,
+        critical_events_retained=(
+            peak_id in retained_ids and ramp_id in retained_ids
+        ),
+    )
+    if (
+        max_mean_drift is not None
+        and any(
+            drift > max_mean_drift
+            for drift in diagnostics.mean_drift.values()
+        )
+    ):
+        raise ValueError(
+            "scenario reduction mean drift exceeds max_mean_drift"
+        )
+    if (
+        max_quantile_drift is not None
+        and any(
+            drift > max_quantile_drift
+            for drift in diagnostics.quantile_drift.values()
+        )
+    ):
+        raise ValueError(
+            "scenario reduction quantile drift exceeds "
+            "max_quantile_drift"
+        )
+
+    metadata = dict(scenario_set.metadata)
+    metadata["reduction"] = asdict(diagnostics)
+    reduced = ScenarioSet(
+        horizon=preliminary.horizon,
+        valid_time_index=preliminary.valid_time_index,
+        units=dict(preliminary.units),
+        scenarios=preliminary.scenarios,
+        metadata=metadata,
+    )
+    return reduced, diagnostics
+
+
+def _legacy_scenario_set(
+    scenarios: list[PriceScenario],
+) -> ScenarioSet:
+    normalized = normalize_weights(scenarios)
+    if not normalized:
+        raise ValueError("scenarios must not be empty")
+    horizon = len(normalized[0].prices)
+    if horizon <= 0 or any(
+        len(item.prices) != horizon for item in normalized
+    ):
+        raise ValueError("legacy price scenarios must share a non-empty horizon")
+    issue_time = pd.Timestamp("2000-01-01", tz="UTC")
+    index = pd.date_range(
+        issue_time + pd.Timedelta(hours=1),
+        periods=horizon,
+        freq="h",
+    )
+    return ScenarioSet(
+        horizon=horizon,
+        valid_time_index=index,
+        units={"price": "unknown"},
+        scenarios=tuple(
+            Scenario(
+                scenario_id=item.name,
+                probability=item.weight,
+                issue_time=issue_time,
+                trajectories={
+                    "price": pd.Series(
+                        item.prices,
+                        index=index,
+                        dtype=float,
+                    )
+                },
+                seed=0,
+                source_versions={"price": "legacy-price-scenario"},
+            )
+            for item in normalized
+        ),
+        metadata={"compatibility": "PriceScenario"},
+    )
+
+
+@overload
+def reduce_scenarios(
+    scenarios: ScenarioSet,
+    top_k: int,
+    *,
+    quantiles: tuple[float, ...] = (0.1, 0.5, 0.9),
+    max_mean_drift: float | None = None,
+    max_quantile_drift: float | None = None,
+    preserve_critical_events: bool = True,
+    return_diagnostics: bool = False,
+) -> ScenarioSet: ...
+
+
+@overload
+def reduce_scenarios(
+    scenarios: list[PriceScenario],
+    top_k: int,
+    *,
+    quantiles: tuple[float, ...] = (0.1, 0.5, 0.9),
+    max_mean_drift: float | None = None,
+    max_quantile_drift: float | None = None,
+    preserve_critical_events: bool = True,
+    return_diagnostics: bool = False,
+) -> list[PriceScenario]: ...
+
+
+def reduce_scenarios(
+    scenarios: ScenarioSet | list[PriceScenario],
+    top_k: int,
+    *,
+    quantiles: tuple[float, ...] = (0.1, 0.5, 0.9),
+    max_mean_drift: float | None = None,
+    max_quantile_drift: float | None = None,
+    preserve_critical_events: bool = True,
+    return_diagnostics: bool = False,
+):
+    """Reduce joint scenarios by backward Wasserstein L1 selection.
+
+    ``ScenarioSet`` is the v2 API. A narrow ``PriceScenario`` adapter remains
+    for the active v1 sampler tests and delegates to the same reduction.
+    """
+    if isinstance(scenarios, ScenarioSet):
+        reduced, diagnostics = _reduce_scenario_set(
+            scenarios,
+            top_k,
+            quantiles=quantiles,
+            max_mean_drift=max_mean_drift,
+            max_quantile_drift=max_quantile_drift,
+            preserve_critical_events=preserve_critical_events,
+        )
+        if return_diagnostics:
+            return reduced, diagnostics
+        return reduced
+
+    scenario_set = _legacy_scenario_set(list(scenarios))
+    reduced, diagnostics = _reduce_scenario_set(
+        scenario_set,
+        top_k,
+        quantiles=quantiles,
+        max_mean_drift=max_mean_drift,
+        max_quantile_drift=max_quantile_drift,
+        preserve_critical_events=False,
+    )
+    legacy = [
+        PriceScenario(
+            name=item.scenario_id,
+            prices=item.trajectories["price"].tolist(),
+            weight=item.probability,
+        )
+        for item in reduced.scenarios
     ]
-    return normalize_weights(reduced)
+    if return_diagnostics:
+        return legacy, diagnostics
+    return legacy

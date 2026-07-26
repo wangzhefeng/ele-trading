@@ -1,199 +1,183 @@
-"""Data contracts for the Mengxi electricity-trading main line.
-
-All dataclasses use ``slots=True`` for memory efficiency and immutability-by-default.
-Column names in DataFrames/Series must match the canonical symbols defined in the
-v1 design document §4.2 (e.g. ``p_dayah``, ``Q_real``, ``soc``).
-"""
+"""Public contracts for the active Mengxi single-settlement chain."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Mapping
 
-import numpy as np
 import pandas as pd
-
-
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
 
 
 @dataclass(slots=True)
 class MarketConfig:
-    """Mengxi market rules and strategy weights (§5.1, §11.1)."""
+    """One-to-one active Mengxi market, operating and solver rules."""
 
-    # Deviation bands
-    lam_l: float = 0.95
-    lam_u: float = 1.05
-    lam_l_long: float = 0.90
-    lam_u_long: float = 1.05
-    m_long: float = 1.2
-
-    # Bid / risk
-    gap: float = 3.0
-    bias_k: int = 1
-    price_floor: float = 0.0
-    price_cap: float = 1500.0
-
-    # 风控裁剪（v1.3 §6.4）
-    risk_max_step_ratio: float = 0.2  # 相邻刻申报量变化 ≤ max_step_ratio * Q_base
-    risk_daily_qty_band: float = 0.15  # 当日申报总量 ∈ 预测日总电量 × [1-band, 1+band]
-    risk_long_band_check: bool = True  # 申报量与 Q_long 合计越出中长期带时告警（不强制）
-
-    # Strategy weights
-    w_bes: float = 1.0
-    w_pen: float = 1.0
-    w_ecost: float = 0.0
-    w_xu: float = 0.0
-    w_dr: float = 0.0
-    strategy: str = "BALANCED"
-
-    # Settlement
-    settlement_mode: str = "mengxi_band"  # only "mengxi_band" supported
+    market_name: str = "mengxi"
+    settlement_mode: str = "mengxi_single"
     settle_periods: int = 96
+    dt: float = 0.25
 
-    # BESS operational
-    soc_terminal_min: float | None = None  # None → use socini
-    exclusive_charge_discharge: bool = False
-    dayahead_power_margin: float = 0.8
+    long_recovery_lower_ratio: float = 0.90
+    long_recovery_upper_ratio: float = 1.05
+    long_recovery_multiplier: float = 1.20
+    long_recovery_applies_to_storage: bool = True
+    pos_tol_ratio: float = 0.05
+
+    two_stage_scenario_deviation_cost_positive: float = 0.25
+    two_stage_scenario_deviation_cost_negative: float = 0.25
+    scenario_method: str = "lhs"
+    scenario_count: int = 20
+    scenario_seed: int = 7
+    scenario_cvar_alpha: float = 0.95
+    scenario_cvar_weight: float = 0.0
+
+    soc_terminal_min: float | None = None
+    exclusive_charge_discharge: bool = True
+    operational_power_margin: float = 0.80
     throughput_max_ratio: float = 1.0
     deg_cost_per_mwh: float = 0.0
-    bess_market_role: str = "behind_meter"  # or "independent"
+    bess_market_role: str = "behind_meter"
     no_discharge_on_curtail: bool = False
 
-    # 日前优化模式（v1.3 §6.2/§6.5）
-    dayahead_mode: str = "B"  # A / B / C
-    dayahead_price_reporting: bool = False  # False=报量不报价（§3.5 第3条 TODO(rule-confirm)）
+    dr_aggregation: str = "aggregator"
+    dr_compensation_per_mwh: float = 2000.0
+    dr_penalty_per_mwh: float = 3000.0
+    dr_minimum_margin: float = 0.0
+    dr_minimum_response_mwh: float = 0.1
+    dr_window_start: int = 72
+    dr_window_end: int = 80
 
-    # Mid-long term
-    pos_tol_ratio: float = 0.05
-    cpen_long_applies_to_storage: bool = True
+    monthly_price_floor: float = 0.0
+    monthly_price_cap: float = 1500.0
+    monthly_trade_unit_mwh: float = 1.0
 
-    # Demand response
-    dr_aggregation: str = "aggregator"  # or "vpp" / "independent"
-
-    # Forecast calibration (backtest noise injection)
-    sca_price: float = 0.10
-    sca_power: float = 0.05
-
-
-# ---------------------------------------------------------------------------
-# Forecasts
-# ---------------------------------------------------------------------------
+    solver_name: str = "cbc"
+    solver_time_limit_seconds: float = 30.0
+    solver_mip_gap: float = 0.0
 
 
 @dataclass(slots=True)
-class ForecastResult:
-    """Canonical forecast output (§15.3)."""
+class DecisionTrace:
+    """Versions and solve evidence attached to each trading decision."""
 
-    name: str  # e.g. "p_dayah_pre"
-    unit: str  # "元/MWh" or "MWh/刻"
-    freq_minutes: int  # 15 for spot; 0 for monthly (use period index)
+    decision_time: pd.Timestamp
+    input_versions: Mapping[str, str]
+    model_versions: Mapping[str, str]
+    config_version: str
+    solver_name: str
+    solver_version: str
+    solver_status: str
+    objective_components: Mapping[str, float] = field(default_factory=dict)
+    active_constraints: Mapping[str, tuple[int, ...]] = field(
+        default_factory=dict
+    )
+    fallback_used: bool = False
+    fallback_reason: str | None = None
+
+
+@dataclass(slots=True)
+class PositionState:
+    """Current long-term contracts, monthly fills, budget and exposure."""
+
+    as_of: pd.Timestamp
+    q_long: pd.Series
+    p_long: pd.Series
+    monthly_positions: Mapping[str, float] = field(default_factory=dict)
+    budget_remaining: float = 0.0
+    risk_exposure: float = 0.0
+    source_version: str = "unknown"
+
+
+@dataclass(slots=True)
+class MarketForecastBundle:
+    """Aligned price, load, wind and PV forecasts from one issue time."""
+
     issue_time: pd.Timestamp
-    point: pd.Series
-    lower: pd.Series | None = None
-    upper: pd.Series | None = None
-    quantile_level: float | None = None
-
-
-# ---------------------------------------------------------------------------
-# Day-ahead
-# ---------------------------------------------------------------------------
+    price_forecast: Any
+    load_forecast: Any
+    wind_forecast: Any
+    pv_forecast: Any
 
 
 @dataclass(slots=True)
-class DayAheadPlan:
-    """Day-ahead coupled optimization output (§7.4, §11.4)."""
+class OperationalPlan:
+    """Physical next-day resource schedule with cost and risk evidence."""
 
-    p_bc: np.ndarray  # (96,) charge power
-    p_bd: np.ndarray  # (96,) discharge power
-    p_b: np.ndarray  # (96,) net discharge = p_bd - p_bc
-    soc: np.ndarray  # (97,) SOC trajectory
-    q_dayah: np.ndarray  # (96,) day-ahead bid quantity
+    resource_schedule: pd.DataFrame
+    soc: pd.Series
     expected_cost: float
-    expected_revenue: float
-    constraint_flags: dict[str, list[int]] = field(default_factory=dict)
-    # 分段申报价；报量不报价（dayahead_price_reporting=False，蒙西默认）时置 None
-    bid_prices: np.ndarray | None = None
-
-
-# ---------------------------------------------------------------------------
-# Intraday
-# ---------------------------------------------------------------------------
+    expected_risk: float
+    constraint_trace: Mapping[str, tuple[int, ...]] = field(
+        default_factory=dict
+    )
+    decision_trace: DecisionTrace | None = None
 
 
 @dataclass(slots=True)
 class IntradayAdjustment:
-    """Single rolling-window adjustment (§11.5)."""
+    """Change from the previously feasible remaining resource schedule."""
 
-    p_b_new: np.ndarray
-    delta_p_b: np.ndarray
-    delta_revenue: float
-    reasons: list[str] = field(default_factory=list)
+    p_net_new: pd.Series
+    delta_p_net: pd.Series
+    expected_cost_delta: float
+    reasons: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
 class IntradayPlan:
-    """Rolling intraday schedule (§11.5)."""
+    """Executed prefix plus the latest feasible operational schedule."""
 
-    schedule: DayAheadPlan  # reuse structure
+    schedule: OperationalPlan
+    executed_prefix: pd.DataFrame
     adjustment: IntradayAdjustment
-
-
-# ---------------------------------------------------------------------------
-# Settlement
-# ---------------------------------------------------------------------------
+    fallback_used: bool = False
 
 
 @dataclass(slots=True)
 class SettlementReport:
-    """Daily settlement and backtest report (§10, §11.7)."""
+    """Itemized active single-settlement result."""
 
-    c_daily: float
-    cpen_dayah: float
-    cpen_long: float
-    cost_daily: float
-    cost_baseline: float
+    energy_cost: float
+    contract_difference: float
+    long_recovery: float
+    dr_adjustment: float
+    degradation_cost: float
+    execution_adjustment: float
+    total_cost: float
+    baseline_cost: float
     delta_cost: float
-    opportunity_loss_topk: pd.DataFrame  # columns: [t, loss, cause]
-    upside_if_oracle: float
-
-
-# ---------------------------------------------------------------------------
-# Mid-long term
-# ---------------------------------------------------------------------------
+    trace: DecisionTrace | None = None
 
 
 @dataclass(slots=True)
 class PositionPlan:
-    """Mid-long-term position plan (§6.1, §11.2)."""
+    """Mid-long position result without a financial day-ahead position."""
 
     alpha_long: float
-    alpha_dayah: float
     alpha_real: float
-    q_long_monthly: pd.Series  # MWh/month
+    q_long_monthly: pd.Series
     price_band: tuple[float, float]
     expected_cost: float
+    expected_risk: float
     budget_used: float
-    coverage: float  # ∈ [0,1]
+    coverage: float
 
 
 @dataclass(slots=True)
 class BidLadder:
-    """Centralized bidding ladder (§6.2, §11.3)."""
+    """Monthly centralized-market order ladder."""
 
-    direction: str  # "buy" | "sell"
-    bid_qty: list[float]  # cumulative quantity, length K
-    bid_price: list[float]  # segment price
-    clear_prob: list[float]  # marginal clearing probability
+    direction: str
+    bid_qty: list[float]
+    bid_price: list[float]
+    clear_prob: list[float]
     expected_cost: float
     expected_revenue: float
 
 
 @dataclass(slots=True)
 class CorridorAdvice:
-    """Degraded output when no counterparty data (§11.3, §13.2)."""
+    """Transparent fallback when orderbook data is unavailable."""
 
     direction: str
     qty_range: tuple[float, float]
@@ -201,19 +185,17 @@ class CorridorAdvice:
     reason: str
 
 
-# ---------------------------------------------------------------------------
-# Demand response
-# ---------------------------------------------------------------------------
-
-
 @dataclass(slots=True)
 class DRDecision:
-    """Demand-response participation decision (§9, §11.6)."""
+    """Demand-response product participation decision."""
 
     participate: bool
-    response_qty: float  # MWh
-    window: tuple[int, int]  # start/end period
+    response_qty: float
+    window: tuple[int, int]
     expected_compensation: float
     arbitrage_opportunity_cost: float
+    expected_penalty: float
+    degradation_cost: float
+    net_margin: float
     fulfill_risk: str
     reject_reason: str | None = None

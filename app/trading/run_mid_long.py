@@ -31,7 +31,9 @@ def main() -> None:
     plan = plan_mid_long_position(q_load_forecast, p_long_forecast, p_spot_forecast, budget, config)
 
     logger.info("=== 中长期仓位规划 ===")
-    logger.info(f"α_long={plan.alpha_long:.3f}, α_dayah={plan.alpha_dayah:.3f}, α_real={plan.alpha_real:.3f}")
+    logger.info(
+        f"α_long={plan.alpha_long:.3f}, α_real={plan.alpha_real:.3f}"
+    )
     logger.info(f"价格带 [{plan.price_band[0]:.1f}, {plan.price_band[1]:.1f}] 元/MWh")
     logger.info(f"预计成本 {plan.expected_cost:,.0f} 元, 预算占用 {plan.budget_used:.1%}, 需求满足度 {plan.coverage:.1%}")
     logger.info("分月中长期持仓 (MWh):")

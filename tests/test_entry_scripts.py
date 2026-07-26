@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from ele_trading.trading.config_loader import load_market_config
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = PROJECT_ROOT / 'app'
@@ -47,36 +49,41 @@ def test_run_two_stage_skeleton():
     assert len(combined) > 0
 
 
-def test_run_backtest():
-    """run_backtest.py 应退出码为 0 且有输出。"""
-    result = _run_script('evaluation/run_backtest.py')
-    combined = result.stdout + result.stderr
-    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
-    assert len(combined) > 0
+def test_two_stage_skeleton_uses_market_config_deviation_costs(tmp_path):
+    """修改 market YAML 后，two-stage 模型偏差成本系数应随之改变。"""
+    from app.optimization.run_two_stage_skeleton import build_demo_model
 
+    source = PROJECT_ROOT / "configs" / "market_mengxi.yaml"
+    models = []
+    for name, positive_cost, negative_cost in (
+        ("lower", 2.0, 3.0),
+        ("higher", 5.0, 7.0),
+    ):
+        configured = source.read_text()
+        configured = configured.replace(
+            "  two_stage_scenario_deviation_cost_positive: 0.25",
+            f"  two_stage_scenario_deviation_cost_positive: {positive_cost}",
+        )
+        configured = configured.replace(
+            "  two_stage_scenario_deviation_cost_negative: 0.25",
+            f"  two_stage_scenario_deviation_cost_negative: {negative_cost}",
+        )
+        path = tmp_path / f"{name}.yaml"
+        path.write_text(configured)
+        models.append(build_demo_model(load_market_config(path)))
 
-def test_run_user_side_bess_dispatch():
-    """run_user_side_bess_dispatch.py 应退出码为 0 且有用户侧调度输出。"""
-    result = _run_script('optimization/run_user_side_bess_dispatch.py')
-    combined = result.stdout + result.stderr
-    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
-    assert '用户侧储能调度' in combined or 'total_cost' in combined
+    coefficients = []
+    for model in models:
+        variables = {item.name: item for item in model.variables()}
+        coefficients.append(
+            (
+                model.objective.get(variables["deviation_positive_0_0"]),
+                model.objective.get(variables["deviation_negative_0_0"]),
+            )
+        )
 
-
-def test_run_user_side_pv_dispatch():
-    """run_user_side_pv_dispatch.py 应退出码为 0 且有用户侧光伏调度输出。"""
-    result = _run_script('optimization/run_user_side_pv_dispatch.py')
-    combined = result.stdout + result.stderr
-    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
-    assert '用户侧光伏调度' in combined or 'total_cost' in combined
-
-
-def test_run_user_side_pv_bess_dispatch():
-    """run_user_side_pv_bess_dispatch.py 应退出码为 0 且有用户侧光伏储能调度输出。"""
-    result = _run_script('optimization/run_user_side_pv_bess_dispatch.py')
-    combined = result.stdout + result.stderr
-    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
-    assert '用户侧光伏储能调度' in combined or 'total_cost' in combined
+    assert coefficients[0] == pytest.approx((0.4, 0.6))
+    assert coefficients[1] == pytest.approx((1.0, 1.4))
 
 
 def test_run_wind_pv_legacy_profit_eval():
@@ -85,14 +92,6 @@ def test_run_wind_pv_legacy_profit_eval():
     combined = result.stdout + result.stderr
     assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
     assert 'annual_net_profit' in combined or '收益测算' in combined
-
-
-def test_run_wind_pv_legacy_market_trading():
-    """run_wind_pv_legacy_market_trading.py 应退出码为 0 且输出交易调度结果。"""
-    result = _run_script('legacy/run_wind_pv_legacy_market_trading.py')
-    combined = result.stdout + result.stderr
-    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
-    assert 'market trading' in combined.lower() or 'total_cost' in combined
 
 
 @pytest.mark.skip(reason="V4 canonical+settlement demo 网格较重，仅手动用 --demo 验收")
@@ -113,14 +112,6 @@ def test_run_pv_simulation_v1():
     combined = result.stdout + result.stderr
     assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
     assert 'pv simulation' in combined.lower() or 'pv_kw' in combined.lower()
-
-
-def test_run_cvxp_bess_dispatch():
-    """run_cvxp_bess_dispatch.py 应退出码为 0 且输出 CVXPY 调度结果。"""
-    result = _run_script('optimization/run_cvxp_bess_dispatch.py')
-    combined = result.stdout + result.stderr
-    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
-    assert 'CVXPY' in combined or 'objective_value' in combined
 
 
 def test_run_bess_capacity_planning():
@@ -184,20 +175,15 @@ def test_run_dist_bess_dispatch():
 # ---------------------------------------------------------------------------
 
 
-def test_run_day_ahead():
-    """app/trading/run_day_ahead.py 应退出码为 0 且输出计划落盘信息。"""
-    result = _run_script('trading/run_day_ahead.py')
+def test_run_pipeline():
+    """统一单结算入口应退出 0 并输出完整链路汇总。"""
+    result = _run_script(
+        'trading/run_pipeline.py',
+        args=['--scenario-count', '2'],
+    )
     combined = result.stdout + result.stderr
     assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
-    assert '计划曲线已落盘' in combined
-
-
-def test_run_intraday():
-    """app/trading/run_intraday.py 应退出码为 0 且输出日内执行汇总。"""
-    result = _run_script('trading/run_intraday.py')
-    combined = result.stdout + result.stderr
-    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
-    assert '日内执行' in combined
+    assert 'single-settlement pipeline' in combined
 
 
 def test_run_mid_long():
@@ -225,10 +211,42 @@ def test_run_dr():
     assert '参与' in combined
 
 
-def test_run_mengxi_backtest():
-    """app/evaluation/run_mengxi_backtest.py 应退出码为 0 且 ΔCost>0、报告落盘。"""
-    result = _run_script('evaluation/run_mengxi_backtest.py', timeout=300)
+def test_run_day_ahead():
+    """app/trading/run_day_ahead.py 应退出 0 并输出日前运行计划摘要。"""
+    result = _run_script(
+        'trading/run_day_ahead.py',
+        args=['--scenario-count', '2'],
+    )
     combined = result.stdout + result.stderr
     assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
-    assert 'ΔCost' in combined
-    assert '回测报告已落盘' in combined
+    assert 'day-ahead operational plan' in combined
+
+
+def test_run_intraday():
+    """app/trading/run_intraday.py 应退出 0 并输出日内滚动计划摘要。"""
+    result = _run_script(
+        'trading/run_intraday.py',
+        args=['--scenario-count', '2'],
+    )
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
+    assert 'intraday rolling plan' in combined
+
+
+def test_run_backtest(tmp_path):
+    """app/trading/run_backtest.py 应退出 0 并写出报告+manifest（小样本）。"""
+    out_dir = tmp_path / 'bt'
+    result = _run_script(
+        'trading/run_backtest.py',
+        args=[
+            '--days', '2',
+            '--scenario-count', '2',
+            '--out-dir', str(out_dir),
+        ],
+        timeout=180,
+    )
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
+    assert 'walk-forward backtest' in combined
+    assert (out_dir / 'backtest_report.csv').exists()
+    assert (out_dir / 'manifest.json').exists()

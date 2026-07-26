@@ -599,7 +599,6 @@ name = "ele-trading"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "cvxpy" },
     { name = "jupyter" },
     { name = "matplotlib" },
     { name = "numba" },
@@ -621,6 +620,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+archived-user-side = [
+    { name = "cvxpy" },
+]
 dev = [
     { name = "pytest" },
 ]
@@ -633,7 +635,7 @@ weather = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cvxpy", specifier = ">=1.9.0" },
+    { name = "cvxpy", marker = "extra == 'archived-user-side'", specifier = ">=1.9.0" },
     { name = "jupyter", specifier = ">=1.1.1" },
     { name = "matplotlib", specifier = ">=3.10.8" },
     { name = "netcdf4", marker = "extra == 'weather'", specifier = ">=1.7.0" },
@@ -658,7 +660,7 @@ requires-dist = [
     { name = "windpowerlib", specifier = ">=0.2.0" },
     { name = "xarray", marker = "extra == 'weather'", specifier = ">=2025.1.0" },
 ]
-provides-extras = ["dev", "weather"]
+provides-extras = ["archived-user-side", "dev", "weather"]
 
 [[package]]
 name = "et-xmlfile"

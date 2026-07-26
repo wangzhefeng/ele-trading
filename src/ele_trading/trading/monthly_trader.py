@@ -4,7 +4,60 @@ from __future__ import annotations
 
 import numpy as np
 
-from ele_trading.trading.contracts import BidLadder, MarketConfig
+from ele_trading.trading.contracts import (
+    BidLadder,
+    CorridorAdvice,
+    MarketConfig,
+)
+
+
+def build_position_corridor(
+    *,
+    position_gap: float,
+    tolerance: float,
+    price_band: tuple[float, float],
+    config: MarketConfig,
+) -> CorridorAdvice:
+    """Expose a quantity/price corridor when no orderbook is available."""
+    values = np.asarray(
+        [position_gap, tolerance, *price_band],
+        dtype=float,
+    )
+    if not np.isfinite(values).all() or tolerance < 0.0:
+        raise ValueError("corridor inputs must be finite with tolerance >= 0")
+    if price_band[0] > price_band[1]:
+        raise ValueError("price_band lower bound must not exceed upper bound")
+    direction = "buy" if position_gap < 0.0 else "sell"
+    absolute_gap = abs(position_gap)
+    quantity_range = (
+        max(0.0, absolute_gap - tolerance),
+        absolute_gap + tolerance,
+    )
+    clipped_price_range = (
+        float(
+            np.clip(
+                price_band[0],
+                config.monthly_price_floor,
+                config.monthly_price_cap,
+            )
+        ),
+        float(
+            np.clip(
+                price_band[1],
+                config.monthly_price_floor,
+                config.monthly_price_cap,
+            )
+        ),
+    )
+    return CorridorAdvice(
+        direction=direction,
+        qty_range=quantity_range,
+        price_range=clipped_price_range,
+        reason=(
+            "orderbook unavailable; expose configured position and price "
+            "corridor without fabricating counterparties"
+        ),
+    )
 
 
 def build_bid_ladder(
@@ -70,7 +123,14 @@ def build_bid_ladder(
         clear_prob.append(prob)
 
     # Clip prices to market limits
-    bid_price = [np.clip(p, config.price_floor, config.price_cap) for p in bid_price]
+    bid_price = [
+        np.clip(
+            p,
+            config.monthly_price_floor,
+            config.monthly_price_cap,
+        )
+        for p in bid_price
+    ]
 
     # Expected cost/revenue
     expected_cost = sum(q * p * prob for q, p, prob in zip(bid_qty, bid_price, clear_prob))

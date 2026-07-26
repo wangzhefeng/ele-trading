@@ -1,406 +1,377 @@
-"""Day-ahead coupled storage-trading optimization (v1.3 §6).
-
-Implements modes A/B/C for joint storage scheduling and day-ahead bidding.
-Mode B (effective marginal price) is the default per v1.3 design document.
-"""
+"""Next-day physical resource planning for Mengxi single settlement."""
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError, version
+from typing import Mapping
+
 import numpy as np
-from pulp import LpBinary, LpMaximize, LpMinimize, LpProblem, LpVariable, PULP_CBC_CMD, lpSum, value
+import pandas as pd
+from pulp import LpMinimize, LpProblem, lpSum, value
 
-from ele_trading.trading.contracts import DayAheadPlan, MarketConfig
-from ele_trading.utils import check_pulp_status
-from ele_trading.utils.log_util import logger
-
-DT = 0.25  # 15 min 决策粒度（v1.3 §2.1）
-
-
-def solve_day_ahead_coupled(
-    q_load_pre: np.ndarray,  # (96,) MWh/刻, open load after mid-long deduction
-    p_dayah_pre: np.ndarray,  # (96,) 元/MWh
-    p_real_pre: np.ndarray,  # (96,) 元/MWh
-    bess: dict,  # BES object §2.3
-    config: MarketConfig,
-    mode: str = "B",
-    t_curt: list[int] | None = None,  # 限电/新能源大发时段集合（no_discharge_on_curtail=True 时生效）
-    q_long: np.ndarray | None = None,  # (96,) 中长期持仓（风控带一致告警告用，可选）
-) -> DayAheadPlan:
-    """Solve day-ahead coupled optimization.
-
-    Modes:
-        A: real-price arbitrage
-        B: effective marginal price (default)
-        C: joint bid quantity optimization
-    """
-    _check_no_nan(q_load_pre, "q_load_pre")
-    _check_no_nan(p_dayah_pre, "p_dayah_pre")
-    _check_no_nan(p_real_pre, "p_real_pre")
-    if mode == "A":
-        return _solve_mode_a(q_load_pre, p_dayah_pre, p_real_pre, bess, config, t_curt, q_long)
-    elif mode == "B":
-        return _solve_mode_b(q_load_pre, p_dayah_pre, p_real_pre, bess, config, t_curt, q_long)
-    elif mode == "C":
-        return _solve_mode_c(q_load_pre, p_dayah_pre, p_real_pre, bess, config, t_curt, q_long)
-    else:
-        raise ValueError(f"Unknown mode: {mode}")
+from ele_trading.optimization.bess_model import (
+    BESSConfig,
+    add_bess_constraints,
+)
+from ele_trading.optimization.risk import add_cvar_auxiliaries
+from ele_trading.optimization.solver import (
+    SolveStatus,
+    solve_pulp_model,
+)
+from ele_trading.scenario.contracts import ScenarioSet
+from ele_trading.trading.contracts import (
+    DecisionTrace,
+    MarketConfig,
+    OperationalPlan,
+)
+from ele_trading.trading.settlement_mengxi import (
+    compute_contract_difference,
+)
 
 
-def _check_no_nan(arr: np.ndarray, name: str) -> None:
-    """预测输入含 NaN 时默认报错，不容忍静默前向填充（v1.3 §11.4.2）。"""
-    if np.isnan(arr).any():
-        raise ValueError(f"{name} contains NaN; optimization modules reject NaN forecasts (v1.3 §11.4.2)")
+def _finite_vector(value: np.ndarray, name: str) -> np.ndarray:
+    result = np.asarray(value, dtype=float)
+    if result.ndim != 1 or not len(result):
+        raise ValueError(f"{name} must be a non-empty one-dimensional array")
+    if not np.isfinite(result).all():
+        raise ValueError(f"{name} must contain finite values")
+    return result
 
 
-def _build_bess_vars(
-    model: LpProblem,
-    horizon: int,
-    bess: dict,
-    config: MarketConfig,
-    q_load: np.ndarray,
-    t_curt: list[int] | None = None,
-    prefix: str = "",
-) -> tuple[dict, dict, dict]:
-    """Build BESS charge/discharge/SOC variables with constraints (v1.3 §2.3)."""
-    margin = config.dayahead_power_margin
-    p_bc = {t: LpVariable(f"{prefix}p_bc_{t}", lowBound=0, upBound=margin * bess["p_bcmax"]) for t in range(horizon)}
-    p_bd = {t: LpVariable(f"{prefix}p_bd_{t}", lowBound=0, upBound=margin * bess["p_bdmax"]) for t in range(horizon)}
-    soc = {t: LpVariable(f"{prefix}soc_{t}", lowBound=bess["socmin"], upBound=bess["socmax"]) for t in range(horizon)}
-
-    # 限电/新能源大发时段禁放（v1.3 §2.3 可选约束）
-    if config.no_discharge_on_curtail and t_curt:
-        for t in t_curt:
-            if 0 <= t < horizon:
-                model += p_bd[t] == 0
-
-    # 充放互斥（MILP，默认关闭保持 LP；负价或惩罚主导时开启，v1.3 §2.3）
-    if config.exclusive_charge_discharge:
-        cap_p = max(bess["p_bcmax"], bess["p_bdmax"])
-        z = {t: LpVariable(f"{prefix}z_chg_{t}", cat=LpBinary) for t in range(horizon)}
-        for t in range(horizon):
-            model += p_bc[t] <= cap_p * z[t]
-            model += p_bd[t] <= cap_p * (1 - z[t])
-
-    for t in range(horizon):
-        if t == 0:
-            model += soc[t] == bess["socini"] + bess["p_bceff"] * p_bc[t] * DT - (p_bd[t] * DT) / bess["p_bdeff"]
-        else:
-            model += soc[t] == soc[t - 1] + bess["p_bceff"] * p_bc[t] * DT - (p_bd[t] * DT) / bess["p_bdeff"]
-        # 净负荷非负，默认不可倒送（v1.3 §2.3）
-        model += q_load[t] + (p_bc[t] - p_bd[t]) * DT >= 0
-
-    # Terminal SOC constraint
-    terminal_min = config.soc_terminal_min if config.soc_terminal_min is not None else bess["socini"]
-    model += soc[horizon - 1] >= terminal_min
-
-    # Throughput limit
-    if config.throughput_max_ratio > 0:
-        model += lpSum((p_bc[t] + p_bd[t]) * DT for t in range(horizon)) <= config.throughput_max_ratio * 2 * bess["cap"]
-
-    return p_bc, p_bd, soc
+def _solver_version() -> str:
+    try:
+        return version("pulp")
+    except PackageNotFoundError:
+        return "unknown"
 
 
-def _collect_constraint_flags(
-    p_bc_arr: np.ndarray,
-    p_bd_arr: np.ndarray,
-    soc_arr: np.ndarray,
-    q_load: np.ndarray,
-    bess: dict,
-    config: MarketConfig,
-) -> dict[str, list[int]]:
-    """求解后审计约束激活时段（v1.3 §6.5 约束提示）。"""
-    tol = 1e-3
-    margin = config.dayahead_power_margin
-    flags: dict[str, list[int]] = {}
-    flags["soc_at_max"] = [t for t in range(len(soc_arr)) if soc_arr[t] >= bess["socmax"] - tol]
-    flags["soc_at_min"] = [t for t in range(len(soc_arr)) if soc_arr[t] <= bess["socmin"] + tol]
-    flags["p_c_at_limit"] = [t for t in range(len(p_bc_arr)) if p_bc_arr[t] >= margin * bess["p_bcmax"] - tol]
-    flags["p_d_at_limit"] = [t for t in range(len(p_bd_arr)) if p_bd_arr[t] >= margin * bess["p_bdmax"] - tol]
-    net_load = q_load + (p_bc_arr - p_bd_arr) * DT
-    flags["no_reverse_active"] = [t for t in range(len(q_load)) if net_load[t] <= tol]
-    return {k: v for k, v in flags.items() if v}
-
-
-def _solve_mode_a(
-    q_load_pre: np.ndarray,
-    p_dayah_pre: np.ndarray,
-    p_real_pre: np.ndarray,
-    bess: dict,
-    config: MarketConfig,
-    t_curt: list[int] | None = None,
-    q_long: np.ndarray | None = None,
-) -> DayAheadPlan:
-    """Mode A: real-price arbitrage."""
-    horizon = len(q_load_pre)
-    m = LpProblem("dayahead_mode_a", LpMaximize)
-    p_bc, p_bd, soc = _build_bess_vars(m, horizon, bess, config, q_load_pre, t_curt)
-
-    # Arbitrage objective
-    m += lpSum(
-        p_real_pre[t] * (p_bd[t] - p_bc[t]) * DT
-        - config.deg_cost_per_mwh * (p_bc[t] + p_bd[t]) * DT
-        for t in range(horizon)
-    )
-
-    m.solve(PULP_CBC_CMD(msg=False))
-    check_pulp_status(m, "dayahead mode A")
-
-    p_bc_arr = np.array([value(p_bc[t]) for t in range(horizon)])
-    p_bd_arr = np.array([value(p_bd[t]) for t in range(horizon)])
-    p_b_arr = p_bd_arr - p_bc_arr
-    soc_arr = np.array([bess["socini"]] + [value(soc[t]) for t in range(horizon)])
-
-    # Bid = base load (no deviation from forecast in mode A)
-    q_base = q_load_pre - p_b_arr * DT
-    q_dayah = _apply_bid_rules(q_base, p_dayah_pre, p_real_pre, config)
-    q_dayah = _apply_risk_clipping(q_dayah, q_base, q_long, config)
-
-    expected_revenue = float(value(m.objective))
-    expected_cost = float(np.sum(q_dayah * p_real_pre))  # rough estimate
-
-    return DayAheadPlan(
-        p_bc=p_bc_arr,
-        p_bd=p_bd_arr,
-        p_b=p_b_arr,
-        soc=soc_arr,
-        q_dayah=q_dayah,
-        expected_cost=expected_cost,
-        expected_revenue=expected_revenue,
-        constraint_flags=_collect_constraint_flags(p_bc_arr, p_bd_arr, soc_arr, q_load_pre, bess, config),
-        bid_prices=_make_bid_prices(q_dayah, p_dayah_pre, config),
-    )
-
-
-def _solve_mode_b(
-    q_load_pre: np.ndarray,
-    p_dayah_pre: np.ndarray,
-    p_real_pre: np.ndarray,
-    bess: dict,
-    config: MarketConfig,
-    t_curt: list[int] | None = None,
-    q_long: np.ndarray | None = None,
-) -> DayAheadPlan:
-    """Mode B: effective marginal price (default)."""
-    horizon = len(q_load_pre)
-    m = LpProblem("dayahead_mode_b", LpMinimize)
-
-    # Effective price (v1.3 §6.2 Mode B)
-    pi_eff = np.where(
-        p_real_pre > p_dayah_pre,
-        config.lam_l * p_dayah_pre + (1 - config.lam_l) * p_real_pre,
-        config.lam_u * p_dayah_pre + (1 - config.lam_u) * p_real_pre,
-    )
-
-    p_bc, p_bd, soc = _build_bess_vars(m, horizon, bess, config, q_load_pre, t_curt)
-
-    # Minimize effective cost
-    m += lpSum(
-        (p_bc[t] - p_bd[t]) * DT * pi_eff[t]
-        + config.deg_cost_per_mwh * (p_bc[t] + p_bd[t]) * DT
-        for t in range(horizon)
-    )
-
-    m.solve(PULP_CBC_CMD(msg=False))
-    check_pulp_status(m, "dayahead mode B")
-
-    p_bc_arr = np.array([value(p_bc[t]) for t in range(horizon)])
-    p_bd_arr = np.array([value(p_bd[t]) for t in range(horizon)])
-    p_b_arr = p_bd_arr - p_bc_arr
-    soc_arr = np.array([bess["socini"]] + [value(soc[t]) for t in range(horizon)])
-
-    # Bid generation with deviation band rules (v1.3 §6.4) + 风控裁剪
-    q_base = q_load_pre - p_b_arr * DT
-    q_dayah = _apply_bid_rules(q_base, p_dayah_pre, p_real_pre, config)
-    q_dayah = _apply_risk_clipping(q_dayah, q_base, q_long, config)
-
-    expected_cost = float(value(m.objective))
-    expected_revenue = float(-expected_cost)  # cost minimization
-
-    return DayAheadPlan(
-        p_bc=p_bc_arr,
-        p_bd=p_bd_arr,
-        p_b=p_b_arr,
-        soc=soc_arr,
-        q_dayah=q_dayah,
-        expected_cost=expected_cost,
-        expected_revenue=expected_revenue,
-        constraint_flags=_collect_constraint_flags(p_bc_arr, p_bd_arr, soc_arr, q_load_pre, bess, config),
-        bid_prices=_make_bid_prices(q_dayah, p_dayah_pre, config),
-    )
-
-
-def _solve_mode_c(
-    q_load_pre: np.ndarray,
-    p_dayah_pre: np.ndarray,
-    p_real_pre: np.ndarray,
-    bess: dict,
-    config: MarketConfig,
-    t_curt: list[int] | None = None,
-    q_long: np.ndarray | None = None,
-) -> DayAheadPlan:
-    """Mode C: joint bid quantity optimization."""
-    horizon = len(q_load_pre)
-    m = LpProblem("dayahead_mode_c", LpMinimize)
-
-    p_bc, p_bd, soc = _build_bess_vars(m, horizon, bess, config, q_load_pre, t_curt)
-
-    # Bid quantity variables
-    q_dayah_opt = {t: LpVariable(f"q_dayah_opt_{t}", lowBound=0) for t in range(horizon)}
-    q_aux = {t: LpVariable(f"q_aux_{t}", lowBound=0) for t in range(horizon)}
-
-    # Deviation penalty linearization (v1.3 §6.2 Mode C)
-    for t in range(horizon):
-        q_real_t = q_load_pre[t] + (p_bc[t] - p_bd[t]) * DT
-        if p_real_pre[t] > p_dayah_pre[t]:
-            m += q_aux[t] >= (q_dayah_opt[t] - config.lam_u * q_real_t) * (p_real_pre[t] - p_dayah_pre[t])
-        else:
-            m += q_aux[t] >= (config.lam_l * q_real_t - q_dayah_opt[t]) * (p_dayah_pre[t] - p_real_pre[t])
-
-    # Objective: energy cost + penalty
-    obj_ecost = lpSum(
-        q_dayah_opt[t] * p_dayah_pre[t]
-        + (q_load_pre[t] + (p_bc[t] - p_bd[t]) * DT - q_dayah_opt[t]) * p_real_pre[t]
-        for t in range(horizon)
-    )
-    obj_pen = lpSum(q_aux[t] for t in range(horizon))
-    m += obj_ecost + config.w_pen * obj_pen
-
-    m.solve(PULP_CBC_CMD(msg=False))
-    check_pulp_status(m, "dayahead mode C")
-
-    p_bc_arr = np.array([value(p_bc[t]) for t in range(horizon)])
-    p_bd_arr = np.array([value(p_bd[t]) for t in range(horizon)])
-    p_b_arr = p_bd_arr - p_bc_arr
-    soc_arr = np.array([bess["socini"]] + [value(soc[t]) for t in range(horizon)])
-    q_dayah_opt_arr = np.array([value(q_dayah_opt[t]) for t in range(horizon)])
-
-    # 模式 C 融合（v1.3 §6.4）：优化量有效时覆盖规则量，否则回退
-    q_base = q_load_pre - p_b_arr * DT
-    q_dayah = _fuse_mode_c_bid(q_dayah_opt_arr, q_base, p_dayah_pre, p_real_pre, config)
-    q_dayah = _apply_risk_clipping(q_dayah, q_base, q_long, config)
-
-    expected_cost = float(value(m.objective))
-    expected_revenue = float(-expected_cost)
-
-    return DayAheadPlan(
-        p_bc=p_bc_arr,
-        p_bd=p_bd_arr,
-        p_b=p_b_arr,
-        soc=soc_arr,
-        q_dayah=q_dayah,
-        expected_cost=expected_cost,
-        expected_revenue=expected_revenue,
-        constraint_flags=_collect_constraint_flags(p_bc_arr, p_bd_arr, soc_arr, q_load_pre, bess, config),
-        bid_prices=_make_bid_prices(q_dayah, p_dayah_pre, config),
-    )
-
-
-def _fuse_mode_c_bid(
-    q_dayah_opt: np.ndarray,
-    q_base: np.ndarray,
-    p_dayah_pre: np.ndarray,
-    p_real_pre: np.ndarray,
-    config: MarketConfig,
+def _scenario_period_energy(
+    scenario_set: ScenarioSet,
+    scenario,
+    target: str,
+    *,
+    dt: float,
 ) -> np.ndarray:
-    """模式 C 申报量融合（v1.3 §6.4）。
-
-    优化量为有效解（有限、非负）时直接用优化量；否则回退到 §6.4 规则量。
-    """
-    valid = np.isfinite(q_dayah_opt).all() and (q_dayah_opt >= -1e-9).all()
-    if valid:
-        return np.maximum(q_dayah_opt, 0.0)
-    logger.warning("mode C 优化申报量无效（含非有限值或负值），回退到规则申报量")
-    return _apply_bid_rules(q_base, p_dayah_pre, p_real_pre, config)
+    values = scenario.trajectories[target].to_numpy(dtype=float)
+    if scenario_set.units[target] == "MW":
+        return values * dt
+    return values
 
 
-def _make_bid_prices(
-    q_dayah: np.ndarray,
-    p_dayah_pre: np.ndarray,
+def _constraint_trace(
+    schedule: pd.DataFrame,
+    soc: pd.Series,
+    *,
+    bess: Mapping[str, float],
+    tolerance: float = 1e-6,
+) -> dict[str, tuple[int, ...]]:
+    trace = {
+        "soc_min": tuple(
+            int(i)
+            for i, value_ in enumerate(soc.iloc[1:])
+            if value_ <= float(bess["socmin"]) + tolerance
+        ),
+        "soc_max": tuple(
+            int(i)
+            for i, value_ in enumerate(soc.iloc[1:])
+            if value_ >= float(bess["socmax"]) - tolerance
+        ),
+        "charge_limit": tuple(
+            int(i)
+            for i, value_ in enumerate(schedule["p_charge"])
+            if value_
+            >= float(bess["p_bcmax"]) - tolerance
+        ),
+        "discharge_limit": tuple(
+            int(i)
+            for i, value_ in enumerate(schedule["p_discharge"])
+            if value_
+            >= float(bess["p_bdmax"]) - tolerance
+        ),
+    }
+    return {name: periods for name, periods in trace.items() if periods}
+
+
+def solve_day_ahead_operational(
+    load_forecast: np.ndarray,
+    realtime_price_forecast: np.ndarray,
+    bess: Mapping[str, float],
     config: MarketConfig,
-) -> np.ndarray | None:
-    """分段申报价（v1.3 §6.5）。
-
-    蒙西默认报量不报价 → 返回 None；price_reporting=True 时按预测出清价
-    生成申报价并统一裁剪到 [price_floor, price_cap]。
-    """
-    if not config.dayahead_price_reporting:
-        return None
-    return np.clip(p_dayah_pre.copy(), config.price_floor, config.price_cap)
-
-
-def _apply_bid_rules(
-    q_base: np.ndarray,
-    p_dayah_pre: np.ndarray,
-    p_real_pre: np.ndarray,
-    config: MarketConfig,
-) -> np.ndarray:
-    """Apply deviation-band bid rules (v1.3 §6.4).
-
-    日前偏贵 → 少报压 lam_l 下界；日前偏便宜 → 多报压 lam_u 上界。
-    申报量为电量（MWh/刻），只按物理非负裁剪；[price_floor, price_cap]
-    为申报价限值，由分段申报价生成处裁剪（v1.3 §6.5）。
-    """
-    q_dayah = q_base.copy()
-    gap = config.gap
-    k = config.bias_k
-
-    mask_da_expensive = p_dayah_pre > p_real_pre + gap
-    mask_da_cheap = p_dayah_pre < p_real_pre - gap
-
-    q_dayah[mask_da_expensive] = config.lam_l**k * q_base[mask_da_expensive]
-    q_dayah[mask_da_cheap] = config.lam_u**k * q_base[mask_da_cheap]
-
-    return np.maximum(q_dayah, 0.0)
-
-
-def _apply_risk_clipping(
-    q_dayah: np.ndarray,
-    q_base: np.ndarray,
-    q_long: np.ndarray | None,
-    config: MarketConfig,
-) -> np.ndarray:
-    """日前申报量风控裁剪（v1.3 §6.4，参数化三规则）。
-
-    规则顺序：单点变化率限制 → 日总量上下限 → 中长期带一致告警（不强制）。
-    触发时记录日志（§11.4.3）。
-    """
-    out = q_dayah.copy()
-    horizon = len(out)
-
-    # 规则 1：单点变化率限制 —— 相邻刻申报量变化 ≤ max_step_ratio * Q_base
-    ratio = config.risk_max_step_ratio
-    if ratio > 0 and horizon > 1:
-        n_clipped = 0
-        for t in range(1, horizon):
-            step_limit = ratio * max(q_base[t], 1e-6)
-            delta = out[t] - out[t - 1]
-            if abs(delta) > step_limit:
-                out[t] = out[t - 1] + np.sign(delta) * step_limit
-                n_clipped += 1
-        if n_clipped:
-            logger.info(f"风控裁剪[max_step_ratio]: {n_clipped}/{horizon} 刻被限幅 (ratio={ratio})")
-
-    # 规则 2：日总量上下限 —— 申报总量 ∈ ΣQ_base × [1-band, 1+band]
-    band = config.risk_daily_qty_band
-    total_base = float(np.sum(q_base))
-    total = float(np.sum(out))
-    lo, hi = total_base * (1 - band), total_base * (1 + band)
-    if total > hi and total > 0:
-        out *= hi / total
-        logger.info(f"风控裁剪[daily_qty_band]: 日总量 {total:.1f} → {hi:.1f} MWh (+{band:.0%} 上限)")
-    elif total < lo and total > 0:
-        out *= lo / total
-        logger.info(f"风控裁剪[daily_qty_band]: 日总量 {total:.1f} → {lo:.1f} MWh (-{band:.0%} 下限)")
-
-    # 规则 3：中长期带一致 —— 申报量与 Q_long 合计越出中长期考核带时告警（不强制）
-    if config.risk_long_band_check and q_long is not None:
-        covered = out + q_long
-        breach = (covered < config.lam_l_long * q_base) | (covered > config.lam_u_long * q_base)
-        if breach.any():
-            t_list = [int(t) for t in np.nonzero(breach)[0]]
-            logger.warning(
-                f"风控告警[long_band_check]: {len(t_list)} 刻 申报+Q_long 越出中长期带 "
-                f"[{config.lam_l_long}, {config.lam_u_long}]: t={t_list[:10]}"
+    *,
+    explanatory_price_signal: np.ndarray | None = None,
+    q_long: np.ndarray | None = None,
+    p_long: np.ndarray | None = None,
+    p_ref: np.ndarray | None = None,
+    scenario_set: ScenarioSet | None = None,
+    dr_adjustment: float = 0.0,
+    decision_time: pd.Timestamp | None = None,
+    input_versions: Mapping[str, str] | None = None,
+    config_version: str = "runtime-config",
+    solver=None,
+) -> OperationalPlan:
+    """Minimize next-day real-time energy and degradation costs."""
+    load = _finite_vector(load_forecast, "load_forecast")
+    price = _finite_vector(
+        realtime_price_forecast,
+        "realtime_price_forecast",
+    )
+    if load.shape != price.shape:
+        raise ValueError("load and price forecasts must use the same horizon")
+    if explanatory_price_signal is not None:
+        explanatory = _finite_vector(
+            explanatory_price_signal,
+            "explanatory_price_signal",
+        )
+        if explanatory.shape != load.shape:
+            raise ValueError(
+                "explanatory_price_signal must use the planning horizon"
             )
+    contract_inputs = (q_long, p_long, p_ref)
+    if any(item is not None for item in contract_inputs):
+        if not all(item is not None for item in contract_inputs):
+            raise ValueError(
+                "q_long, p_long and p_ref must be provided together"
+            )
+        assert q_long is not None
+        assert p_long is not None
+        assert p_ref is not None
+        contract_value = float(
+            np.sum(
+                compute_contract_difference(
+                    _finite_vector(q_long, "q_long"),
+                    _finite_vector(p_long, "p_long"),
+                    p_ref=_finite_vector(p_ref, "p_ref"),
+                )
+            )
+        )
+        if any(
+            np.asarray(item).shape != load.shape
+            for item in contract_inputs
+        ):
+            raise ValueError(
+                "contract arrays must use the planning horizon"
+            )
+    else:
+        contract_value = 0.0
+    if not np.isfinite(dr_adjustment):
+        raise ValueError("dr_adjustment must be finite")
+    if scenario_set is not None and scenario_set.horizon != len(load):
+        raise ValueError("scenario_set horizon must match the plan horizon")
 
-    return np.maximum(out, 0.0)
+    horizon = len(load)
+    steps = tuple(range(horizon))
+    margin = config.operational_power_margin
+    terminal_soc = (
+        float(config.soc_terminal_min)
+        if config.soc_terminal_min is not None
+        else float(bess["socini"])
+    )
+    physical = BESSConfig(
+        soc0=float(bess["socini"]),
+        soc_min=float(bess["socmin"]),
+        soc_max=float(bess["socmax"]),
+        p_ch_max=margin * float(bess["p_bcmax"]),
+        p_dis_max=margin * float(bess["p_bdmax"]),
+        eta_ch=float(bess["p_bceff"]),
+        eta_dis=float(bess["p_bdeff"]),
+        dt=config.dt,
+        terminal_soc=terminal_soc,
+        max_throughput=(
+            config.throughput_max_ratio * 2.0 * float(bess["cap"])
+            if config.throughput_max_ratio > 0.0
+            else None
+        ),
+        no_export=True,
+    )
+    model = LpProblem("day_ahead_operational", LpMinimize)
+    variables = add_bess_constraints(
+        model,
+        steps,
+        physical,
+        net_load={
+            step: float(load[step]) / config.dt
+            for step in steps
+        },
+        prefix="operational",
+    )
+    energy_cost = lpSum(
+        (
+            load[step]
+            + (
+                variables.p_charge[step]
+                - variables.p_discharge[step]
+            )
+            * config.dt
+        )
+        * price[step]
+        for step in steps
+    )
+    degradation_cost = lpSum(
+        config.deg_cost_per_mwh
+        * (
+            variables.p_charge[step]
+            + variables.p_discharge[step]
+        )
+        * config.dt
+        for step in steps
+    )
+    cvar_expression = None
+    if scenario_set is None:
+        expected_energy_cost = energy_cost
+        expected_cost = (
+            energy_cost
+            + degradation_cost
+            + contract_value
+            + dr_adjustment
+        )
+        model += expected_cost
+    else:
+        scenario_costs = {}
+        scenario_energy_costs = {}
+        probabilities = {}
+        for scenario in scenario_set.scenarios:
+            if "price" not in scenario.trajectories:
+                raise ValueError(
+                    "scenario trajectories must contain price"
+                )
+            scenario_price = scenario.trajectories["price"].to_numpy(
+                dtype=float
+            )
+            scenario_load = (
+                _scenario_period_energy(
+                    scenario_set,
+                    scenario,
+                    "load",
+                    dt=config.dt,
+                )
+                if "load" in scenario.trajectories
+                else load
+            )
+            for renewable_target in ("wind_power", "pv_power"):
+                if renewable_target in scenario.trajectories:
+                    scenario_load = scenario_load - _scenario_period_energy(
+                        scenario_set,
+                        scenario,
+                        renewable_target,
+                        dt=config.dt,
+                    )
+            scenario_load = np.maximum(scenario_load, 0.0)
+            scenario_energy = lpSum(
+                (
+                    scenario_load[step]
+                    + (
+                        variables.p_charge[step]
+                        - variables.p_discharge[step]
+                    )
+                    * config.dt
+                )
+                * scenario_price[step]
+                for step in steps
+            )
+            scenario_energy_costs[scenario.scenario_id] = scenario_energy
+            scenario_costs[scenario.scenario_id] = (
+                scenario_energy
+                + degradation_cost
+                + contract_value
+                + dr_adjustment
+            )
+            probabilities[scenario.scenario_id] = scenario.probability
+        expected_energy_cost = lpSum(
+            probabilities[scenario_id] * scenario_energy_costs[scenario_id]
+            for scenario_id in scenario_energy_costs
+        )
+        expected_cost = lpSum(
+            probabilities[scenario_id] * scenario_costs[scenario_id]
+            for scenario_id in scenario_costs
+        )
+        cvar = add_cvar_auxiliaries(
+            model,
+            scenario_costs,
+            probabilities,
+            alpha=config.scenario_cvar_alpha,
+            prefix="operational_cvar",
+        )
+        cvar_expression = cvar.expression
+        model += (
+            expected_cost
+            + config.scenario_cvar_weight * cvar_expression
+        )
+
+    solve_result = solve_pulp_model(model, solver=solver)
+    if solve_result.status not in {
+        SolveStatus.OPTIMAL,
+        SolveStatus.FEASIBLE,
+    }:
+        raise RuntimeError(
+            f"day-ahead operational solve failed: {solve_result.status.value}"
+        )
+
+    p_charge = np.array(
+        [value(variables.p_charge[step]) for step in steps],
+        dtype=float,
+    )
+    p_discharge = np.array(
+        [value(variables.p_discharge[step]) for step in steps],
+        dtype=float,
+    )
+    schedule = pd.DataFrame(
+        {
+            "p_charge": p_charge,
+            "p_discharge": p_discharge,
+            "p_net": p_discharge - p_charge,
+        }
+    )
+    soc = pd.Series(
+        [
+            float(bess["socini"]),
+            *[
+                float(value(variables.soc[step]))
+                for step in steps
+            ],
+        ],
+        name="soc",
+    )
+    active_constraints = _constraint_trace(
+        schedule,
+        soc,
+        bess={
+            **bess,
+            "p_bcmax": physical.p_ch_max,
+            "p_bdmax": physical.p_dis_max,
+        },
+    )
+    energy_value = float(value(expected_energy_cost))
+    degradation_value = float(value(degradation_cost))
+    expected_cost_value = float(value(expected_cost))
+    expected_risk = (
+        float(value(cvar_expression))
+        if cvar_expression is not None
+        else 0.0
+    )
+    trace = DecisionTrace(
+        decision_time=decision_time or pd.Timestamp.now(tz="UTC"),
+        input_versions=dict(input_versions or {}),
+        model_versions={
+            "dispatch": "single-settlement-operational-v1",
+        },
+        config_version=config_version,
+        solver_name=solve_result.solver_name,
+        solver_version=_solver_version(),
+        solver_status=solve_result.status.value,
+        objective_components={
+            "energy_cost": energy_value,
+            "degradation_cost": degradation_value,
+            "contract_difference": contract_value,
+            "dr_adjustment": float(dr_adjustment),
+            "cvar": expected_risk,
+        },
+        active_constraints=active_constraints,
+    )
+    return OperationalPlan(
+        resource_schedule=schedule,
+        soc=soc,
+        expected_cost=expected_cost_value,
+        expected_risk=expected_risk,
+        constraint_trace=active_constraints,
+        decision_trace=trace,
+    )

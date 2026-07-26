@@ -2,6 +2,13 @@
 
 本目录包含 `ele-trading` 项目的单元测试和集成测试。
 
+`tests/todo/` 是已隔离的用户侧、分布式和 CVXPY 测试归档。它们只能通过
+显式路径运行，常规 pytest 收集不会包含它们。
+
+v1 双结算回归位于
+`src/ele_trading/trading/todo/dual_settlement_v1/tests/`，同样只允许显式
+运行；活动测试不得导入该归档包。
+
 ## 运行方式
 
 ```bash
@@ -10,6 +17,9 @@ uv run python -m pytest -q
 
 # 运行指定测试文件
 uv run python -m pytest tests/test_bess_arbitrage.py -v
+
+# 运行 archived 用户侧测试（常规收集明确排除）
+uv run python -m pytest tests/todo/test_user_side_bess_dispatch.py -q
 
 # 运行指定测试函数
 uv run python -m pytest tests/test_metrics.py::test_sharpe_finite -v
@@ -24,12 +34,6 @@ uv run python -m pytest tests/test_metrics.py::test_sharpe_finite -v
 | `test_bess_arbitrage.py` | `optimization/bess_arbitrage.py` | 储能套利优化（含 dt=0.25 15 分钟步长） |
 | `test_mpc_bess.py` | `optimization/mpc_bess.py` | MPC 滚动优化（含终端 SOC 约束） |
 | `test_two_stage.py` | `optimization/two_stage_cvar.py` | 两阶段 CVaR 优化（需 glpk/cbc 求解器） |
-| `test_cvxp_bess_dispatch.py` | `optimization/user_side_bess_dispatch_cvxpy.py` | CVXPY 储能调度 |
-| `test_user_side_bess_dispatch.py` | `optimization/user_side_bess_dispatch.py` | 用户侧储能调度 |
-| `test_user_side_pv_dispatch.py` | `optimization/user_side_pv_dispatch.py` | 用户侧光伏调度 |
-| `test_user_side_pv_bess_dispatch.py` | `optimization/user_side_pv_bess_dispatch.py` | 用户侧光储联合调度 |
-| `test_user_side_renewable_dispatch.py` | `optimization/user_side_renewable_dispatch_class.py` | 用户侧可再生能源调度 |
-| `test_user_side_renewable_bess_distributed_dispatch.py` | `optimization/todo/user_side_renewable_bess_distributed_dispatch_class.py` | 用户侧分布式可再生能源+BESS 调度暂存接口 |
 | `test_capacity_optimizer.py` | `investment_estimation/todo/wind_pv_bess_capacity_optimizer.py` | 容量优化规划 |
 | `test_bess_capacity_planner.py` | `investment_estimation/todo/wind_pv_bess_capacity_planner.py` | 储能容量规划 |
 | `test_bess_capacity_operating_planner.py` | `investment_estimation/todo/bess_capacity_operating_planner.py` | 单节点 BESS 容量规划 |
@@ -42,29 +46,30 @@ uv run python -m pytest tests/test_metrics.py::test_sharpe_finite -v
 | 测试文件 | 覆盖模块 | 说明 |
 |----------|----------|------|
 | `test_scenario.py` | `scenario/sampler.py`、`scenario/reduction.py` | LHS 采样 + Cholesky 相关性 + Kantorovich 缩减 |
-| `test_metrics.py` | `evaluation/metrics.py` | 扩展指标（Sharpe、MDD、EFC、RTE、利用率） |
-| `test_settlement.py` | `evaluation/settlement.py` | 偏差考核（广东分层罚款） |
-| `test_backtest.py` | `evaluation/backtest.py` | 回测指标输出回归 |
-| `test_extended_metrics_backtest.py` | `evaluation/metrics.py` + MPC 回测 | 扩展指标接入完整回测 |
+| `test_metrics.py` | `trading/metrics.py` | 扩展指标（Sharpe、MDD、EFC、RTE、利用率） |
+| `test_v2_phase5_trading.py` | active `trading` chain | 单结算恒等式、合同/配置、运行计划、日内回退、DR、编排、无前瞻回测、归档边界和 pipeline app |
 
 ### 预测与天气测试
 
 | 测试文件 | 覆盖模块 | 说明 |
 |----------|----------|------|
 | `test_forecasting.py` | `forecasting/price_forecast.py`、`pv_forecast.py`、`wind_forecast.py` | 价格/光伏/风电预测 |
-| `test_weather.py` | `data_provider/weather_io.py` | 天气数据读取 |
-| `test_pv_es_plot.py` | `utils/pv_es_plot.py` | 光伏储能绘图 |
+| `test_dr_forecast.py` | `forecasting/contracts.py`、`provider.py` | 请求/结果 API 与无前瞻约束 |
+| `test_weather.py` | `data_provider/weather_data.py` 兼容实现 | 天气数据读取 |
 
 ### 数据层与工具测试
 
 | 测试文件 | 覆盖模块 | 说明 |
 |----------|----------|------|
-| `test_data_layer_generalization.py` | `data_provider/loader.py` | 数据加载泛化 |
+| `test_v2_phase2_contracts.py` | forecast/data snapshot contracts + AST boundaries | Phase 2 契约、模块权威与依赖方向 |
+| `test_v2_phase3_forecasting.py` | forecasting weather/price/load/renewable/provider/metrics | Phase 3 完整预测能力与逐场景 RED/GREEN 回归 |
+| `test_v2_phase3_review_fixes.py` | Phase 3 provenance/timezone/history/compatibility/ARIMA/weather input contracts | Round 1/2 评审问题的 RED/GREEN 防回归 |
+| `test_v2_phase4_scenario_optimization.py` | joint scenario/reduction/BESS/CVaR/solver | Phase 4 联合场景、概率转移、物理约束与求解失败 |
+| `test_v2_phase4_review_fixes.py` | Phase 4 median/provenance/reduction/penalty/version contracts | Phase 4 Round 1 评审问题的 RED/GREEN 防回归 |
+| `test_data_layer_generalization.py` | `data_provider/market_data.py`、归档 profile 回归 | 数据加载泛化 |
 | `test_yaml_config_loading.py` | YAML 配置加载 | 配置文件解析 |
 | `test_legacy_data_bridge.py` | legacy 数据桥接 | 旧数据格式兼容 |
 | `test_utils_data_alignment.py` | `utils/data_alignment.py` | 数据对齐工具 |
-| `test_utils_demand_charge.py` | `utils/demand_charge.py` | 需量电费计算 |
-| `test_utils_energy_price.py` | `utils/energy_price.py` | 能量价格工具 |
 | `test_utils_num.py` | `utils/num_utils.py` | 数值工具 |
 | `test_utils_time_index.py` | `utils/time_index.py` | 时间索引工具 |
 
@@ -72,10 +77,6 @@ uv run python -m pytest tests/test_metrics.py::test_sharpe_finite -v
 
 | 测试文件 | 说明 |
 |----------|------|
-| `test_user_side_bess_sample_data.py` | 用户侧储能样例数据构造 |
-| `test_user_side_pv_sample_data.py` | 用户侧光伏样例数据构造 |
-| `test_user_side_pv_dispatch_sample_data.py` | 用户侧光伏调度样例数据构造 |
-| `test_user_side_pv_bess_dispatch_sample_data.py` | 用户侧光储调度样例数据构造 |
 
 ### 入口脚本冒烟测试
 
@@ -88,15 +89,10 @@ uv run python -m pytest tests/test_metrics.py::test_sharpe_finite -v
 | `optimization/run_bess_arbitrage.py` | 退出码 + 输出非空 |
 | `optimization/run_mpc_demo.py` | 退出码 + 输出非空 |
 | `optimization/run_two_stage_skeleton.py` | 退出码 + 输出非空 |
-| `evaluation/run_backtest.py` | 退出码 + 输出非空 |
-| `optimization/run_user_side_bess_dispatch.py` | 退出码 + 关键字匹配 |
-| `optimization/run_user_side_pv_dispatch.py` | 退出码 + 关键字匹配 |
-| `optimization/run_user_side_pv_bess_dispatch.py` | 退出码 + 关键字匹配 |
+| `trading/run_pipeline.py` | 退出码 + 单结算完整链路汇总 |
 | `legacy/run_wind_pv_legacy_profit_eval.py` | 退出码 + 关键字匹配 |
-| `legacy/run_wind_pv_legacy_market_trading.py` | 退出码 + 关键字匹配 |
 | `capacity_planning/run_wind_pv_bess_irr_planning.py` | 退出码 + 关键字匹配 |
 | `resource_simulation/run_pv_simulation_v1.py` | 退出码 + 关键字匹配（quick） |
-| `optimization/run_cvxp_bess_dispatch.py` | 退出码 + 关键字匹配（quick） |
 | `capacity_planning/run_bess_capacity_planning.py` | 退出码验证（medium，timeout=180s） |
 | `capacity_planning/run_wind_bess_capacity_planning.py` | 退出码验证（medium，timeout=180s） |
 

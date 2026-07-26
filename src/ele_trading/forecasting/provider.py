@@ -7,126 +7,229 @@ Defines the unified interface for all forecast providers (price, load, renewable
 
 from __future__ import annotations
 
-from typing import Protocol
-
 import pandas as pd
 
-from ele_trading.trading.contracts import ForecastResult
+from .contracts import (
+    ForecastRequest,
+    ForecastResult,
+    _prepare_history_series,
+    _valid_time_index,
+)
+from .registry import ForecastModelRegistry
 
 
-class ForecastProvider(Protocol):
-    """Unified forecast provider interface."""
+class ForecastProvider:
+    """Target-oriented provider backed by a versioned model registry."""
+
+    def __init__(self, registry: ForecastModelRegistry) -> None:
+        self.registry = registry
+
+    def forecast(self, request: ForecastRequest) -> ForecastResult:
+        """Resolve and run the exact model requested for any target."""
+        model = self.registry.resolve(
+            request.target,
+            request.model_name,
+            request.model_version,
+        )
+        return model.forecast(request)
+
+    def get_weather_forecast(
+        self,
+        request: ForecastRequest,
+    ) -> ForecastResult:
+        return self._forecast_typed(request, "weather")
 
     def get_price_forecast(
-        self, market: str, horizon: int | str, *, quantiles: bool = False
+        self,
+        request: ForecastRequest,
     ) -> ForecastResult:
-        """Get price forecast.
-
-        Args:
-            market: "dayah" | "real" | "long"
-            horizon: Number of periods or "monthly"
-            quantiles: Whether to return quantile bands
-
-        Returns:
-            ForecastResult with point forecast and optional quantiles
-        """
-        ...
+        return self._forecast_typed(request, "price")
 
     def get_load_forecast(
-        self, scope: str, horizon: int | str, *, quantiles: bool = False
+        self,
+        request: ForecastRequest,
     ) -> ForecastResult:
-        """Get load forecast.
+        return self._forecast_typed(request, "load")
 
-        Args:
-            scope: "dayah_open" | "real_open" | "long"
-            horizon: Number of periods or "monthly"
-            quantiles: Whether to return quantile bands
+    def get_wind_power_forecast(
+        self,
+        request: ForecastRequest,
+    ) -> ForecastResult:
+        return self._forecast_typed(request, "wind_power")
 
-        Returns:
-            ForecastResult with point forecast and optional quantiles
-        """
-        ...
+    def get_pv_power_forecast(
+        self,
+        request: ForecastRequest,
+    ) -> ForecastResult:
+        return self._forecast_typed(request, "pv_power")
+
+    def _forecast_typed(
+        self,
+        request: ForecastRequest,
+        target: str,
+    ) -> ForecastResult:
+        if request.target != target:
+            raise ValueError(
+                f"forecast request target must be {target!r}"
+            )
+        return self.forecast(request)
 
 
-class SimpleForecastProvider:
+class SimpleForecastProvider(ForecastProvider):
     """Simple implementation using existing forecasters."""
 
     def __init__(
         self,
         price_forecaster,
         load_forecaster,
-        default_history_prices: list[float] | None = None,
-        issue_time: pd.Timestamp | None = None,
+        default_history_prices: pd.Series | None = None,
     ):
         self.price_forecaster = price_forecaster
         self.load_forecaster = load_forecaster
-        # Default history for SimplePriceForecaster (flat 300 元/MWh)
-        self.default_history_prices = default_history_prices or [300.0] * 96
-        # 显式 issue_time 便于回测复现（v1.3 §4.1 幂等）；缺省取当前时刻
-        self.issue_time = issue_time
+        self.default_history_prices = default_history_prices
+        registry = ForecastModelRegistry()
+        if price_forecaster is not None:
+            registry.register(
+                "price",
+                "legacy-simple",
+                type(price_forecaster).__name__,
+                _LegacyForecastModel(self, "price"),
+                default=True,
+            )
+        if load_forecaster is not None:
+            registry.register(
+                "load",
+                "legacy-simple",
+                type(load_forecaster).__name__,
+                _LegacyForecastModel(self, "load"),
+                default=True,
+            )
+        super().__init__(registry)
 
-    def _resolve_issue_time(self, issue_time: pd.Timestamp | None) -> pd.Timestamp:
-        resolved = issue_time or self.issue_time or pd.Timestamp.now()
-        return pd.Timestamp(resolved)
-
-    def get_price_forecast(
+    def _forecast_legacy(
         self,
-        market: str,
-        horizon: int | str,
-        *,
-        quantiles: bool = False,
-        issue_time: pd.Timestamp | None = None,
+        request: ForecastRequest,
+        target: str,
     ) -> ForecastResult:
-        """Get price forecast using price_forecaster."""
-        if isinstance(horizon, str):
-            horizon = 12 if horizon == "monthly" else 96
-
-        # SimplePriceForecaster needs history_prices, ARIMAForecaster only needs horizon
-        try:
-            output = self.price_forecaster.predict(self.default_history_prices, horizon)
-        except TypeError:
-            output = self.price_forecaster.predict(horizon)
-
-        return ForecastResult(
-            name=f"p_{market}_pre",
-            unit="元/MWh",
-            freq_minutes=15 if horizon > 24 else 0,
-            issue_time=self._resolve_issue_time(issue_time),
-            point=pd.Series(output.point_forecast),
-            lower=pd.Series(output.lower_quantile) if quantiles else None,
-            upper=pd.Series(output.upper_quantile) if quantiles else None,
-            quantile_level=0.90 if quantiles else None,
+        if target == "price":
+            if (
+                not isinstance(self.default_history_prices, pd.Series)
+                or self.default_history_prices.empty
+            ):
+                raise ValueError(
+                    "price history must be a non-empty timezone-indexed Series"
+                )
+            eligible = _prepare_history_series(
+                self.default_history_prices,
+                issue_time=request.issue_time,
+                frequency=request.frequency,
+                field_name="price history",
+            )
+            try:
+                output = self.price_forecaster.predict(
+                    eligible.tolist(),
+                    request.horizon,
+                )
+            except TypeError:
+                output = self.price_forecaster.predict(request.horizon)
+            return self._build_result(
+                request,
+                output,
+                unit="CNY/MWh",
+                feature_as_of=eligible.index.max(),
+                quality_flags=("source:historical_price",),
+            )
+        load_history = getattr(self.load_forecaster, "_history", None)
+        if not isinstance(load_history, pd.Series) or load_history.empty:
+            raise ValueError(
+                "load forecaster has no fitted historical source"
+            )
+        eligible = _prepare_history_series(
+            load_history,
+            issue_time=request.issue_time,
+            frequency=request.frequency,
+            field_name="load history",
+        )
+        feature_as_of = load_history.index.max()
+        if feature_as_of > request.issue_time:
+            raise ValueError(
+                "load history feature_as_of is later than request.issue_time"
+            )
+        output = self.load_forecaster.predict(
+            request.horizon,
+            start_time=_valid_time_index(request)[0],
+            frequency=request.frequency,
+        )
+        return self._build_result(
+            request,
+            output,
+            unit="MWh/period",
+            feature_as_of=eligible.index.max(),
+            quality_flags=("source:fitted_load_history",),
         )
 
-    def get_load_forecast(
+    def _build_result(
         self,
-        scope: str,
-        horizon: int | str,
+        request,
+        output,
         *,
-        quantiles: bool = False,
-        issue_time: pd.Timestamp | None = None,
+        unit: str,
+        feature_as_of: pd.Timestamp,
+        quality_flags: tuple[str, ...],
     ) -> ForecastResult:
-        """Get load forecast using load_forecaster."""
-        if isinstance(horizon, str):
-            horizon = 12 if horizon == "monthly" else 96
-
-        output = self.load_forecaster.predict(horizon)
+        index = _valid_time_index(request)
+        quantiles: dict[float, pd.Series] = {}
+        if request.quantiles:
+            if len(request.quantiles) != 2:
+                raise ValueError(
+                    "SimpleForecastProvider supports exactly two quantile levels"
+                )
+            quantiles = {
+                request.quantiles[0]: pd.Series(
+                    output.lower_quantile,
+                    index=index,
+                    dtype=float,
+                ),
+                request.quantiles[1]: pd.Series(
+                    output.upper_quantile,
+                    index=index,
+                    dtype=float,
+                ),
+            }
         return ForecastResult(
-            name=f"Q_{scope}_pre",
-            unit="MWh/刻",
-            freq_minutes=15 if horizon > 24 else 0,
-            issue_time=self._resolve_issue_time(issue_time),
-            point=pd.Series(output.point_forecast),
-            lower=pd.Series(output.lower_quantile) if quantiles else None,
-            upper=pd.Series(output.upper_quantile) if quantiles else None,
-            quantile_level=0.90 if quantiles else None,
+            request=request,
+            point=pd.Series(output.point_forecast, index=index, dtype=float),
+            quantiles=quantiles,
+            unit=unit,
+            model_version=type(
+                self.price_forecaster
+                if request.target == "price"
+                else self.load_forecaster
+            ).__name__,
+            feature_as_of=feature_as_of,
+            quality_flags=quality_flags,
         )
+
+
+class _LegacyForecastModel:
+    """Adapter keeping the v1 reference provider on the generic path."""
+
+    def __init__(
+        self,
+        provider: SimpleForecastProvider,
+        target: str,
+    ) -> None:
+        self.provider = provider
+        self.target = target
+
+    def forecast(self, request: ForecastRequest) -> ForecastResult:
+        return self.provider._forecast_legacy(request, self.target)
 
 
 def assert_no_future_info(result: ForecastResult, decision_time: pd.Timestamp) -> None:
     """预测出具时刻须不晚于决策时刻（v1.3 §4.1 无前瞻约束）。"""
-    if result.issue_time > pd.Timestamp(decision_time):
+    if result.request.issue_time > pd.Timestamp(decision_time):
         raise ValueError(
-            f"forecast issue_time {result.issue_time} is after decision time {decision_time}; "
+            f"forecast issue_time {result.request.issue_time} is after decision time {decision_time}; "
             "using future information is forbidden (v1.3 §4.1)"
         )

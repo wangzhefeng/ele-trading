@@ -1,6 +1,6 @@
 import pytest
 
-from ele_trading.evaluation.metrics import compute_irr
+from investment_estimation.finance import compute_irr
 from investment_estimation.todo.irr_finance import (
     backsolve_green_ppa_price,
     compute_target_irr_gap_metrics,

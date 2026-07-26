@@ -1,51 +1,12 @@
 # AGENTS.md
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
-## 1. Think Before Coding
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-## 2. Simplicity First
-**Minimum code that solves the problem. Nothing speculative.**
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-## 3. Surgical Changes
-**Touch only what you must. Clean up only your own mess.**
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-The test: Every changed line should trace directly to the user's request.
-## 4. Goal-Driven Execution
-**Define success criteria. Loop until verified.**
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
----
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+> 本文件是 ele-trading 项目 **agent 规则的唯一权威**，仅含**项目特有**硬约束。
+> 通用编码准则（Think Before Coding / Simplicity First / Surgical Changes / Goal-Driven Execution）
+> 由各 agent 的全局配置提供（`~/.claude/CLAUDE.md`、`~/.codex/AGENTS.md`），此处不复制。
+>
+> 违反下列硬边界会导致不可运行或错误结果。
 
 ## 电力交易项目特有约束
-
-以下为本项目的硬边界规则，违反会导致不可运行或错误结果。
 
 ### 求解器要求
 
@@ -66,7 +27,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ### 偏差考核参数
 
-- 结算口径以蒙西带状为唯一实现：`trading/settlement_mengxi.py` 的 `compute_settlement_C`/`compute_settlement_C2`/`compute_cpen_dayah`/`compute_cpen_long`（v1.3 §5）。广东式分层偏差考核 `compute_deviation_penalty()` 已从 `evaluation/settlement.py` 移除，勿再加回。
+- 活动结算口径以蒙西单结算为唯一实现：`trading/settlement_mengxi.py` 的 `build_settlement_report`（实时电能 `Q_real*p_real` + 中长期差价 `Q_long*(p_long-p_ref)` + 长协回收 + DR/退化/执行分项，`p_ref==p_real` 时与单结算恒等式等价，v2 §6.1）。v1.3 双结算的 `compute_settlement_C`/`compute_settlement_C2`/`compute_cpen_dayah`/`compute_cpen_long` 已迁入 `trading/todo/dual_settlement_v1/`，活动代码不得加回；广东式分层偏差考核 `compute_deviation_penalty()` 同样已移除。
 - 蒙西偏差带、考核系数、申报风控等市场参数统一经 `configs/market_mengxi.yaml` + `trading/config_loader.load_market_config()` 加载，字段与 `trading/contracts.MarketConfig` 一一对应；标 `TODO(rule-confirm)` 的参数为待规则确认的默认值（v1.3 §3.5）。
 - 禁止在代码中硬编码市场参数（如罚款系数、价格限幅）。
 

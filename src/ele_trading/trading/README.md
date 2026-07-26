@@ -1,44 +1,48 @@
-# trading — 蒙西电力交易主线模块
+# trading — 蒙西单结算交易主线
 
-本模块实现《策略算法框架详细设计 v1.3》（`docs/策略算法框架详细设计_v1.md`）的蒙西交易策略链：中长期 → 月度 → 日前 → 日内 → 结算 → 回测，外加需求响应与回测加噪预测。算法内核全部在此，入口脚本（`app/trading/run_*.py`）尚未建（见文末缺口）。
+本包实现 v2 的中长期/月度持仓、次日资源运行、日内滚动、需求响应、
+单结算、统一编排和无前瞻回测。日前价格只可作为显式解释信号，不进入
+财务结算。
 
-## 当前文件
+## 活动模块
 
-| 文件 | 职责 | 对应文档章节 |
-|------|------|--------------|
-| `contracts.py` | 全部 8 个数据契约 dataclass（`MarketConfig`/`ForecastResult`/`DayAheadPlan`/`IntradayPlan`/`SettlementReport`/`PositionPlan`/`BidLadder`/`CorridorAdvice`/`DRDecision`） | §3.1 |
-| `config_loader.py` | `load_market_config()` 加载并校验 `configs/market_mengxi.yaml`（嵌套 sections 展平到 `MarketConfig`） | §3.2 |
-| `settlement_mengxi.py` | 蒙西带状结算：`compute_settlement_C` / `compute_settlement_C2` / `compute_cpen_dayah` / `compute_cpen_long` | §5 |
-| `day_ahead_coupled.py` | 日前储售联动：模式 A（实时价套利）/ B（有效边际价，默认）/ C（联合优化申报量）+ 申报规则 + 风控裁剪 | §6 |
-| `intraday_rolling.py` | 日内滚动重优化：终端 SOC、偏差考核线性化、平滑项（delta_pos/delta_neg） | §7 |
-| `mid_long_planner.py` | 中长期仓位结构（α_long/α_dayah/α_real）与分月分解 | §8.1 |
-| `monthly_trader.py` | 集中竞价阶梯申报（`BidLadder`）与持仓缺口再平衡 | §8.2/§8.3 |
-| `dr_allocator.py` | 需求响应参与决策（ΔR_DR vs ΔR_arb，仅储能） | §9 |
-| `noisy_backcast.py` | 回测用加噪预测：用 `sca_price`/`sca_power` 对历史真实量价加乘性噪声生成 `*_pre` | §4.3 |
-| `sample_data.py` | 生成 96 点日清分样例 `data/trading/daily_sample_*.csv`（seed 固定可复现） | §11.4.4 |
+| 模块 | 职责 |
+|------|------|
+| `contracts.py` | `PositionState`、`MarketForecastBundle`、`OperationalPlan`、`IntradayPlan`、`SettlementReport`、`DecisionTrace` 及市场配置 |
+| `config_loader.py` | 严格一一映射并校验 `configs/market_mengxi.yaml` |
+| `settlement_mengxi.py` | 实时电量成本、中长期差价、月度回收和逐项调整 |
+| `mid_long_planner.py` / `monthly_trader.py` | 中长期覆盖、实时敞口、月度阶梯和缺少 orderbook 时的透明走廊 |
+| `day_ahead_coupled.py` | 基于共享 BESS 物理内核的次日运行计划，支持联合场景 CVaR |
+| `intraday_rolling.py` | 冻结已执行段、滚动重优化和求解失败物理裁剪回退 |
+| `dr_allocator.py` | 完全配置驱动的 DR 产品参与决策 |
+| `orchestrator.py` | 注入数据、预测、场景、配置和求解器并运行完整链 |
+| `backtest.py` | walk-forward 策略、无储能、确定性、风险感知和 oracle 对照 |
+| `metrics.py` | 交易/BESS 指标和退化核算 |
+| `sample_data.py` | demo 样例数据 provider 与按 issue-time vintage 的 walk-forward 预测 provider |
 
-## 数据来源与输出
+活动公开契约不含财务日前申报量、报价或日前偏差考核字段。
 
-- 输入样例：`data/trading/`（价格/储能配置/场景/96 点日清分，见该目录 README）。
-- 回测与计划结果落 `results/trading/`（见该目录 README）。
-- 结算口径：蒙西带状为唯一实现；广东分层偏差考核已从 `evaluation/settlement.py` 移除（§3.6）。
+## 归档
 
-## 典型流向
+完整 v1 双结算源码、配置、旧 app 和回归夹具位于
+`todo/dual_settlement_v1/`。它只用于历史复现，活动 source、app 和
+常规 tests 均不得导入 `ele_trading.trading.todo`。归档测试必须显式运行：
 
-```text
-configs/market_mengxi.yaml → config_loader.load_market_config
-  → mid_long_planner / monthly_trader（中长期建仓）
-  → forecasting.provider.ForecastProvider（或回测用 noisy_backcast 生成 *_pre）
-  → day_ahead_coupled → intraday_rolling → settlement_mengxi
-  → evaluation.backtest.run_mengxi_backtest（forecast-aware 两阶段回测）
+```bash
+UV_CACHE_DIR=.uv_cache uv run pytest -q \
+  src/ele_trading/trading/todo/dual_settlement_v1/tests
 ```
 
-## 使用边界
+## 活动流向
 
-- 本模块只含算法内核与数据契约，不含命令行入口。调用方（未来的 `app/trading/run_*.py`）负责解析配置、组装数据、写 `results/trading/`。
-- 所有市场参数经 `MarketConfig` 传入，禁止硬编码；`market_mengxi.yaml` 中标 `TODO(rule-confirm)` 的参数为待规则确认的默认值（§3.5）。
-- 数据契约的 DataFrame 列名与 §2.2 符号表严格一致，优化/结算/回测据此对齐。
+```text
+data provider → PositionState
+forecast provider/registry → MarketForecastBundle
+scenario builder → ScenarioSet
+OperationalPlan → IntradayPlan → SettlementReport
+```
 
-## 已知缺口
-
-- **入口脚本未建**：`app/trading/` 目录尚不存在（v1.3 §11.1/§11.4.6 列了 7 个 `run_*.py`）。算法可经 Python API 直接调用，补薄入口脚本即可命令行演示。
+活动入口（v2 §8.2）：`app/trading/run_{mid_long,monthly,day_ahead,intraday,dr,backtest}.py`
+以及统一编排入口 `app/trading/run_pipeline.py`。`run_backtest.py` 把 30 天
+walk-forward 回归基线写入 `results/trading/backtest/v2_baseline/`。样例数据只
+用于接口和回归验证；生产数据必须经 `data_provider` 注入。

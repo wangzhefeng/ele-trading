@@ -7,8 +7,11 @@ from _bootstrap import MENGXI_YAML, load_daily_samples
 import numpy as np
 
 from ele_trading.trading.config_loader import load_market_config
-from ele_trading.trading.contracts import CorridorAdvice
-from ele_trading.trading.monthly_trader import build_bid_ladder, rebalance_position_gap
+from ele_trading.trading.monthly_trader import (
+    build_bid_ladder,
+    build_position_corridor,
+    rebalance_position_gap,
+)
 from ele_trading.utils.log_util import logger
 
 
@@ -46,12 +49,11 @@ def main() -> None:
     logger.info("=== 降级量价走廊（无对手盘数据） ===")
     total_gap = float(gap.sum())
     if abs(total_gap) > pos_tol:
-        direction = "buy" if total_gap < 0 else "sell"
-        corridor = CorridorAdvice(
-            direction=direction,
-            qty_range=(max(0.0, abs(total_gap) - pos_tol), abs(total_gap) + pos_tol),
-            price_range=(p_spot * 0.9, p_spot * 1.05),
-            reason=f"缺口 {total_gap:.1f} MWh，{direction} 量价走廊（无对手盘数据）",
+        corridor = build_position_corridor(
+            position_gap=total_gap,
+            tolerance=pos_tol,
+            price_band=(p_spot * 0.9, p_spot * 1.05),
+            config=config,
         )
         logger.info(
             f"{corridor.direction}: qty [{corridor.qty_range[0]:,.0f}, {corridor.qty_range[1]:,.0f}] MWh, "

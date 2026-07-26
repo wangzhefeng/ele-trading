@@ -6,6 +6,11 @@ import numpy as np
 import pandas as pd
 
 from .base import ForecastOutput
+from .renewable_forecast import (
+    _site_zone,
+    calibrate_equivalent_hours,
+    pv_physical_output,
+)
 
 
 class PVPowerForecaster:
@@ -32,8 +37,18 @@ class PVPowerForecaster:
     ) -> None:
         if mode not in ('physics', 'harmonic'):
             raise ValueError(f"mode must be 'physics' or 'harmonic', got {mode!r}")
-        if mode == 'physics' and (latitude is None or longitude is None):
-            raise ValueError("latitude and longitude required for physics mode")
+        if (
+            latitude is not None
+            or longitude is not None
+            or tilt is not None
+            or azimuth != 180.0
+            or altitude != 0.0
+        ):
+            raise ValueError(
+                "latitude/longitude/tilt/azimuth/altitude are not supported "
+                "by the transparent PV baseline"
+            )
+        _site_zone(timezone)
         self.mode = mode
         self.latitude = latitude
         self.longitude = longitude
@@ -66,18 +81,26 @@ class PVPowerForecaster:
             capacity_mw: Installed capacity (MW).
             equiv_hours: Annual equivalent full-load hours for calibration.
         """
-        from ele_trading.capacity_planning.resource_simulation.pv_simulation_v2 import PVSimulator
-        tilt = self.tilt if self.tilt is not None else self.latitude * 0.9
-        sim = PVSimulator(
-            latitude=self.latitude,
-            longitude=self.longitude,
-            timezone=self.timezone,
-            tilt=tilt,
-            azimuth=self.azimuth,
-            altitude=self.altitude,
-        )
-        result = sim.simulate(weather_df, equiv_hours=equiv_hours, target_capacity_mw=capacity_mw)
-        point = (result.power_series / 1000.0).tolist()  # kW → MW
+        if capacity_mw <= 0.0:
+            raise ValueError("capacity_mw must be positive")
+        if not isinstance(weather_df.index, pd.DatetimeIndex):
+            raise ValueError("weather_df must use a DatetimeIndex")
+        if "ghi" in weather_df:
+            irradiance = weather_df["ghi"].to_numpy(dtype=float)
+        elif "ssrd" in weather_df:
+            irradiance = weather_df["ssrd"].to_numpy(dtype=float)
+        else:
+            raise ValueError("weather_df must contain ghi")
+        point = calibrate_equivalent_hours(
+            pv_physical_output(
+                irradiance,
+                weather_df.index,
+                capacity_mw,
+                site_timezone=self.timezone,
+            ),
+            capacity_mw,
+            equiv_hours,
+        ).tolist()
         horizon = len(point)
         lower = [min(max(0.0, p * 0.85), capacity_mw) for p in point]
         upper = [min(capacity_mw, p * 1.15) for p in point]
@@ -147,8 +170,13 @@ class PVPowerForecaster:
         )
 
     def _build_features(self, index: pd.DatetimeIndex) -> np.ndarray:
-        hour = index.hour + index.minute / 60.0
-        day = index.dayofyear.astype(float)
+        local_index = (
+            index.tz_convert(self.timezone)
+            if index.tz is not None
+            else index
+        )
+        hour = local_index.hour + local_index.minute / 60.0
+        day = local_index.dayofyear.astype(float)
         cols: list[np.ndarray] = [np.ones(len(index))]
         for k in range(1, self.n_harmonics_daily + 1):
             cols.append(np.sin(2 * np.pi * k * hour / 24))

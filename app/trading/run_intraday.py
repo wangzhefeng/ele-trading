@@ -1,69 +1,75 @@
-"""日内滚动优化入口（v1.3 §7）：模拟一日逐刻滚动重优化。"""
+"""Thin demo entrypoint for the Mengxi intraday rolling plan."""
 
 from __future__ import annotations
 
-from _bootstrap import MENGXI_YAML, SAMPLE_BESS, load_daily_samples
+import argparse
+import hashlib
 
-import numpy as np
+import pandas as pd
 
+from _bootstrap import DATA_TRADING, MENGXI_YAML, SAMPLE_BESS
+
+from ele_trading.forecasting.seasonal_naive_provider import (
+    SeasonalNaiveTradingForecastProvider,
+)
+from ele_trading.scenario.joint_builder import build_joint_scenarios
 from ele_trading.trading.config_loader import load_market_config
-from ele_trading.trading.day_ahead_coupled import solve_day_ahead_coupled
-from ele_trading.trading.intraday_rolling import solve_intraday_rolling
-from ele_trading.trading.noisy_backcast import generate_noisy_forecast
-from ele_trading.utils.log_util import logger
-
-DT = 0.25
-ROLLING_STEP = 12  # 每 3 小时重优化一次
+from ele_trading.trading.orchestrator import TradingOrchestrator
+from ele_trading.trading.sample_data import SampleTradingDataProvider
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Mengxi intraday rolling plan demo"
+    )
+    parser.add_argument("--scenario-count", type=int, default=None)
+    parser.add_argument("--intraday-start", type=int, default=48)
+    args = parser.parse_args()
+
+    data_provider = SampleTradingDataProvider(DATA_TRADING)
+    days = data_provider.available_days
+    if len(days) < 2:
+        raise ValueError("intraday demo requires at least two sample days")
+    day = days[-1]
+    history_day = days[-2]
+    decision_time = pd.Timestamp(day.date(), tz="Asia/Shanghai")
     config = load_market_config(MENGXI_YAML)
-    calendar = load_daily_samples()
-    day = sorted(calendar.keys())[-1]
-    daily = calendar[day]
-    horizon = len(daily)
-    logger.info(f"=== 日内滚动: {day:%Y-%m-%d}, 步长={ROLLING_STEP} 刻 ===")
-
-    # 日前计划（只用预测）
-    p_dayah_pre = generate_noisy_forecast(daily["p_dayah"].values, config.sca_price, seed=1)
-    p_real_pre = generate_noisy_forecast(daily["p_real"].values, config.sca_price, seed=2)
-    q_load_pre = generate_noisy_forecast(daily["Q_real_load"].values, config.sca_power, seed=3)
-    plan_da = solve_day_ahead_coupled(q_load_pre, p_dayah_pre, p_real_pre, SAMPLE_BESS, config)
-    q_dayah = plan_da.q_dayah
-    logger.info(f"日前申报总量 {q_dayah.sum():.1f} MWh")
-
-    # 日内逐刻滚动
-    soc = SAMPLE_BESS["socini"]
-    prev_p_b = None
-    executed = np.zeros(horizon)
-    for t in range(horizon):
-        if t % ROLLING_STEP == 0 or prev_p_b is None:
-            rem = horizon - t
-            q_load_roll = generate_noisy_forecast(daily["Q_real_load"].values[t:], config.sca_power, seed=100 + t)
-            p_real_roll = generate_noisy_forecast(daily["p_real"].values[t:], config.sca_price, seed=200 + t)
-            plan_id = solve_intraday_rolling(
-                q_load_roll, p_real_roll, q_dayah[t:], daily["p_dayah"].values[t:],
-                soc, SAMPLE_BESS, config,
-                prev_p_b=prev_p_b[-rem:] if prev_p_b is not None and len(prev_p_b) >= rem else None,
-            )
-            prev_p_b = plan_id.schedule.p_b
-            if t % (ROLLING_STEP * 4) == 0:
-                delta = float(np.abs(plan_id.adjustment.delta_p_b).max()) if len(plan_id.adjustment.delta_p_b) else 0.0
-                logger.info(
-                    f"t={t:>2} 重优化: soc={soc:.2f}, Δp_b_max={delta:.3f}, "
-                    f"reasons={plan_id.adjustment.reasons or ['-']}"
-                )
-        executed[t] = prev_p_b[0] if len(prev_p_b) else 0.0
-        p_bc_t, p_bd_t = max(-executed[t], 0.0), max(executed[t], 0.0)
-        soc = float(np.clip(
-            soc + SAMPLE_BESS["p_bceff"] * p_bc_t * DT - p_bd_t * DT / SAMPLE_BESS["p_bdeff"],
-            SAMPLE_BESS["socmin"], SAMPLE_BESS["socmax"],
-        ))
-        prev_p_b = prev_p_b[1:] if len(prev_p_b) > 1 else prev_p_b
-
-    total_dis = sum(max(p, 0.0) for p in executed) * DT
-    total_chg = sum(max(-p, 0.0) for p in executed) * DT
-    logger.info(f"日内执行: 放电 {total_dis:.2f} MWh, 充电 {total_chg:.2f} MWh, 末态 SOC {soc:.2f}")
+    if args.scenario_count is not None:
+        config.scenario_count = args.scenario_count
+    forecast_provider = SeasonalNaiveTradingForecastProvider(
+        data_provider.frame_for_day(history_day),
+        feature_as_of=decision_time - pd.Timedelta(minutes=15),
+    )
+    orchestrator = TradingOrchestrator(
+        data_provider=data_provider,
+        forecast_provider=forecast_provider,
+        forecast_registry="seasonal-naive-demo-v1",
+        scenario_builder=build_joint_scenarios,
+        config=config,
+        bess=SAMPLE_BESS,
+        config_version=hashlib.sha256(
+            MENGXI_YAML.read_bytes()
+        ).hexdigest(),
+    )
+    actuals = data_provider.frame_for_day(day)
+    result = orchestrator.run(
+        decision_time=decision_time,
+        actual_load=actuals["Q_real_load"].to_numpy(dtype=float),
+        actual_price=actuals["p_real"].to_numpy(dtype=float),
+        intraday_start=args.intraday_start,
+    )
+    plan = result.intraday_plan
+    executed = len(plan.executed_prefix)
+    remaining = len(plan.schedule.resource_schedule)
+    adjustment = plan.adjustment
+    reasons = "; ".join(adjustment.reasons) if adjustment.reasons else "-"
+    print(
+        "intraday rolling plan "
+        f"day={day.date()} fallback={plan.fallback_used} "
+        f"executed_prefix={executed} remaining={remaining} "
+        f"cost_delta={adjustment.expected_cost_delta:.2f}"
+    )
+    print(f"reasons: {reasons}")
 
 
 if __name__ == "__main__":

@@ -1,24 +1,23 @@
-# data_provider — 数据、配置与样例输入模块
+# data_provider — 交易数据接入与质量边界
 
-本模块负责把 CSV/YAML、负荷曲线、气象数据、legacy 兼容数据和合成样例转换为核心算法可消费的数据结构。
+本模块负责将市场、气象和资产输入转换为带 `as_of` 与版本信息的活动交易数据。投资测算 case 和用户侧样例不属于活动 API。
 
 ## 当前文件
 
 | 文件 | 职责 |
 |------|------|
-| `schemas.py` | 价格、储能、场景、负荷、PV/风电 profile、case dataset 的 dataclass |
-| `loader.py` | CSV/YAML 读取函数，返回统一结构 |
+| `contracts.py` | `MarketDataSnapshot`：校验时区、时间顺序、唯一性、观测截止时刻和版本 |
+| `market_data.py` | 市场快照直接构造、市场 CSV/价格/场景读取 |
+| `weather_data.py` | 外部与历史气象数据的活动公开入口 |
+| `asset_data.py` | 活动 BESS 资产配置与 YAML 读取 |
+| `quality.py` | 时间戳清洗、重采样、对齐、质量分和异常修复 |
+| `schemas.py` | 价格、场景和通用 `ObservedPowerSeries` 活动类型 |
+| `loader.py` | 已弃用的通用兼容入口，仅转发 market/asset API |
 | `sample_data.py` | 内置最小样例路径和快捷加载函数 |
-| `case_dataset.py` | 构造投资测算和交易测算 case dataset |
-| `load_profile.py` | 从历史负荷 Excel 构造目标年份负荷 profile |
-| `resource_weather.py` | Open-Meteo 获取、天气 CSV 读写 |
-| `weather_io.py` | NetCDF、Mongo、样例气象、测点读取和天气模拟 |
-| `time_series_ops.py` | 时间戳清洗、重采样、对齐、质量分和异常修复 |
-| `user_side_storage_sample.py` | 用户侧储能 demo 配置读取和合成输入 |
-| `user_side_pv_dispatch_sample.py` | 用户侧 PV-only demo 配置读取和合成输入 |
-| `user_side_pv_bess_dispatch_sample.py` | 用户侧 PV+storage demo 配置读取和合成输入 |
-| `user_side_pv_sample.py` | 早期用户侧 PV/PV+storage 兼容样例构造 |
-| `cvxp_storage_sample.py` | CVXPY 储能调度 demo 配置读取和合成输入 |
+| `case_dataset.py` | 已弃用的交易数据集导入路径，仅转发到 `market_data.py` |
+| `resource_weather.py` / `weather_io.py` | 已弃用的气象兼容入口；新代码使用 `weather_data.py` |
+| `time_series_ops.py` | 已弃用的质量函数兼容入口；新代码使用 `quality.py` |
+| `todo/` | 目标年份/profile、投资 case、资源容量仿真类型、用户侧及 CVXPY 样例归档 |
 
 ## 数据来源
 
@@ -33,14 +32,17 @@
 ## 典型流向
 
 ```text
-configs/*.yaml / data/* / weather source
-→ data_provider loader / builder
-→ forecasting / optimization / evaluation
+CSV / YAML / weather source
+→ market_data / weather_data / asset_data
+→ MarketDataSnapshot + quality validation
+→ forecasting / optimization / trading
 → app demo 或 tests
 ```
 
 ## 使用边界
 
-- 本模块负责数据形状、路径解析、样例生成和轻量质量处理，不负责优化目标函数。
-- 真实项目接入时，应在这里建立稳定的数据 contract，再让算法模块消费 contract。
+- 活动交易数据必须携带 `market`、`scope_type`、`scope_id`、`as_of`、`version` 与 `quality_flags`。
+- 每个快照必须包含无缺失的布尔列 `is_observation`；只有严格布尔值 `False` 的预测行可晚于 `as_of`。
+- `build_trading_case_dataset()` 直接构造 `MarketDataSnapshot`，不得经由投资 case builder。
+- 通用实测负荷/新能源功率使用 `ObservedPowerSeries`；不得复用投资 profile 类型。
 - legacy 桥接代码用于兼容历史 CSV 字段，不应成为新主线字段命名的来源。
