@@ -1,3 +1,16 @@
+"""气象数据实现：Mongo / NetCDF / 模拟器 / 实测文件读取。
+
+结构分五节：
+1. 模拟数据生成（合成气象场 + 合成负荷）；
+2. NetCDF 解析（``NetCDFToJSON``）；
+3. MongoDB 客户端（``WeatherMongoClient`` / ``WeatherMongoReader``）；
+4. 离线模拟器（``WeatherSimulator``，接口与 Mongo 读取器对齐，可无库运行）；
+5. 批量抓取与实测文件读取。
+
+xarray / pymongo 为可选依赖：未安装时对应功能在调用处显式抛 ImportError，
+不影响本模块其他部分的导入与使用。
+"""
+
 from __future__ import annotations
 
 import logging
@@ -8,6 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+# 可选依赖：xarray（NetCDF 处理）
 try:
     import xarray as xr
 
@@ -15,6 +29,7 @@ try:
 except ImportError:
     HAS_XARRAY = False
 
+# 可选依赖：pymongo（MongoDB 接入）
 try:
     from pymongo import MongoClient
     from urllib.parse import quote_plus
@@ -26,12 +41,13 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Module constants
+# 模块常量
 # ---------------------------------------------------------------------------
 
+# 气象变量清单：平均气温 / 相对湿度 / 太阳辐射 / 风向 / 风速
 WEATHER_VARS = ["t_avg", "rh", "ssrd", "wd", "ws"]
-DEFAULT_LAG = 6
-DEFAULT_QUERY_LIMIT = 5000
+DEFAULT_LAG = 6                   # 默认滞后阶数（特征工程用）
+DEFAULT_QUERY_LIMIT = 5000        # 单次 Mongo 查询默认返回上限
 
 # 内蒙古区域默认格点范围
 DEFAULT_LATS = [round(x, 1) for x in np.arange(37.0, 44.0, 0.5)]
@@ -39,7 +55,7 @@ DEFAULT_LONS = [round(x, 1) for x in np.arange(105.0, 121.0, 0.5)]
 
 
 # ===========================================================================
-# Section 1: Simulated Data Generation
+# Section 1: 模拟数据生成
 # ===========================================================================
 
 def make_sample_weather_dataset(
@@ -113,6 +129,7 @@ def make_sample_weather_dataset(
     peak_hour = 12
     for h in range(n_times):
         if hours_of_day[h] >= 6 and hours_of_day[h] <= 18:
+            # 日照角按 6→18 点正弦包络，正午 12 点达到峰值
             angle = np.pi * (hours_of_day[h] - 6) / 12
             ssrd[:, h, :] = (
                 600.0 * np.sin(angle) + rng.normal(0, 30, (n_lat, n_lon))
@@ -138,6 +155,8 @@ def make_sample_weather_dataset(
     pre[rain_mask] = rng.exponential(2.0, np.sum(rain_mask))
     pre = np.round(pre, 1)
 
+    # 内部计算形状为 (n_lat, n_times, n_lon)，输出转为 xarray 约定的
+    # (time, lat, lon) 维序
     ds = xr.Dataset(
         {
             "t_avg": (["time", "lat", "lon"], t_avg.transpose(1, 0, 2)),
@@ -189,16 +208,16 @@ def make_sample_load_data(
     # 基础负荷 10000 MW + 日双峰
     load = np.full(n_times, 10000.0)
 
-    # 上午高峰 9:00-11:00
+    # 上午高峰 9:00-11:00（高斯包络，中心 10 点）
     morning_peak = 2000 * np.exp(-((hours - 10) ** 2) / 8)
-    # 晚间高峰 19:00-21:00
+    # 晚间高峰 19:00-21:00（高斯包络，中心 20 点）
     evening_peak = 2500 * np.exp(-((hours - 20) ** 2) / 8)
-    # 午间低谷 13:00-15:00
+    # 午间低谷 13:00-15:00（高斯包络，中心 14 点）
     afternoon_valley = -800 * np.exp(-((hours - 14) ** 2) / 6)
 
     load += morning_peak + evening_peak + afternoon_valley
 
-    # 周末效应
+    # 周末效应：负荷整体下浮 10%
     weekend_mask = weekdays >= 5
     load[weekend_mask] *= 0.90
 
@@ -209,7 +228,7 @@ def make_sample_load_data(
 
 
 # ===========================================================================
-# Section 2: NetCDF Parsing
+# Section 2: NetCDF 解析
 # ===========================================================================
 
 class NetCDFToJSON:
@@ -231,6 +250,7 @@ class NetCDFToJSON:
         if not HAS_XARRAY:
             raise ImportError("xarray 未安装，请运行: pip install xarray")
 
+        # dataset 直传优先；否则从文件打开；两者都缺则报错
         if dataset is not None:
             self.ds = dataset
         elif file_path is not None:
@@ -239,7 +259,7 @@ class NetCDFToJSON:
             raise ValueError("必须提供 file_path 或 dataset 参数")
 
     def extract_units(self) -> Dict[str, Optional[str]]:
-        """提取所有变量的单位。"""
+        """提取所有变量的单位（无 units 属性的变量值为 None）。"""
         units: Dict[str, Optional[str]] = {}
         for name, var in self.ds.variables.items():
             units[name] = var.attrs.get("units", None)
@@ -251,7 +271,7 @@ class NetCDFToJSON:
         return df
 
     def to_json_records(self) -> List[Dict[str, Any]]:
-        """将数据集转为 JSON 记录列表。"""
+        """将数据集转为 JSON 记录列表（NaN 统一替换为 None）。"""
         df = self.to_dataframe()
         df = df.where(pd.notnull(df), None)
         return df.to_dict(orient="records")
@@ -265,11 +285,15 @@ class NetCDFToJSON:
 
 
 # ===========================================================================
-# Section 3: MongoDB Clients
+# Section 3: MongoDB 客户端
 # ===========================================================================
 
 class WeatherMongoClient:
-    """MongoDB 天气数据库基础客户端。"""
+    """MongoDB 天气数据库基础客户端。
+
+    负责连接管理与通用查询；按格点/城镇/时间范围的专用查询见
+    子类 ``WeatherMongoReader``。
+    """
 
     def __init__(
         self,
@@ -283,6 +307,7 @@ class WeatherMongoClient:
         if not HAS_PYMONGO:
             raise ImportError("pymongo 未安装，请运行: pip install pymongo")
 
+        # 用户名/密码含特殊字符（如 !@#），拼接 URI 前必须 URL 编码
         username_enc = quote_plus(username)
         password_enc = quote_plus(password)
 
@@ -308,7 +333,7 @@ class WeatherMongoClient:
         query: Optional[Dict] = None,
         projection: Optional[Dict] = None,
     ) -> pd.DataFrame:
-        """查询集合并返回 DataFrame。"""
+        """查询集合并返回 DataFrame（空结果返回空帧；自动丢弃 _id 列）。"""
         if query is None:
             query = {}
         data = list(self.db[collection].find(query, projection))
@@ -325,7 +350,7 @@ class WeatherMongoClient:
         query: Optional[Dict] = None,
         projection: Optional[Dict] = None,
     ) -> List[Dict]:
-        """查询集合并返回 JSON 列表。"""
+        """查询集合并返回 JSON 列表（默认排除 _id 字段）。"""
         if query is None:
             query = {}
         return list(self.db[collection].find(
@@ -358,7 +383,7 @@ class WeatherMongoReader(WeatherMongoClient):
         if connect:
             super().__init__(host, port, db_name, username, password,
                              timeout_ms=30000)
-            # 使用更长超时重连
+            # 使用更长超时重连（socket 超时放宽到 300s，适应大查询）
             username_enc = quote_plus(username)
             password_enc = quote_plus(password)
             uri = (
@@ -373,9 +398,11 @@ class WeatherMongoReader(WeatherMongoClient):
                 connectTimeoutMS=30000,
             )
             self.db = self.client[db_name]
+            # 主动触发一次服务端往返，连接失败在此处即暴露
             self.db.list_collection_names()
             logger.info("MongoDB 连接成功")
         else:
+            # 延迟连接模式：client/db 置空，由调用方后续注入（测试用）
             self.client = None  # type: ignore[assignment]
             self.db = None  # type: ignore[assignment]
 
@@ -392,6 +419,7 @@ class WeatherMongoReader(WeatherMongoClient):
         limit: int = DEFAULT_QUERY_LIMIT,
     ) -> pd.DataFrame:
         """单格点 + 时间范围查询 real_data 集合。"""
+        # datatime 为整数时间编码（YYYYMMDDHH），区间闭式过滤
         query = {
             "lat": lat,
             "lon": lon,
@@ -459,6 +487,7 @@ class WeatherMongoReader(WeatherMongoClient):
         limit: int = 20000,
     ) -> pd.DataFrame:
         """多城镇 + 时间范围批量查询 forecast_data 集合。"""
+        # $in 批量匹配城镇清单，结果按城镇 + 时间双重排序
         query = {
             "areacode": {"$in": areacode_list},
             "datatime": {"$gte": start_time, "$lte": end_time},
@@ -485,7 +514,7 @@ class WeatherMongoReader(WeatherMongoClient):
 
 
 # ===========================================================================
-# Section 4: Weather Simulator (Offline Data Provider)
+# Section 4: 离线气象模拟器（替代 MongoDB 的数据提供者）
 # ===========================================================================
 
 class WeatherSimulator:
@@ -503,9 +532,10 @@ class WeatherSimulator:
 
     @property
     def _flat_df(self) -> pd.DataFrame:
-        """将 xr.Dataset 展平为类似 MongoDB 查询结果的 DataFrame。"""
+        """将 xr.Dataset 展平为类似 MongoDB 查询结果的 DataFrame（带缓存）。"""
         if self._df_cache is None:
             df = self._ds.to_dataframe().reset_index()
+            # time → Mongo 风格的整数时间编码（YYYYMMDDHH）
             df["datatime"] = (
                 df["time"]
                 .dt.strftime("%Y%m%d%H")
@@ -524,7 +554,7 @@ class WeatherSimulator:
     ) -> pd.DataFrame:
         """模拟 real_data 单格点查询。"""
         df = self._flat_df
-        # 找到最近的格点
+        # 请求坐标不一定落在格点上，吸附到最近格点
         nearest_lat = min(self._ds.lat.values, key=lambda x: abs(x - lat))
         nearest_lon = min(self._ds.lon.values, key=lambda x: abs(x - lon))
 
@@ -535,6 +565,7 @@ class WeatherSimulator:
             & (df["datatime"] <= end_time)
         )
         result = df[mask].sort_values("datatime").head(limit).copy()
+        # 与 Mongo 返回结构对齐：丢弃 xarray 原始 time 列
         if "time" in result.columns:
             result.drop(columns=["time"], inplace=True)
         return result
@@ -561,6 +592,7 @@ class WeatherSimulator:
     ) -> pd.DataFrame:
         """模拟 forecast_data 单城镇查询。"""
         df = self._flat_df
+        # 字符串时间（如 "2024-01-01 08:00"）→ 整数编码 YYYYMMDDHH（取前 10 位）
         start_int = int(start_time.replace("-", "").replace(":", "").replace(" ", "")[:10])
         end_int = int(end_time.replace("-", "").replace(":", "").replace(" ", "")[:10])
 
@@ -568,6 +600,7 @@ class WeatherSimulator:
         result = df[mask].head(limit).copy()
         if "time" in result.columns:
             result.drop(columns=["time"], inplace=True)
+        # 模拟数据无真实城镇维度，直接把入参 areacode 打上
         result["areacode"] = areacode
         return result
 
@@ -580,6 +613,7 @@ class WeatherSimulator:
     ) -> pd.DataFrame:
         """模拟 forecast_data 多城镇批量查询。"""
         frames = []
+        # limit 均摊到各城镇，保证单城镇查询不超过上限
         per_call = max(limit // len(areacode_list), 1)
         for ac in areacode_list:
             df = self.get_forecast_by_areacode_and_time(
@@ -595,7 +629,7 @@ class WeatherSimulator:
 
 
 # ===========================================================================
-# Section 5: Batch Data Fetching & File Reading
+# Section 5: 批量抓取与实测文件读取
 # ===========================================================================
 
 def get_real_for_points(
@@ -609,7 +643,8 @@ def get_real_for_points(
     批量获取多格点的天气实况数据。
 
     reader 可为 WeatherMongoReader 或 WeatherSimulator，
-    只要提供 get_real_by_point_and_time_v2() 方法即可。
+    只要提供 get_real_by_point_and_time_v2() 方法即可（鸭子类型）。
+    df_points 需含 lat/lon 列，可选 areacode 列（用于回填城镇标识）。
     """
     all_results = []
 
@@ -626,6 +661,7 @@ def get_real_for_points(
         if df_single.empty:
             continue
 
+        # 回填请求的精确坐标与城镇标识（reader 返回的可能是吸附后格点）
         df_single["lat"] = lat
         df_single["lon"] = lon
         if areacode is not None:
@@ -654,12 +690,14 @@ def read_measured_folder(folder_path: str) -> pd.DataFrame:
         raise FileNotFoundError(f"文件夹不存在: {folder_path}")
 
     all_data: List[pd.DataFrame] = []
+    # 实测值列名模式：列名中包含"实测值"即命中
     pattern = re.compile(r".*实测值.*")
 
     for file in sorted(os.listdir(folder_path)):
         if not file.endswith(".xlsx"):
             continue
 
+        # 文件名（去扩展名）即日期，如 "2024-01-01.xlsx"
         date_str = os.path.splitext(file)[0]
         try:
             base_date = pd.to_datetime(date_str)
@@ -670,7 +708,7 @@ def read_measured_folder(folder_path: str) -> pd.DataFrame:
         file_path = os.path.join(folder_path, file)
         df = pd.read_excel(file_path)
 
-        # 查找时刻列
+        # 查找时刻列（列名含"时"/"间"/"time"，找不到则回退首列）
         time_col_candidates = [
             c for c in df.columns
             if any(kw in str(c) for kw in ("时", "间", "time"))
@@ -686,6 +724,7 @@ def read_measured_folder(folder_path: str) -> pd.DataFrame:
             continue
         measured_col = measured_cols[0]
 
+        # 日期 + 时刻字符串拼成完整 datetime
         df["datetime"] = df[time_col].apply(
             lambda t: pd.to_datetime(f"{date_str} {t}")
         )

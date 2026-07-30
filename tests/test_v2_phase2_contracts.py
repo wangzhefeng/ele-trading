@@ -606,7 +606,7 @@ def test_observed_power_csv_uses_clear_active_contract(tmp_path: Path):
 def test_active_data_provider_has_no_investment_profile_api():
     """Investment profile types and builders must only be reachable under todo."""
     import ele_trading.data_provider as data_provider
-    from ele_trading.data_provider import loader, schemas
+    from ele_trading.data_provider import schemas
 
     forbidden_names = {
         "LoadProfileBuildConfig",
@@ -634,7 +634,6 @@ def test_active_data_provider_has_no_investment_profile_api():
         forbidden_names
         & (
             set(vars(data_provider))
-            | set(vars(loader))
             | set(vars(schemas))
         )
     )

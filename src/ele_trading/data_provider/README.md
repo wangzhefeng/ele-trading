@@ -7,23 +7,20 @@
 | 文件 | 职责 |
 |------|------|
 | `contracts.py` | `MarketDataSnapshot`：校验时区、时间顺序、唯一性、观测截止时刻和版本 |
-| `market_data.py` | 市场快照直接构造、市场 CSV/价格/场景读取 |
-| `weather_data.py` | 外部与历史气象数据的活动公开入口 |
+| `market_data.py` | 市场快照直接构造、市场 CSV/价格读取 |
 | `asset_data.py` | 活动 BESS 资产配置与 YAML 读取 |
 | `quality.py` | 时间戳清洗、重采样、对齐、质量分和异常修复 |
-| `schemas.py` | 价格、场景和通用 `ObservedPowerSeries` 活动类型 |
-| `loader.py` | 已弃用的通用兼容入口，仅转发 market/asset API |
+| `schemas.py` | 价格和通用 `ObservedPowerSeries` 活动类型 |
 | `sample_data.py` | 内置最小样例路径和快捷加载函数 |
-| `case_dataset.py` | 已弃用的交易数据集导入路径，仅转发到 `market_data.py` |
-| `resource_weather.py` / `weather_io.py` | 已弃用的气象兼容入口；新代码使用 `weather_data.py` |
-| `time_series_ops.py` | 已弃用的质量函数兼容入口；新代码使用 `quality.py` |
+| `weather_data.py` | 气象数据聚合入口（facade）：自身无实现，re-export 下两个模块 |
+| `resource_weather.py` | 气象实现：Open-Meteo ERA5 抓取 + 气象 CSV IO（被 resource_simulation 等 app 使用） |
+| `weather_io.py` | 气象实现：Mongo/NetCDF/气象模拟器/实测文件夹（目前仅 `tests/test_weather.py` 消费） |
 | `todo/` | 目标年份/profile、投资 case、资源容量仿真类型、用户侧及 CVXPY 样例归档 |
 
 ## 数据来源
 
-- `data/trading/prices/`：交易线价格最小样例（日前/日内，含 96 点）。
+- `data/trading/prices/`：交易线价格最小样例（日前/日内）。
 - `data/trading/config/`：交易线储能最小样例配置。
-- `data/trading/scenarios/`：价格场景样例（Two-stage 骨架演示输入）。
 - `data/trading/daily_sample_*.csv`：蒙西 96 点日清分样例（`ele_trading.trading.sample_data` 生成）。
 - `data/wind_pv_es_calc/`：legacy 风光储测算兼容数据。
 - `configs/*.yaml`：入口脚本和样例构造参数。
