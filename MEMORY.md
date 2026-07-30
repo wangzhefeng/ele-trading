@@ -51,7 +51,7 @@
 - **日内** `intraday_rolling.py`（冻结已执行前缀 + 剩余窗口重优化 + 求解失败回退物理裁剪）。
 - **orchestrator.py**：持仓 → 预测 → 联合场景 → 日前 → 日内 → 单结算。
 - **中长期/月度** `mid_long_planner.py` / `monthly_trader.py`（仓位结构、集中竞价阶梯申报、缺口再平衡；无订单簿时输出透明量价走廊）。
-- **需求响应** `dr_allocator.py`（经济参数全部来自市场配置）。
+- **需求响应** `day_ahead_coupled.py`（`dr_enabled=True` 时两阶段联合优化：Pass A 基线 → Pass B 增量放电补偿），履约结算 `settlement_mengxi.compute_dr_settlement`。`demand_response/allocator.py` 为独立事后评估工具，不参与主链路。
 - **样例数据** `sample_data.py`：30 天 96 点样例 + `WalkForwardSeasonalNaiveProvider`（按 issue-time vintage 的无前瞻 walk-forward 预测）。
 - **回测/指标** `backtest.py` / `metrics.py`：walk-forward 回测（无储能/确定性/风险/oracle 四基准，仅 oracle 可用未来）+ BESS/风险/退化指标。
 - **入口**：`app/trading/run_{mid_long,monthly,day_ahead,intraday,dr,backtest}.py` + 统一 `run_pipeline.py`。

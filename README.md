@@ -75,7 +75,7 @@ ele-trading/
 - `intraday_rolling.py`：日内滚动 `solve_intraday_rolling`（冻结已执行前缀 + 剩余窗口重优化 + 求解失败回退物理裁剪）。
 - `orchestrator.py`：`TradingOrchestrator` 串联 持仓 → 预测 → 联合场景 → 日前运行 → 日内 → 单结算。
 - `mid_long_planner.py` / `monthly_trader.py`：中长期仓位结构与分月分解、集中竞价阶梯申报与缺口再平衡（无订单簿时输出透明量价走廊）。
-- `dr_allocator.py`：需求响应参与决策（经济参数全部来自市场配置）。
+- `demand_response/`（平级包）：需求响应独立事后评估工具（不参与主链路）。主链路 DR 联合优化在 `day_ahead_coupled.py`（`dr_enabled=True` 时两阶段求解），履约结算在 `settlement_mengxi.compute_dr_settlement`。
 - `sample_data.py`：`SampleTradingDataProvider`（30 天 96 点样例）+ `WalkForwardSeasonalNaiveProvider`（按 issue-time vintage 的无前瞻 walk-forward 预测）。
 - `backtest.py` / `metrics.py`：walk-forward 回测（无储能/确定性/风险/oracle 四基准，仅 oracle 可用未来）与 BESS/风险/退化指标。
 - 入口：`app/trading/run_{mid_long,monthly,day_ahead,intraday,dr,backtest}.py` + 统一 `run_pipeline.py`；30 天 walk-forward 回归基线产物见 `results/trading/backtest/v2_baseline/`。
