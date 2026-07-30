@@ -10,6 +10,7 @@ import pandas as pd
 from ele_trading.scenario.contracts import ScenarioSet
 from ele_trading.trading.contracts import (
     DecisionTrace,
+    DRCommitment,
     IntradayAdjustment,
     IntradayPlan,
     MarketConfig,
@@ -53,7 +54,6 @@ def _clip_fallback(
     q_long: np.ndarray | None,
     p_long: np.ndarray | None,
     p_ref: np.ndarray | None,
-    dr_adjustment: float,
 ) -> OperationalPlan:
     p_charge: list[float] = []
     p_discharge: list[float] = []
@@ -160,7 +160,6 @@ def _clip_fallback(
             "energy_cost": energy_cost,
             "degradation_cost": degradation_cost,
             "contract_difference": contract_difference,
-            "dr_adjustment": float(dr_adjustment),
         },
         active_constraints={},
         fallback_used=True,
@@ -173,7 +172,6 @@ def _clip_fallback(
             energy_cost
             + degradation_cost
             + contract_difference
-            + dr_adjustment
         ),
         expected_risk=0.0,
         constraint_trace={},
@@ -196,11 +194,18 @@ def solve_intraday_rolling(
     p_long: np.ndarray | None = None,
     p_ref: np.ndarray | None = None,
     scenario_set: ScenarioSet | None = None,
-    dr_adjustment: float = 0.0,
+    dr_commitment: DRCommitment | None = None,
+    executed_window_discharge_mwh: float = 0.0,
+    intraday_start: int = 0,
     config_version: str = "runtime-config",
     solver=None,
 ) -> IntradayPlan:
-    """Freeze execution and optimize only the remaining physical schedule."""
+    """Freeze execution and optimize only the remaining physical schedule.
+
+    When ``dr_commitment`` is provided and the remaining horizon overlaps
+    the DR window, a discharge floor constraint is passed to the day-ahead
+    solver to enforce fulfillment of the remaining commitment.
+    """
     load = np.asarray(load_forecast, dtype=float)
     price = np.asarray(realtime_price_forecast, dtype=float)
     if (
@@ -221,6 +226,31 @@ def solve_intraday_rolling(
     )
     bess_current = {**bess, "socini": float(current_soc)}
 
+    # ---- 计算日内履约下限 ----
+    dr_min_discharge: float | None = None
+    dr_min_window_rel: tuple[int, int] | None = None
+    if (
+        dr_commitment is not None
+        and dr_commitment.participate
+        and dr_commitment.committed_qty > 0.0
+    ):
+        # 剩余需履约量 = 申报量 − 已执行窗口放电量
+        remaining_commitment = max(
+            0.0,
+            dr_commitment.committed_qty - executed_window_discharge_mwh,
+        )
+        if remaining_commitment > 1e-9:
+            # DR 窗口在剩余 horizon 内的相对位置
+            w_start_rel = dr_commitment.window[0] - intraday_start
+            w_end_rel = dr_commitment.window[1] - intraday_start
+            # 窗口与剩余 horizon 有交集
+            if w_end_rel > 0 and w_start_rel < len(load):
+                dr_min_discharge = remaining_commitment
+                dr_min_window_rel = (
+                    max(0, w_start_rel),
+                    min(len(load), w_end_rel),
+                )
+
     try:
         schedule = solve_day_ahead_operational(
             load,
@@ -231,7 +261,9 @@ def solve_intraday_rolling(
             p_long=p_long,
             p_ref=p_ref,
             scenario_set=scenario_set,
-            dr_adjustment=dr_adjustment,
+            dr_enabled=False,
+            dr_min_window_discharge_mwh=dr_min_discharge,
+            dr_min_window=dr_min_window_rel,
             decision_time=decision_time,
             input_versions=input_versions,
             config_version=config_version,
@@ -251,7 +283,6 @@ def solve_intraday_rolling(
             q_long=q_long,
             p_long=p_long,
             p_ref=p_ref,
-            dr_adjustment=dr_adjustment,
         )
         fallback_used = True
 

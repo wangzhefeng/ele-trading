@@ -111,6 +111,12 @@ def _validate_config(config: MarketConfig) -> None:
         raise ValueError("operational_power_margin must be within (0, 1]")
     if not 0 <= config.dr_window_start < config.dr_window_end <= 96:
         raise ValueError("DR window must be within the 96-period day")
+    if config.dr_baseline_mode not in {"auto", "fixed"}:
+        raise ValueError("dr_baseline_mode must be auto or fixed")
+    if config.dr_baseline_mode == "fixed" and config.dr_baseline_mwh <= 0.0:
+        raise ValueError(
+            "dr_baseline_mwh must be positive when dr_baseline_mode is fixed"
+        )
     if config.monthly_price_floor >= config.monthly_price_cap:
         raise ValueError("monthly price floor must be below the cap")
     if config.solver_name not in {"cbc", "glpk"}:

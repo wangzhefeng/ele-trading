@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_single_settlement_identity_when_reference_is_real_time_price():
@@ -292,12 +292,10 @@ def test_day_ahead_objective_itemizes_contract_dr_and_scenario_cvar():
         p_long=np.array([300.0, 300.0]),
         p_ref=np.array([250.0, 450.0]),
         scenario_set=scenario_set,
-        dr_adjustment=-10.0,
     )
 
     components = plan.decision_trace.objective_components
     assert components["contract_difference"] == -100.0
-    assert components["dr_adjustment"] == -10.0
     assert plan.expected_risk > 0.0
 
 
@@ -507,7 +505,6 @@ def test_intraday_uses_latest_vintage_and_remaining_single_settlement_inputs():
         p_long=np.array([300.0, 300.0]),
         p_ref=np.array([500.0, 600.0]),
         scenario_set=scenario_set,
-        dr_adjustment=-5.0,
     )
 
     assert result.fallback_used is False
@@ -526,7 +523,9 @@ def test_dr_participation_uses_only_market_config_economics():
     import inspect
 
     from ele_trading.trading.config_loader import load_market_config
-    from ele_trading.trading.dr_allocator import evaluate_dr_participation
+    from ele_trading.demand_response.allocator import (
+        evaluate_dr_participation,
+    )
 
     config = load_market_config(
         PROJECT_ROOT / "configs" / "market_mengxi.yaml"

@@ -2,6 +2,9 @@
 
 本目录包含 `ele-trading` 项目的单元测试和集成测试。
 
+`tests/trading/` 归集电力市场交易（蒙西交易主线，`ele_trading.trading`
+子包）相关测试，常规 pytest 收集自动包含。
+
 `tests/todo/` 是已隔离的用户侧、分布式和 CVXPY 测试归档。它们只能通过
 显式路径运行，常规 pytest 收集不会包含它们。
 
@@ -17,6 +20,9 @@ uv run python -m pytest -q
 
 # 运行指定测试文件
 uv run python -m pytest tests/test_bess_arbitrage.py -v
+
+# 运行交易链路测试（tests/trading/）
+uv run python -m pytest tests/trading/ -q
 
 # 运行 archived 用户侧测试（常规收集明确排除）
 uv run python -m pytest tests/todo/test_user_side_bess_dispatch.py -q
@@ -41,13 +47,22 @@ uv run python -m pytest tests/test_metrics.py::test_sharpe_finite -v
 | `test_wind_pv_bess_irr_planner.py` | `investment_estimation/todo/wind_pv_bess_irr_planner.py` | 风光储 IRR 规划 |
 | `test_wind_pv_bess_irr_summary_export.py` | `investment_estimation/todo/wind_pv_bess_irr_tuning.py` | 风光储 IRR 汇总导出 |
 
+### 交易链路测试（`tests/trading/`）
+
+| 测试文件 | 覆盖模块 | 说明 |
+|----------|----------|------|
+| `test_metrics.py` | `trading/metrics.py` | 扩展指标（Sharpe、MDD、EFC、RTE、利用率） |
+| `test_mid_long_monthly.py` | `trading/mid_long_planner.py`、`trading/monthly_trader.py` | 中长期分解与月度交易 |
+| `test_v2_phase5_trading.py` | active `trading` chain | 单结算恒等式、合同/配置、运行计划、日内回退、DR、编排、无前瞻回测、归档边界和 pipeline app |
+| `test_v2_phase6_failure_modes.py` | `trading/backtest.py`、`trading/orchestrator.py` | 数据缺失/求解失败等故障模式 |
+| `test_v2_phase6_performance.py` | `trading` chain | 30 天回测性能基线 |
+| `test_v2_phase6_regression.py` | `trading` chain | 30 天回测回归基线 |
+
 ### 场景生成与评估测试
 
 | 测试文件 | 覆盖模块 | 说明 |
 |----------|----------|------|
 | `test_scenario.py` | `scenario/sampler.py`、`scenario/reduction.py` | LHS 采样 + Cholesky 相关性 + Kantorovich 缩减 |
-| `test_metrics.py` | `trading/metrics.py` | 扩展指标（Sharpe、MDD、EFC、RTE、利用率） |
-| `test_v2_phase5_trading.py` | active `trading` chain | 单结算恒等式、合同/配置、运行计划、日内回退、DR、编排、无前瞻回测、归档边界和 pipeline app |
 
 ### 预测与天气测试
 

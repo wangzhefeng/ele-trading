@@ -26,7 +26,10 @@ from ele_trading.trading.day_ahead_coupled import (
     solve_day_ahead_operational,
 )
 from ele_trading.trading.intraday_rolling import solve_intraday_rolling
-from ele_trading.trading.settlement_mengxi import build_settlement_report
+from ele_trading.trading.settlement_mengxi import (
+    build_settlement_report,
+    compute_dr_settlement,
+)
 
 
 @dataclass(slots=True)
@@ -136,7 +139,6 @@ class TradingOrchestrator:
         actual_price: np.ndarray,
         intraday_start: int,
         long_recovery: float = 0.0,
-        dr_adjustment: float = 0.0,
         execution_adjustment: float = 0.0,
     ) -> TradingPipelineResult:
         """Execute the active chain; actuals enter only after all decisions."""
@@ -218,7 +220,6 @@ class TradingOrchestrator:
             p_long=p_long,
             p_ref=price_forecast,
             scenario_set=scenarios,
-            dr_adjustment=dr_adjustment,
             decision_time=decision_time,
             input_versions=input_versions,
             config_version=self.config_version,
@@ -227,6 +228,21 @@ class TradingOrchestrator:
         executed_prefix = day_ahead.resource_schedule.iloc[
             :intraday_start
         ].copy()
+
+        # ---- 计算已执行窗口放电量（DR 履约核算用） ----
+        dr_commitment = day_ahead.dr_commitment
+        executed_window_discharge = 0.0
+        if dr_commitment is not None and dr_commitment.participate:
+            w_start, w_end = dr_commitment.window
+            executed_in_window = min(w_end, intraday_start)
+            if executed_in_window > w_start:
+                executed_window_discharge = float(
+                    executed_prefix["p_discharge"]
+                    .iloc[w_start:executed_in_window]
+                    .sum()
+                    * self.config.dt
+                )
+
         intraday = solve_intraday_rolling(
             load_forecast=net_load_forecast[intraday_start:],
             realtime_price_forecast=price_forecast[intraday_start:],
@@ -241,7 +257,9 @@ class TradingOrchestrator:
             p_long=p_long[intraday_start:],
             p_ref=price_forecast[intraday_start:],
             scenario_set=_slice_scenarios(scenarios, intraday_start),
-            dr_adjustment=dr_adjustment,
+            dr_commitment=dr_commitment,
+            executed_window_discharge_mwh=executed_window_discharge,
+            intraday_start=intraday_start,
             config_version=self.config_version,
             solver=self.solver,
         )
@@ -273,6 +291,24 @@ class TradingOrchestrator:
             * self.config.dt
             * self.config.deg_cost_per_mwh
         )
+
+        # ---- DR 履约结算 ----
+        dr_adjustment = 0.0
+        if dr_commitment is not None and dr_commitment.participate:
+            w_start, w_end = dr_commitment.window
+            executed_window_discharge_total = float(
+                executed_schedule["p_discharge"]
+                .iloc[w_start:w_end]
+                .sum()
+                * self.config.dt
+            )
+            dr_adjustment, _, _ = compute_dr_settlement(
+                committed_qty=dr_commitment.committed_qty,
+                executed_window_discharge_mwh=executed_window_discharge_total,
+                baseline_qty=dr_commitment.baseline_qty,
+                config=self.config,
+            )
+
         settlement = build_settlement_report(
             q_real=q_real,
             p_real=actual_price_arr,

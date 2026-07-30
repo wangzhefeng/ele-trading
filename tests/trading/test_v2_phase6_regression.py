@@ -17,7 +17,7 @@ from ele_trading.trading.sample_data import (
 )
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_TRADING = PROJECT_ROOT / "data" / "trading"
 MENGXI_YAML = PROJECT_ROOT / "configs" / "market_mengxi.yaml"
 

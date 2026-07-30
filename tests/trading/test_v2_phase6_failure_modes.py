@@ -21,7 +21,7 @@ from ele_trading.trading.contracts import PositionState
 from ele_trading.trading.orchestrator import TradingOrchestrator
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MENGXI_YAML = PROJECT_ROOT / "configs" / "market_mengxi.yaml"
 
 DECISION_TIME = pd.Timestamp("2026-07-01 00:00", tz="Asia/Shanghai")

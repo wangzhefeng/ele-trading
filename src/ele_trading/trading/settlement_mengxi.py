@@ -165,3 +165,28 @@ def aggregate_to_settle_periods(
             "settle_periods must be a positive divisor of the horizon"
         )
     return values.reshape(settle_periods, -1).sum(axis=1)
+
+
+def compute_dr_settlement(
+    *,
+    committed_qty: float,
+    executed_window_discharge_mwh: float,
+    baseline_qty: float,
+    config: MarketConfig,
+) -> tuple[float, float, float]:
+    """Compute DR fulfillment compensation and penalty.
+
+    Returns ``(dr_adjustment, compensation, penalty)`` where
+    ``dr_adjustment = penalty - compensation`` (positive = net cost,
+    consistent with :class:`SettlementReport` sign convention).
+    """
+    if committed_qty <= 0.0:
+        return 0.0, 0.0, 0.0
+    inc_actual = max(0.0, executed_window_discharge_mwh - baseline_qty)
+    compensation = config.dr_compensation_per_mwh * min(
+        inc_actual, committed_qty
+    )
+    shortfall = max(0.0, committed_qty - inc_actual)
+    penalty = config.dr_penalty_per_mwh * shortfall
+    dr_adjustment = penalty - compensation
+    return dr_adjustment, compensation, penalty

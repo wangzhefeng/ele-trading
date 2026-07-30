@@ -1,10 +1,11 @@
 """Active Mengxi single-settlement trading chain."""
 
+from ele_trading.demand_response.contracts import DRDecision
 from ele_trading.trading.contracts import (
     BidLadder,
     CorridorAdvice,
     DecisionTrace,
-    DRDecision,
+    DRCommitment,
     IntradayAdjustment,
     IntradayPlan,
     MarketConfig,
@@ -19,6 +20,7 @@ __all__ = [
     "BidLadder",
     "CorridorAdvice",
     "DecisionTrace",
+    "DRCommitment",
     "DRDecision",
     "IntradayAdjustment",
     "IntradayPlan",

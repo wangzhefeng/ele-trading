@@ -46,6 +46,9 @@ class MarketConfig:
     dr_minimum_response_mwh: float = 0.1
     dr_window_start: int = 72
     dr_window_end: int = 80
+    dr_enabled: bool = False
+    dr_baseline_mode: str = "auto"  # "auto" | "fixed"
+    dr_baseline_mwh: float = 0.0
 
     monthly_price_floor: float = 0.0
     monthly_price_cap: float = 1500.0
@@ -67,7 +70,7 @@ class DecisionTrace:
     solver_name: str
     solver_version: str
     solver_status: str
-    objective_components: Mapping[str, float] = field(default_factory=dict)
+    objective_components: dict[str, float] = field(default_factory=dict)
     active_constraints: Mapping[str, tuple[int, ...]] = field(
         default_factory=dict
     )
@@ -100,6 +103,19 @@ class MarketForecastBundle:
 
 
 @dataclass(slots=True)
+class DRCommitment:
+    """DR 联合优化产出的申报承诺（两阶段求解结果）。"""
+
+    committed_qty: float           # 申报增量放电能量（MWh），0 表示不参与
+    window: tuple[int, int]        # DR 窗口 [start, end)
+    baseline_qty: float            # 基线放电能量 Q0（MWh）
+    expected_compensation: float   # 预期补偿（元）
+    expected_incremental: float    # 预期增量放电（MWh）
+    participate: bool              # 是否参与
+    reject_reason: str | None = None
+
+
+@dataclass(slots=True)
 class OperationalPlan:
     """Physical next-day resource schedule with cost and risk evidence."""
 
@@ -111,6 +127,7 @@ class OperationalPlan:
         default_factory=dict
     )
     decision_trace: DecisionTrace | None = None
+    dr_commitment: DRCommitment | None = None
 
 
 @dataclass(slots=True)
@@ -183,19 +200,3 @@ class CorridorAdvice:
     qty_range: tuple[float, float]
     price_range: tuple[float, float]
     reason: str
-
-
-@dataclass(slots=True)
-class DRDecision:
-    """Demand-response product participation decision."""
-
-    participate: bool
-    response_qty: float
-    window: tuple[int, int]
-    expected_compensation: float
-    arbitrage_opportunity_cost: float
-    expected_penalty: float
-    degradation_cost: float
-    net_margin: float
-    fulfill_risk: str
-    reject_reason: str | None = None

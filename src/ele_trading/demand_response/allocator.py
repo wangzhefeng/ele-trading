@@ -1,10 +1,17 @@
-"""Config-driven demand-response product participation."""
+"""Standalone demand-response economic assessment (not part of the main chain).
+
+This module provides a simple post-hoc evaluation of DR participation
+economics. The active trading chain uses ``solve_day_ahead_operational``
+with ``dr_enabled=True`` for joint DR optimization instead. This tool
+remains useful for quick standalone analysis.
+"""
 
 from __future__ import annotations
 
 import numpy as np
 
-from ele_trading.trading.contracts import DRDecision, MarketConfig
+from ele_trading.demand_response.contracts import DRDecision
+from ele_trading.trading.contracts import MarketConfig
 
 
 def estimate_arbitrage_opportunity_cost(
@@ -50,9 +57,7 @@ def evaluate_dr_participation(
         not np.isfinite(expected_shortfall_mwh)
         or expected_shortfall_mwh < 0.0
     ):
-        raise ValueError(
-            "expected_shortfall_mwh must be finite and non-negative"
-        )
+        raise ValueError("expected_shortfall_mwh must be finite and non-negative")
     window = (config.dr_window_start, config.dr_window_end)
     start, end = window
     if start < 0 or end > len(adjustable) or start >= end:

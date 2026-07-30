@@ -1,4 +1,9 @@
-"""Config-driven demand-response demo on a feasible operational plan."""
+"""Demand-response joint-optimization demo via the day-ahead operational solver.
+
+Enables ``dr_enabled`` in the market config and shows the two-pass solve
+result: baseline discharge → DR commitment → incremental discharge with
+compensation.
+"""
 
 from __future__ import annotations
 
@@ -18,12 +23,13 @@ from ele_trading.trading.config_loader import load_market_config
 from ele_trading.trading.day_ahead_coupled import (
     solve_day_ahead_operational,
 )
-from ele_trading.trading.dr_allocator import evaluate_dr_participation
+from ele_trading.trading.settlement_mengxi import compute_dr_settlement
 from ele_trading.utils.log_util import logger
 
 
 def main() -> None:
     config = load_market_config(MENGXI_YAML)
+    config.dr_enabled = True
     data_provider = SampleTradingDataProvider(DATA_TRADING)
     history_day, day = data_provider.available_days[-2:]
     decision_time = pd.Timestamp(day.date(), tz="Asia/Shanghai")
@@ -53,31 +59,37 @@ def main() -> None:
             quantiles=(0.1, 0.9),
         )
     ).point.to_numpy(dtype=float)
-    plan = solve_day_ahead_operational(
-        load,
-        price,
-        SAMPLE_BESS,
-        config,
+
+    plan = solve_day_ahead_operational(load, price, SAMPLE_BESS, config)
+    commitment = plan.dr_commitment
+
+    if commitment is None or not commitment.participate:
+        logger.info("DR 不参与")
+        if commitment and commitment.reject_reason:
+            logger.info(f"原因: {commitment.reject_reason}")
+        return
+
+    # 模拟履约结算（假设全额履约）
+    w_start, w_end = commitment.window
+    window_discharge = float(
+        plan.resource_schedule["p_discharge"]
+        .iloc[w_start:w_end]
+        .sum()
+        * config.dt
     )
-    schedule = plan.resource_schedule
-    adjustable = np.clip(
-        SAMPLE_BESS["p_bdmax"]
-        - schedule["p_discharge"].to_numpy(dtype=float),
-        0.0,
-        None,
+    dr_adj, compensation, penalty = compute_dr_settlement(
+        committed_qty=commitment.committed_qty,
+        executed_window_discharge_mwh=window_discharge,
+        baseline_qty=commitment.baseline_qty,
+        config=config,
     )
-    decision = evaluate_dr_participation(
-        adjustable,
-        config,
-        p_net_plan=schedule["p_net"].to_numpy(dtype=float),
-        realtime_price_forecast=price,
-    )
+
     logger.info(
-        f"参与: {decision.participate}; 响应={decision.response_qty:.2f} MWh; "
-        f"净裕度={decision.net_margin:.2f} 元"
+        f"DR 参与: 申报={commitment.committed_qty:.3f} MWh; "
+        f"基线 Q0={commitment.baseline_qty:.3f} MWh; "
+        f"预期增量={commitment.expected_incremental:.3f} MWh; "
+        f"补偿={compensation:.2f} 元; 罚金={penalty:.2f} 元"
     )
-    if decision.reject_reason:
-        logger.info(f"不参与原因: {decision.reject_reason}")
 
 
 if __name__ == "__main__":

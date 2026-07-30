@@ -40,6 +40,9 @@ dr:
   dr_minimum_response_mwh: 0.1  # TODO(rule-confirm)
   dr_window_start: 72  # TODO(rule-confirm)
   dr_window_end: 80  # TODO(rule-confirm)
+  dr_enabled: false
+  dr_baseline_mode: auto  # auto = 无 DR 最优解作基线；fixed = 用 dr_baseline_mwh
+  dr_baseline_mwh: 0.0
 
 monthly:
   monthly_price_floor: 0.0  # TODO(rule-confirm)

@@ -10,11 +10,10 @@
 |------|------|
 | `contracts.py` | `PositionState`、`MarketForecastBundle`、`OperationalPlan`、`IntradayPlan`、`SettlementReport`、`DecisionTrace` 及市场配置 |
 | `config_loader.py` | 严格一一映射并校验 `configs/market_mengxi.yaml` |
-| `settlement_mengxi.py` | 实时电量成本、中长期差价、月度回收和逐项调整 |
+| `settlement_mengxi.py` | 实时电量成本、中长期差价、月度回收、逐项调整和 DR 履约结算（`compute_dr_settlement`） |
 | `mid_long_planner.py` / `monthly_trader.py` | 中长期覆盖、实时敞口、月度阶梯和缺少 orderbook 时的透明走廊 |
-| `day_ahead_coupled.py` | 基于共享 BESS 物理内核的次日运行计划，支持联合场景 CVaR |
-| `intraday_rolling.py` | 冻结已执行段、滚动重优化和求解失败物理裁剪回退 |
-| `dr_allocator.py` | 完全配置驱动的 DR 产品参与决策 |
+| `day_ahead_coupled.py` | 基于共享 BESS 物理内核的次日运行计划，支持联合场景 CVaR 和 `dr_enabled=True` 时的 DR 两阶段联合优化 |
+| `intraday_rolling.py` | 冻结已执行段、滚动重优化、求解失败物理裁剪回退和 DR 履约硬约束 |
 | `orchestrator.py` | 注入数据、预测、场景、配置和求解器并运行完整链 |
 | `backtest.py` | walk-forward 策略、无储能、确定性、风险感知和 oracle 对照 |
 | `metrics.py` | 交易/BESS 指标和退化核算 |

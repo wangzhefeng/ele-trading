@@ -17,7 +17,7 @@
 | `optimization/bess.yaml` | `optimization/run_bess_arbitrage.py`、`optimization/run_mpc_demo.py` | 基础储能 SOC、功率、效率、退化成本、时间步长 |
 | `market/market.yaml` | 数据/市场样例 | 基础日前市场元信息 |
 | `market/market_guangdong.yaml` | 用户侧调度规则参考（偏差考核已移除） | 广东现货市场 15 分钟颗粒度、价格限幅样例 |
-| `market_mengxi.yaml` | `trading/config_loader.load_market_config()` → 蒙西单结算交易链 | 字段与 `MarketConfig` 严格一一对应：`market` 单结算与 `dt=0.25`、`long_recovery` 月度回收、`scenario` LHS/MC 与 CVaR、`bess` 物理参数、`dr` 补偿/违约/最低裕度/最小响应量/窗口、`monthly` 交易边界和 `solver`；待确认规则均标 `TODO(rule-confirm)` |
+| `market_mengxi.yaml` | `trading/config_loader.load_market_config()` → 蒙西单结算交易链 | 字段与 `MarketConfig` 严格一一对应：`market` 单结算与 `dt=0.25`、`long_recovery` 月度回收、`scenario` LHS/MC 与 CVaR、`bess` 物理参数、`dr` 补偿/违约/最低裕度/最小响应量/窗口/开关/基线模式、`monthly` 交易边界和 `solver`；待确认规则均标 `TODO(rule-confirm)` |
 | `market/scenario.yaml` | `scenario` 模块 | 价格场景数量、噪声、随机种子和权重样例 |
 | `capacity_planning/capacity_planning.yaml` | `capacity_planning/run_wind_pv_bess_capacity_planning_2.py` | 风光储联合容量规划三场景演示、约束、搜索步长和成本参数 |
 | `capacity_planning/bess_capacity_planning.yaml` | `capacity_planning/run_bess_capacity_planning.py` | 固定风光容量下 BESS 最小容量规划 |
