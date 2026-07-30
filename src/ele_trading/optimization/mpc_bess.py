@@ -1,3 +1,10 @@
+"""储能 MPC（模型预测控制）滚动优化。
+
+在电价序列上滚动执行：每一步用未来 horizon 窗口的价格预测求解一个
+有限时域套利子问题，只执行窗口第 1 时段的充放电决策，然后以新的
+SOC 为初值向前滚动。
+"""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -20,7 +27,7 @@ def solve_one_mpc_window(
     dt=1.0,
     terminal_soc_fraction: float = 0.0,
 ):
-    """求解单个 MPC 窗口。
+    """求解单个 MPC 预测窗口的储能套利子问题。
 
     terminal_soc_fraction: 窗口末端 SOC 下界 = soc_min + fraction*(soc_max-soc_min)。
     0.0 表示不加终端约束（默认，向后兼容）。
@@ -28,13 +35,17 @@ def solve_one_mpc_window(
     T = range(horizon)
     m = LpProblem('bess_mpc_window', LpMaximize)
 
+    # ---------------- 决策变量 ----------------
+    # 充放电功率（连续）与充放电状态（0/1 互斥）
     p_ch = {t: LpVariable(f'p_ch_{t}', lowBound=0, upBound=p_ch_max) for t in T}
     p_dis = {t: LpVariable(f'p_dis_{t}', lowBound=0, upBound=p_dis_max) for t in T}
     soc = {t: LpVariable(f'soc_{t}', lowBound=soc_min, upBound=soc_max) for t in T}
     u_ch = {t: LpVariable(f'u_ch_{t}', cat=LpBinary) for t in T}
     u_dis = {t: LpVariable(f'u_dis_{t}', cat=LpBinary) for t in T}
 
+    # ---------------- 约束 ----------------
     for t in T:
+        # 同一时段充电与放电互斥，且功率受对应状态变量约束
         m += u_ch[t] + u_dis[t] <= 1
         m += p_ch[t] <= p_ch_max * u_ch[t]
         m += p_dis[t] <= p_dis_max * u_dis[t]
@@ -50,6 +61,7 @@ def solve_one_mpc_window(
         terminal_lb = soc_min + terminal_soc_fraction * (soc_max - soc_min)
         m += soc[horizon - 1] >= terminal_lb
 
+    # ---------------- 目标：窗口内套利收益 - 退化成本 ----------------
     m += lpSum(
         prices_window[t] * (p_dis[t] - p_ch[t]) * dt - deg_cost * (p_ch[t] + p_dis[t]) * dt
         for t in T
@@ -59,9 +71,9 @@ def solve_one_mpc_window(
     check_pulp_status(m, "bess mpc window")
 
     return {
-        'p_ch': value(p_ch[0]),
+        'p_ch': value(p_ch[0]),                # 只取第 1 时段决策用于执行
         'p_dis': value(p_dis[0]),
-        'soc_next': value(soc[0]),
+        'soc_next': value(soc[0]),             # 执行后的 SOC，作为下一窗口初值
         'soc_terminal': value(soc[horizon - 1]),
         'obj': value(m.objective),
     }
@@ -81,11 +93,17 @@ def run_bess_mpc(
     dt=1.0,
     terminal_soc_fraction: float = 0.0,
 ) -> pd.DataFrame:
-    """运行储能滚动优化，并输出逐步执行结果。"""
+    """运行储能滚动优化，并输出逐步执行结果。
+
+    每一步以当前 SOC 和未来 horizon 窗口价格求解子问题，
+    只执行第 1 时段决策后向前滚动；序列尾部不足一个窗口时
+    用最后一个价格重复填充，保证窗口长度一致。
+    """
     records = []
     soc_now = initial_soc
 
     for step in range(len(prices)):
+        # 取未来 horizon 窗口的价格预测；尾部不足时重复最后价格补齐
         window = prices[step: step + horizon]
         if len(window) < horizon:
             window = window + [window[-1]] * (horizon - len(window))
@@ -113,5 +131,6 @@ def run_bess_mpc(
                 'step_objective': float(result['obj']),
             }
         )
+        # 滚动：以执行后的 SOC 作为下一步的初始状态
         soc_now = float(result['soc_next'])
     return pd.DataFrame(records)
