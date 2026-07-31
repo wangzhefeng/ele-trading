@@ -10,7 +10,6 @@
 - `capacity_planning/`：容量规划、IRR 和分布式储能搜索配置（对应入口指向 `investment_estimation.todo`）。
 - `resource_simulation/`：PV/Wind 物理仿真配置（对应入口指向 `investment_estimation.todo.resource_simulation`）。
 - `market/`：市场、场景和结算规则样例。
-- `legacy/`：旧风光储兼容链路配置。
 
 | 文件 | 对应入口 / 模块 | 用途 |
 |------|------------------|------|
@@ -25,7 +24,6 @@
 | `capacity_planning/wind_pv_bess_capacity_planning.yaml` | `capacity_planning/run_wind_pv_bess_capacity_planning_1.py` | Wind+PV+BESS 容量规划、PV 搜索、BESS 搜索和能量门槛检查 |
 | `capacity_planning/wind_pv_bess_irr_planning.yaml` | `capacity_planning/run_wind_pv_bess_irr_planning.py` | IRR 目标型 Wind+PV+BESS 容量规划、PPA 反推、综合电价约束、项目财务模型和资源调参并行运行参数 |
 | `capacity_planning/dist_bess_dispatch.yaml` | `capacity_planning/run_dist_bess_dispatch.py` | 分布式储能数据目录、时间范围、preset、系统、搜索模式 |
-| `legacy/wind_pv_legacy_profit_eval.yaml` | `legacy/run_wind_pv_legacy_profit_eval.py` | legacy 风光数据年度收益测算、成本年化和结果输出 |
 
 ## 配置边界
 
@@ -35,8 +33,6 @@
 - 新增配置文件时，应同步补充对应入口、读取逻辑、测试和本 README。
 - `optimization/todo/` 下的用户侧、分布式和 CVXPY 配置仅服务归档入口，不得由活动代码加载。
 - `wind_pv_bess_irr_planning.yaml` 的 `resource_tuning.parallel_enabled`、`max_workers`、`incremental_write` 和 `retain_intermediate_diagnostics` 只控制 coarse/fine 资源场景的运行方式、增量摘要落盘和中间 diagnostics 保留策略，不改变 IRR、PPA 或最优解排序口径。
-
-> **已知缺口**：`legacy/run_wind_pv_legacy_*.py` 两个入口 `import run_legacy_data_preparation`，但该模块文件当前不在仓库中（pre-existing，见 MEMORY.md），故 legacy 链路暂无法端到端运行。
 
 ## 运行示例
 

@@ -590,15 +590,11 @@ BESS 项目前置可行性诊断
 相关文件：
 
 ```text
-app/legacy/
-configs/legacy/
+app/legacy/   （已删除，2026-08-01）
+configs/legacy/（已删除，2026-08-01）
 ```
 
-暂不建议原因：
-
-1. 面向旧数据链路和历史兼容。
-2. 字段、收益口径、数据路径可能与 `investment_estimation` 当前设计不一致。
-3. 直接接入会带来口径混乱。
+legacy 链路（`run_wind_pv_legacy_profit_eval`、`run_wind_pv_legacy_market_trading` 及其配置、`test_legacy_data_bridge`）已整链删除。原暂不建议接入原因（旧数据链路、字段口径与当前设计不一致）仍成立，勿在 `investment_estimation` 中重建 legacy 兼容层。
 
 结论：
 
@@ -818,9 +814,8 @@ configs/optimization/
 
 1. 分布式多节点储能。
 2. 多节点扫描。
-3. legacy 链路。
-4. optimization demo 入口。
-5. 聚合 IRR 快速扫描作为主链路。
+3. optimization demo 入口。
+4. 聚合 IRR 快速扫描作为主链路。
 
 ## 需要特别避免的迁移风险
 
@@ -1180,7 +1175,6 @@ README 中应能直接找到资源仿真运行入口、配置文件和输出字�
 ```text
 分布式储能
 多节点扫描
-legacy 链路
 聚合 IRR 快扫
 optimization demo
 ```

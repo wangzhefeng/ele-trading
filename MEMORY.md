@@ -34,7 +34,7 @@
 
 ### `app/` 与 `configs/`
 
-- `app/`：入口脚本按 `trading/`（7+1：run_pipeline + run_{mid_long,monthly,day_ahead,intraday,dr,backtest}）、`optimization/`（3）、`capacity_planning/`（6，指向 `investment_estimation.todo`）、`resource_simulation/`（4）、`legacy/`（1）分目录。
+- `app/`：入口脚本按 `trading/`（7+1：run_pipeline + run_{mid_long,monthly,day_ahead,intraday,dr,backtest}）、`optimization/`（3）、`capacity_planning/`（6，指向 `investment_estimation.todo`）、`resource_simulation/`（4）分目录。
 - `configs/`：YAML 按算法链路组织；蒙西交易线配置为根目录 `configs/market_mengxi.yaml`。
 
 ### 归属硬约束
@@ -67,13 +67,14 @@ uv run python -m pytest -q
 # → 432 passed, 6 failed, 7 skipped, 3 deselected（448 collected），~87s
 ```
 
-6 个失败均为 **pre-existing**（非回归），分三类：
+3 个失败均为 **pre-existing**（非回归），分两类：
 
 | 类别 | 失败测试 | 根因 |
 |------|----------|------|
-| legacy 数据桥接（3） | `test_legacy_data_bridge::test_prepare_legacy_temp_data_uses_cached_outputs`、`::test_bridge_config_file_exists_and_defaults_to_cached`、`test_entry_scripts::test_run_wind_pv_legacy_profit_eval` | `run_legacy_data_preparation` 模块文件不在仓库 |
 | 容量规划（2） | `test_capacity_planning_v4_phase1::test_wind_pv_bess_irr_runner_requires_explicit_data_dir_or_demo`、`test_entry_scripts::test_run_wind_bess_capacity_planning` | `_resolve_data_dir` 符号缺失 / capacity_planning 清理残留 |
 | 配置加载（1） | `test_yaml_config_loading::test_yaml_config_loading_goes_through_read_yaml` | 「全部 yaml 经 `ele_trading.utils.io.read_yaml`」规则与 `investment_estimation` 自包含性的架构冲突 |
+
+> 注：legacy 数据桥接 3 个失败（`test_legacy_data_bridge`、`test_run_wind_pv_legacy_profit_eval`）随 legacy 链路整链删除（2026-08-01）。
 
 ## 5. 硬约束
 
@@ -84,7 +85,7 @@ uv run python -m pytest -q
 - **resource_simulation 重复**：`investment_estimation/resource_simulation/`（新版）与 `todo/resource_simulation/`（老版 cp 迁入）并存，待去重。
 - **forecasting 物理预测暂挂起**：`forecasting/pv_forecast.py`、`wind_forecast.py` 的 physics 分支延迟 import `todo.resource_simulation`（仅 physics 分支触发 ImportError），待 resource_simulation 正本归属确定后一并处理。
 - **todo/ 与新版模块合并去重**：`todo/` 为迁移暂存区，非最终形态。
-- **6 个 pre-existing 测试失败**：见 §4，属 legacy/capacity_planning 清理范畴，可另起任务。
+- **3 个 pre-existing 测试失败**：见 §4，属 capacity_planning 清理范畴，可另起任务。
 - **`app/trading/` 入口已就位**（早期 LOG 记为待办，现已由 `run_*.py` ×7 + `run_pipeline.py` 补齐，**该条待办已关闭**）。
 
 ## 7. 关键决策（勿重新争论）

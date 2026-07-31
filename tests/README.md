@@ -83,7 +83,6 @@ uv run python -m pytest tests/test_metrics.py::test_sharpe_finite -v
 | `test_v2_phase4_review_fixes.py` | Phase 4 median/provenance/reduction/penalty/version contracts | Phase 4 Round 1 评审问题的 RED/GREEN 防回归 |
 | `test_data_layer_generalization.py` | `data_provider/market_data.py`、归档 profile 回归 | 数据加载泛化 |
 | `test_yaml_config_loading.py` | YAML 配置加载 | 配置文件解析 |
-| `test_legacy_data_bridge.py` | legacy 数据桥接 | 旧数据格式兼容 |
 | `test_utils_data_alignment.py` | `utils/data_alignment.py` | 数据对齐工具 |
 | `test_utils_num.py` | `utils/num_utils.py` | 数值工具 |
 | `test_utils_time_index.py` | `utils/time_index.py` | 时间索引工具 |
@@ -97,7 +96,7 @@ uv run python -m pytest tests/test_metrics.py::test_sharpe_finite -v
 
 `test_entry_scripts.py` 通过 `subprocess.run` 调用 `app/` 目录下的入口脚本，验证退出码为 0 且有基本输出。
 
-**已覆盖的入口脚本（14 个）：**
+**已覆盖的入口脚本（13 个）：**
 
 | 入口脚本 | 验证内容 |
 |----------|----------|
@@ -105,7 +104,6 @@ uv run python -m pytest tests/test_metrics.py::test_sharpe_finite -v
 | `optimization/run_mpc_demo.py` | 退出码 + 输出非空 |
 | `optimization/run_two_stage_skeleton.py` | 退出码 + 输出非空 |
 | `trading/run_pipeline.py` | 退出码 + 单结算完整链路汇总 |
-| `legacy/run_wind_pv_legacy_profit_eval.py` | 退出码 + 关键字匹配 |
 | `capacity_planning/run_wind_pv_bess_irr_planning.py` | 退出码 + 关键字匹配 |
 | `resource_simulation/run_pv_simulation_v1.py` | 退出码 + 关键字匹配（quick） |
 | `capacity_planning/run_bess_capacity_planning.py` | 退出码验证（medium，timeout=180s） |

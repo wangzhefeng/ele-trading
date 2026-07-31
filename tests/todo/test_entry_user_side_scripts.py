@@ -37,8 +37,3 @@ def test_run_user_side_pv_bess_dispatch():
 def test_run_cvxp_bess_dispatch():
     result = _run_script("optimization/todo/run_cvxp_bess_dispatch.py")
     assert result.returncode == 0, result.stderr[:300]
-
-
-def test_run_wind_pv_legacy_market_trading():
-    result = _run_script("optimization/todo/run_wind_pv_legacy_market_trading.py")
-    assert result.returncode == 0, result.stderr[:300]

@@ -86,14 +86,6 @@ def test_two_stage_skeleton_uses_market_config_deviation_costs(tmp_path):
     assert coefficients[1] == pytest.approx((1.0, 1.4))
 
 
-def test_run_wind_pv_legacy_profit_eval():
-    """run_wind_pv_legacy_profit_eval.py 应退出码为 0 且输出收益测算结果。"""
-    result = _run_script('legacy/run_wind_pv_legacy_profit_eval.py')
-    combined = result.stdout + result.stderr
-    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
-    assert 'annual_net_profit' in combined or '收益测算' in combined
-
-
 @pytest.mark.skip(reason="V4 canonical+settlement demo 网格较重，仅手动用 --demo 验收")
 def test_run_wind_pv_bess_irr_planning():
     """run_wind_pv_bess_irr_planning.py 应退出码为 0 且输出 IRR 规划结果。"""

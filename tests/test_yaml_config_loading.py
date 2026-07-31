@@ -42,9 +42,9 @@ def test_plain_yaml_loader_wrappers_are_removed_from_app_scripts():
     """app 脚本不应保留仅委托 read_yaml 的本地配置 loader。"""
     project_root = Path(__file__).resolve().parents[1]
     targets = [
-        project_root / "app" / "legacy" / "run_legacy_data_preparation.py",
-        project_root / "app" / "legacy" / "run_wind_pv_legacy_profit_eval.py",
-        project_root / "app" / "legacy" / "run_wind_pv_legacy_market_trading.py",
+        project_root / "app" / "optimization" / "run_bess_arbitrage.py",
+        project_root / "app" / "optimization" / "run_mpc_demo.py",
+        project_root / "app" / "optimization" / "run_two_stage_skeleton.py",
     ]
 
     offenders = []

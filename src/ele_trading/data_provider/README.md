@@ -22,7 +22,6 @@
 - `data/trading/prices/`：交易线价格最小样例（日前/日内）。
 - `data/trading/config/`：交易线储能最小样例配置。
 - `data/trading/daily_sample_*.csv`：蒙西 96 点日清分样例（`ele_trading.trading.sample_data` 生成）。
-- `data/wind_pv_es_calc/`：legacy 风光储测算兼容数据。
 - `configs/*.yaml`：入口脚本和样例构造参数。
 - 外部天气源：Open-Meteo、NetCDF、Mongo 或本地测点文件。
 
@@ -42,4 +41,3 @@ CSV / YAML / weather source
 - 每个快照必须包含无缺失的布尔列 `is_observation`；只有严格布尔值 `False` 的预测行可晚于 `as_of`。
 - `build_trading_case_dataset()` 直接构造 `MarketDataSnapshot`，不得经由投资 case builder。
 - 通用实测负荷/新能源功率使用 `ObservedPowerSeries`；不得复用投资 profile 类型。
-- legacy 桥接代码用于兼容历史 CSV 字段，不应成为新主线字段命名的来源。
