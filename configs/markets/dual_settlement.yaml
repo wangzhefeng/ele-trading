@@ -1,0 +1,19 @@
+# Dual-settlement (band-deviation) market configuration.
+# 规则研究参考蒙西 v1.3 双结算设计（§5.1）。
+# All parameters marked TODO(rule-confirm) use default values pending written confirmation.
+
+market:
+  settlement_mode: band_deviation  # only band_deviation supported
+  settle_periods: 96
+
+# 日前偏差考核带 (TODO(rule-confirm) #1, #2)
+deviation:
+  lam_l: 0.95
+  lam_u: 1.05
+
+# 中长期月度回收带与倍率
+mid_long:
+  lam_l_long: 0.90
+  lam_u_long: 1.05
+  m_long: 1.2
+  cpen_long_applies_to_storage: true

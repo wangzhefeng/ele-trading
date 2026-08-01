@@ -27,7 +27,7 @@ class MarketDataSnapshot:
     一律拒绝，从构造层面杜绝未来信息泄漏。
     """
 
-    market: str                                  # 市场标识（如 "mengxi"）
+    market: str                                  # 市场标识（如 "single_settlement"）
     scope_type: str                              # 作用域类型（如 "node"/"zone"）
     scope_id: str                                # 作用域对象标识
     as_of: pd.Timestamp                          # 数据可见截止时刻（必须带时区）

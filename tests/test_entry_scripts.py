@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ele_trading.trading.config_loader import load_market_config
+from ele_trading.markets.single_settlement.config_loader import load_market_config
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -56,7 +56,7 @@ def test_two_stage_skeleton_uses_market_config_deviation_costs(tmp_path):
     """修改 market YAML 后，two-stage 模型偏差成本系数应随之改变。"""
     from app.optimization.run_two_stage_skeleton import build_demo_model
 
-    source = PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
+    source = PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     models = []
     for name, positive_cost, negative_cost in (
         ("lower", 2.0, 3.0),

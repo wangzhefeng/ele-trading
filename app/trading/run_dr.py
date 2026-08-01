@@ -7,28 +7,28 @@ compensation.
 
 from __future__ import annotations
 
-from _bootstrap import DATA_TRADING, MENGXI_YAML, SAMPLE_BESS
+from _bootstrap import DATA_TRADING, MARKET_CONFIG_YAML, SAMPLE_BESS
 
 import numpy as np
 import pandas as pd
 
-from ele_trading.trading.sample_data import (
+from ele_trading.trading.demo_fixtures import (
     SampleTradingDataProvider,
 )
 from ele_trading.forecasting.contracts import ForecastRequest
 from ele_trading.forecasting.seasonal_naive_provider import (
     SeasonalNaiveTradingForecastProvider,
 )
-from ele_trading.trading.config_loader import load_market_config
-from ele_trading.trading.day_ahead_coupled import (
+from ele_trading.markets.single_settlement.config_loader import load_market_config
+from ele_trading.operations.day_ahead_coupled import (
     solve_day_ahead_operational,
 )
-from ele_trading.trading.settlement_mengxi import compute_dr_settlement
+from ele_trading.markets.single_settlement.settlement import compute_dr_settlement
 from ele_trading.utils.log_util import logger
 
 
 def main() -> None:
-    config = load_market_config(MENGXI_YAML)
+    config = load_market_config(MARKET_CONFIG_YAML)
     config.dr_enabled = True
     data_provider = SampleTradingDataProvider(DATA_TRADING)
     history_day, day = data_provider.available_days[-2:]

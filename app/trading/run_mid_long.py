@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from _bootstrap import MENGXI_YAML, load_daily_samples
+from _bootstrap import MARKET_CONFIG_YAML, load_daily_samples
 
 import numpy as np
 import pandas as pd
 
-from ele_trading.trading.config_loader import load_market_config
-from ele_trading.trading.mid_long_planner import plan_mid_long_position
+from ele_trading.markets.single_settlement.config_loader import load_market_config
+from ele_trading.positions.mid_long_planner import plan_mid_long_position
 from ele_trading.utils.log_util import logger
 
 
 def main() -> None:
-    config = load_market_config(MENGXI_YAML)
+    config = load_market_config(MARKET_CONFIG_YAML)
 
     # 由 30 天样例外推 12 个月负荷/价格水平（demo 口径，生产接入 ForecastProvider）
     calendar = load_daily_samples()

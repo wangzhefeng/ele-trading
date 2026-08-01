@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from _bootstrap import MENGXI_YAML, load_daily_samples
+from _bootstrap import MARKET_CONFIG_YAML, load_daily_samples
 
 import numpy as np
 
-from ele_trading.trading.config_loader import load_market_config
-from ele_trading.trading.monthly_trader import (
+from ele_trading.markets.single_settlement.config_loader import load_market_config
+from ele_trading.positions.monthly_trader import (
     build_bid_ladder,
     build_position_corridor,
     rebalance_position_gap,
@@ -16,7 +16,7 @@ from ele_trading.utils.log_util import logger
 
 
 def main() -> None:
-    config = load_market_config(MENGXI_YAML)
+    config = load_market_config(MARKET_CONFIG_YAML)
     calendar = load_daily_samples()
 
     # 当月目标持仓带与价格带（demo：由样例量价推算）

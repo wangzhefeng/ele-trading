@@ -12,11 +12,11 @@ from pulp import value
 
 from ele_trading.optimization.solver import SolveStatus, solve_pulp_model
 from ele_trading.optimization.two_stage_cvar import build_two_stage_cvar_model
-from ele_trading.trading.config_loader import load_market_config
-from ele_trading.trading.contracts import MarketConfig
+from ele_trading.markets.single_settlement.config_loader import load_market_config
+from ele_trading.markets.single_settlement.contracts import MarketConfig
 
 
-MENGXI_YAML = PROJECT_ROOT / 'configs' / 'trading' / 'market_mengxi.yaml'
+MARKET_CONFIG_YAML = PROJECT_ROOT / 'configs' / 'markets' / 'single_settlement.yaml'
 
 
 def build_demo_model(market_config: MarketConfig):
@@ -48,7 +48,7 @@ def build_demo_model(market_config: MarketConfig):
 
 
 if __name__ == '__main__':
-    config = load_market_config(MENGXI_YAML)
+    config = load_market_config(MARKET_CONFIG_YAML)
     model = build_demo_model(config)
     result = solve_pulp_model(model)
 

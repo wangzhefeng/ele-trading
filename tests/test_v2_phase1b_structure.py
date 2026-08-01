@@ -40,11 +40,11 @@ def _imports(path: Path) -> set[str]:
     return imports
 
 
-def test_phase1b_active_packages_are_removed_and_trading_owns_mengxi_backtest_and_metrics():
-    """Trading owns backtest/metrics and exposes them through the unified app."""
+def test_phase1b_active_packages_are_removed_and_backtest_owns_backtest_and_metrics():
+    """Backtest package owns backtest/metrics and the chain is exposed via the unified app."""
     assert all(not (SOURCE_ROOT / package).exists() for package in REMOVED_ACTIVE_PACKAGES)
-    assert (SOURCE_ROOT / "trading" / "backtest.py").is_file()
-    assert (SOURCE_ROOT / "trading" / "metrics.py").is_file()
+    assert (SOURCE_ROOT / "backtest" / "backtest.py").is_file()
+    assert (SOURCE_ROOT / "backtest" / "metrics.py").is_file()
     assert (PROJECT_ROOT / "app" / "trading" / "run_pipeline.py").is_file()
     assert not (PROJECT_ROOT / "app" / "evaluation").exists()
 

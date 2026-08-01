@@ -328,7 +328,7 @@ def test_legacy_price_wrapper_rejects_unknown_sampling_method():
 
 
 def test_active_scenario_optimization_imports_do_not_reach_trading_or_todo():
-    """Active scenario/optimization imports must remain below trading/todo."""
+    """Active scenario/optimization imports must remain below the business layers."""
     probe = """
 import importlib
 import sys
@@ -351,8 +351,16 @@ for module_name in (
     importlib.import_module(module_name)
 
 for module_name in sys.modules:
-    if module_name == "ele_trading.trading" or module_name.startswith("ele_trading.trading."):
-        raise AssertionError(module_name)
+    for prefix in (
+        "ele_trading.trading",
+        "ele_trading.positions",
+        "ele_trading.operations",
+        "ele_trading.backtest",
+        "ele_trading.markets",
+        "ele_trading.demand_response",
+    ):
+        if module_name == prefix or module_name.startswith(prefix + "."):
+            raise AssertionError(module_name)
     if ".todo" in module_name:
         raise AssertionError(module_name)
 """

@@ -15,14 +15,14 @@ import pytest
 
 from ele_trading.forecasting.contracts import ForecastRequest, ForecastResult
 from ele_trading.scenario.joint_builder import build_joint_scenarios
-from ele_trading.trading.backtest import run_walk_forward_backtest
-from ele_trading.trading.config_loader import load_market_config
-from ele_trading.trading.contracts import PositionState
+from ele_trading.backtest.backtest import run_walk_forward_backtest
+from ele_trading.markets.single_settlement.config_loader import load_market_config
+from ele_trading.domain.contracts import PositionState
 from ele_trading.trading.orchestrator import TradingOrchestrator
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-MENGXI_YAML = PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
+MARKET_CONFIG_YAML = PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
 
 DECISION_TIME = pd.Timestamp("2026-07-01 00:00", tz="Asia/Shanghai")
 
@@ -67,7 +67,7 @@ def _result_for(request: ForecastRequest, *, issue_time=None) -> ForecastResult:
 
 
 def _orchestrator(forecast_provider) -> TradingOrchestrator:
-    config = load_market_config(MENGXI_YAML)
+    config = load_market_config(MARKET_CONFIG_YAML)
     config.scenario_count = 2
     return TradingOrchestrator(
         data_provider=_FixedPositionProvider(),
@@ -129,7 +129,7 @@ def test_orchestrator_rejects_forecast_with_future_issue_time():
 
 def test_backtest_rejects_empty_calendar():
     """An empty backtest calendar must fail explicitly, not return an empty report."""
-    config = load_market_config(MENGXI_YAML)
+    config = load_market_config(MARKET_CONFIG_YAML)
     config.scenario_count = 2
     orchestrator = _orchestrator(_AlwaysThreeHundredProvider())
 
@@ -143,7 +143,7 @@ def test_backtest_rejects_empty_calendar():
 
 def test_backtest_rejects_daily_actuals_missing_required_columns():
     """Daily actuals lacking Q_real_load/p_real must fail, not silently infer them."""
-    config = load_market_config(MENGXI_YAML)
+    config = load_market_config(MARKET_CONFIG_YAML)
     config.scenario_count = 2
     orchestrator = _orchestrator(_AlwaysThreeHundredProvider())
     bad_actuals = pd.DataFrame({"load": [3.0, 3.0, 3.0, 3.0]})

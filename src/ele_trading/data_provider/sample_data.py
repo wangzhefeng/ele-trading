@@ -1,6 +1,6 @@
 """内置最小样例（prices/config）的路径与快捷加载入口。
 
-与 ``ele_trading.trading.sample_data`` 区分：后者负责蒙西 30 天日清分样例
+与 ``ele_trading.trading.demo_fixtures`` 区分：后者负责蒙西 30 天日清分样例
 （daily_sample_*.csv）的 provider 与 fixture 生成；本模块只管理
 data/trading/ 下 prices/config 两个最小样例。
 """

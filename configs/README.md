@@ -7,7 +7,7 @@
 配置按入口职责分目录：
 
 - `optimization/`：储能套利/MPC 的 BESS 物理参数配置。
-- `trading/`：蒙西交易主线配置。
+- `markets/`：市场规则插件配置（按结算模式组织）。
 - `user_side_dispatch/`：归档用户侧/CVXPY 配置。
 
 > 容量规划配置（6 个）位于 `src/investment_estimation/configs/capacity_planning/`。
@@ -15,11 +15,12 @@
 | 文件 | 对应入口 / 模块 | 用途 |
 |------|------------------|------|
 | `optimization/bess.yaml` | `optimization/run_bess_arbitrage.py`、`optimization/run_mpc_demo.py` | 基础储能 SOC、功率、效率、退化成本、时间步长 |
-| `trading/market_mengxi.yaml` | `trading/config_loader.load_market_config()` → 蒙西单结算交易链 | 字段与 `MarketConfig` 严格一一对应：`market` 单结算与 `dt=0.25`、`long_recovery` 月度回收、`scenario` LHS/MC 与 CVaR、`bess` 物理参数、`dr` 补偿/违约/最低裕度/最小响应量/窗口/开关/基线模式、`monthly` 交易边界和 `solver`；待确认规则均标 `TODO(rule-confirm)` |
+| `markets/single_settlement.yaml` | `markets/single_settlement/config_loader.load_market_config()` → 单结算交易链（规则研究参考蒙西市场规则） | 字段与 `MarketConfig` 严格一一对应：`market` 单结算与 `dt=0.25`、`long_recovery` 月度回收、`scenario` LHS/MC 与 CVaR、`bess` 物理参数、`dr` 补偿/违约/最低裕度/最小响应量/窗口/开关/基线模式、`monthly` 交易边界和 `solver`；待确认规则均标 `TODO(rule-confirm)` |
+| `markets/dual_settlement.yaml` | `markets/dual_settlement/config_loader.load_market_config()` → 双结算插件（规则研究参考蒙西 v1.3 双结算设计） | 字段与双结算 `MarketConfig` 一一对应：`market` 模式与结算时段、`deviation` 日前偏差考核带、`mid_long` 中长期月度回收带与倍率 |
 
 ## 配置边界
 
-- 市场规则参数放入 `trading/market_mengxi.yaml`（经 `trading/config_loader` 加载，YAML 叶字段与 `MarketConfig` 严格一一对应，未知或缺失字段均拒绝）。
+- 市场规则参数放入 `markets/<模式>.yaml`（经对应 `markets/<模式>/config_loader` 加载，YAML 叶字段与 `MarketConfig` 严格一一对应，未知或缺失字段均拒绝）。
 - 设备物理参数放入对应设备或调度配置，例如 `*_dispatch.yaml`、`*_capacity_planning.yaml`。
 - 路径类参数使用相对项目根目录的路径，入口脚本负责解析为绝对路径。
 - 新增配置文件时，应同步补充对应入口、读取逻辑、测试和本 README。

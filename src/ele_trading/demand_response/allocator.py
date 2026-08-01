@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 
 from ele_trading.demand_response.contracts import DRDecision
-from ele_trading.trading.contracts import MarketConfig
+from ele_trading.markets.single_settlement.contracts import MarketConfig
 
 
 def estimate_arbitrage_opportunity_cost(

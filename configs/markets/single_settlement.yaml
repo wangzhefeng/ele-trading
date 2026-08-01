@@ -1,0 +1,55 @@
+# Single-settlement market configuration (规则研究参考蒙西市场规则).
+# Values marked TODO(rule-confirm) are placeholders pending written rules.
+
+market:
+  market_name: single_settlement  # 单结算模式标识
+  settlement_mode: single_settlement
+  settle_periods: 96
+  dt: 0.25  # 15-minute periods
+
+long_recovery:
+  long_recovery_lower_ratio: 0.90  # TODO(rule-confirm)
+  long_recovery_upper_ratio: 1.05  # TODO(rule-confirm)
+  long_recovery_multiplier: 1.20  # TODO(rule-confirm)
+  long_recovery_applies_to_storage: true  # TODO(rule-confirm)
+  pos_tol_ratio: 0.05  # TODO(rule-confirm)
+
+scenario:
+  two_stage_scenario_deviation_cost_positive: 0.25  # TODO(rule-confirm)
+  two_stage_scenario_deviation_cost_negative: 0.25  # TODO(rule-confirm)
+  scenario_method: lhs
+  scenario_count: 20
+  scenario_seed: 7
+  scenario_cvar_alpha: 0.95
+  scenario_cvar_weight: 0.0
+
+bess:
+  soc_terminal_min: null
+  exclusive_charge_discharge: true
+  operational_power_margin: 0.80
+  throughput_max_ratio: 1.0
+  deg_cost_per_mwh: 0.0  # TODO(rule-confirm)
+  bess_market_role: behind_meter
+  no_discharge_on_curtail: false
+
+dr:
+  dr_aggregation: aggregator
+  dr_compensation_per_mwh: 2000.0  # TODO(rule-confirm)
+  dr_penalty_per_mwh: 3000.0  # TODO(rule-confirm)
+  dr_minimum_margin: 0.0  # TODO(rule-confirm)
+  dr_minimum_response_mwh: 0.1  # TODO(rule-confirm)
+  dr_window_start: 72  # TODO(rule-confirm)
+  dr_window_end: 80  # TODO(rule-confirm)
+  dr_enabled: false
+  dr_baseline_mode: auto  # auto = 无 DR 最优解作基线；fixed = 用 dr_baseline_mwh
+  dr_baseline_mwh: 0.0
+
+monthly:
+  monthly_price_floor: 0.0  # TODO(rule-confirm)
+  monthly_price_cap: 1500.0  # TODO(rule-confirm)
+  monthly_trade_unit_mwh: 1.0  # TODO(rule-confirm)
+
+solver:
+  solver_name: cbc
+  solver_time_limit_seconds: 30.0
+  solver_mip_gap: 0.0

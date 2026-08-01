@@ -280,8 +280,26 @@ def test_simple_provider_consumes_request_and_returns_versioned_result():
     assert tuple(result.quantiles) == request.quantiles
 
 
+# 下层包（forecasting/data_provider）不得 import 的上层决策/规则/编排包
+UPPER_LAYER_PREFIXES = (
+    "ele_trading.trading",
+    "ele_trading.positions",
+    "ele_trading.operations",
+    "ele_trading.backtest",
+    "ele_trading.markets",
+    "ele_trading.demand_response",
+)
+
+
+def _is_upper_layer(module: str) -> bool:
+    return any(
+        module == prefix or module.startswith(prefix + ".")
+        for prefix in UPPER_LAYER_PREFIXES
+    )
+
+
 def _forecasting_trading_imports(path: Path, source: str) -> list[str]:
-    """Resolve and return forecasting imports that reach trading."""
+    """Resolve and return forecasting imports that reach upper layers."""
     tree = ast.parse(source, filename=str(path))
     relative_path = path.relative_to(SOURCE_ROOT)
     package = ".".join(
@@ -301,25 +319,17 @@ def _forecasting_trading_imports(path: Path, source: str) -> list[str]:
                 module = node.module
             if module:
                 modules.append(module)
-                if not (
-                    module == "ele_trading.trading"
-                    or module.startswith("ele_trading.trading.")
-                ):
+                if not _is_upper_layer(module):
                     modules.extend(
                         f"{module}.{alias.name}"
                         for alias in node.names
                         if alias.name != "*"
                     )
-    return [
-        module
-        for module in modules
-        if module == "ele_trading.trading"
-        or module.startswith("ele_trading.trading.")
-    ]
+    return [module for module in modules if _is_upper_layer(module)]
 
 
 def test_forecasting_package_has_no_import_path_to_trading():
-    """Adding a forecasting-to-trading import in any module must fail structurally."""
+    """Adding a forecasting-to-upper-layer import in any module must fail structurally."""
     violations: list[str] = []
     for path in (SOURCE_ROOT / "forecasting").rglob("*.py"):
         if _forecasting_trading_imports(

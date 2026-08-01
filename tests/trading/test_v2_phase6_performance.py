@@ -14,12 +14,12 @@ import pandas as pd
 import pytest
 
 from ele_trading.scenario.joint_builder import build_joint_scenarios
-from ele_trading.trading.backtest import run_walk_forward_backtest
-from ele_trading.trading.config_loader import load_market_config
-from ele_trading.trading.day_ahead_coupled import solve_day_ahead_operational
-from ele_trading.trading.intraday_rolling import solve_intraday_rolling
+from ele_trading.backtest.backtest import run_walk_forward_backtest
+from ele_trading.markets.single_settlement.config_loader import load_market_config
+from ele_trading.operations.day_ahead_coupled import solve_day_ahead_operational
+from ele_trading.operations.intraday_rolling import solve_intraday_rolling
 from ele_trading.trading.orchestrator import TradingOrchestrator
-from ele_trading.trading.sample_data import (
+from ele_trading.trading.demo_fixtures import (
     SampleTradingDataProvider,
     WalkForwardSeasonalNaiveProvider,
 )
@@ -27,7 +27,7 @@ from ele_trading.trading.sample_data import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_TRADING = PROJECT_ROOT / "data" / "trading"
-MENGXI_YAML = PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
+MARKET_CONFIG_YAML = PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
 
 SAMPLE_BESS = {
     "p_bcmax": 5.0,
@@ -58,7 +58,7 @@ def _ninety_six_point_day():
 @pytest.mark.slow
 def test_deterministic_day_ahead_lp_under_5_seconds():
     """96-point deterministic LP must solve within the §10.6 budget (≤5s)."""
-    config = load_market_config(MENGXI_YAML)
+    config = load_market_config(MARKET_CONFIG_YAML)
     config.scenario_cvar_weight = 0.0
     net_load, price, q_long, p_long = _ninety_six_point_day()
 
@@ -80,7 +80,7 @@ def test_deterministic_day_ahead_lp_under_5_seconds():
 @pytest.mark.slow
 def test_single_intraday_rolling_under_10_seconds():
     """A single intraday rolling solve must finish within the §10.6 budget (≤10s)."""
-    config = load_market_config(MENGXI_YAML)
+    config = load_market_config(MARKET_CONFIG_YAML)
     config.scenario_cvar_weight = 0.0
     net_load, price, q_long, p_long = _ninety_six_point_day()
     mid = len(net_load) // 2
@@ -126,7 +126,7 @@ def test_thirty_day_walk_forward_under_10_minutes():
         ].copy()
         for day in days[1:]
     }
-    config = load_market_config(MENGXI_YAML)
+    config = load_market_config(MARKET_CONFIG_YAML)
     orchestrator = TradingOrchestrator(
         data_provider=provider,
         forecast_provider=WalkForwardSeasonalNaiveProvider(frames),

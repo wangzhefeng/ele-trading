@@ -36,14 +36,14 @@ uv sync
 |------|------|------|
 | `optimization/run_bess_arbitrage.py` | `configs/optimization/bess.yaml` + `data/trading/prices/` | 单市场储能套利 demo，输出目标值、充放电功率和 SOC |
 | `optimization/run_mpc_demo.py` | `configs/optimization/bess.yaml` + `data/trading/prices/` | 储能 MPC 滚动优化 demo |
-| `optimization/run_two_stage_skeleton.py` | `configs/trading/market_mengxi.yaml` + 内置最小场景 | Two-stage + CVaR 4 时段、3 场景求解演示；场景偏差成本由 `MarketConfig` 注入 |
-| `trading/run_pipeline.py` | `configs/trading/market_mengxi.yaml` + data/forecast providers | 蒙西 position → forecast → scenario → 次日运行 → 日内 → 单结算统一入口 |
-| `trading/run_day_ahead.py` | `configs/trading/market_mengxi.yaml` + sample data provider | 次日运行计划摘要（资源计划/SOC/目标分项） |
-| `trading/run_intraday.py` | `configs/trading/market_mengxi.yaml` + sample data provider | 日内滚动计划摘要（已执行前缀/剩余/回退状态） |
-| `trading/run_backtest.py` | `configs/trading/market_mengxi.yaml` + 30 天样例 | walk-forward 回测，写出 `results/trading/backtest/<run_id>/` 报告与 manifest |
-| `trading/run_mid_long.py` | `configs/trading/market_mengxi.yaml` + sample data provider | 中长期覆盖和实时敞口 demo |
-| `trading/run_monthly.py` | `configs/trading/market_mengxi.yaml` + sample data provider | 月度阶梯、再平衡和缺少 orderbook 时的透明走廊 |
-| `trading/run_dr.py` | `configs/trading/market_mengxi.yaml` + sample/forecast providers | 配置驱动 DR 参与决策 |
+| `optimization/run_two_stage_skeleton.py` | `configs/markets/single_settlement.yaml` + 内置最小场景 | Two-stage + CVaR 4 时段、3 场景求解演示；场景偏差成本由 `MarketConfig` 注入 |
+| `trading/run_pipeline.py` | `configs/markets/single_settlement.yaml` + data/forecast providers | 单结算 position → forecast → scenario → 次日运行 → 日内 → 结算统一入口 |
+| `trading/run_day_ahead.py` | `configs/markets/single_settlement.yaml` + sample data provider | 次日运行计划摘要（资源计划/SOC/目标分项） |
+| `trading/run_intraday.py` | `configs/markets/single_settlement.yaml` + sample data provider | 日内滚动计划摘要（已执行前缀/剩余/回退状态） |
+| `trading/run_backtest.py` | `configs/markets/single_settlement.yaml` + 30 天样例 | walk-forward 回测，写出 `results/trading/backtest/<run_id>/` 报告与 manifest |
+| `trading/run_mid_long.py` | `configs/markets/single_settlement.yaml` + sample data provider | 中长期覆盖和实时敞口 demo |
+| `trading/run_monthly.py` | `configs/markets/single_settlement.yaml` + sample data provider | 月度阶梯、再平衡和缺少 orderbook 时的透明走廊 |
+| `trading/run_dr.py` | `configs/markets/single_settlement.yaml` + sample/forecast providers | 配置驱动 DR 参与决策 |
 
 ## 使用边界
 

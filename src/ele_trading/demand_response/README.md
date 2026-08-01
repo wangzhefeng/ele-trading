@@ -19,7 +19,7 @@
    - 净裕度 = 补偿 − 机会成本 − 违约罚金 − 退化成本
    - 双阈值二值判定：响应量 ≥ 最小响应量 **且** 净裕度 > 最小裕度 → 参与
 
-经济参数全部来自 `configs/trading/market_mengxi.yaml`，无硬编码。
+经济参数全部来自 `configs/markets/single_settlement.yaml`，无硬编码。
 
 ## 入口
 

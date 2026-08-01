@@ -12,7 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 def test_single_settlement_identity_when_reference_is_real_time_price():
     """Wrong contract-price reference would break the single-settlement identity."""
-    from ele_trading.trading.settlement_mengxi import (
+    from ele_trading.markets.single_settlement.settlement import (
         compute_contract_difference,
         compute_energy_cost,
     )
@@ -36,11 +36,11 @@ def test_active_contracts_describe_operations_and_itemized_settlement():
     """Reintroducing bid quantities or a bundled settlement total would break v2."""
     from dataclasses import fields
 
-    from ele_trading.trading.contracts import (
+    from ele_trading.domain.contracts import (
         DecisionTrace,
         OperationalPlan,
-        SettlementReport,
     )
+    from ele_trading.markets.single_settlement.contracts import SettlementReport
 
     trace = DecisionTrace(
         decision_time=pd.Timestamp("2026-07-01", tz="Asia/Shanghai"),
@@ -95,6 +95,8 @@ def test_active_contracts_describe_operations_and_itemized_settlement():
 
 def test_active_package_exports_only_v2_trading_contracts():
     """Leaving new contracts unexported would keep callers on removed v1 names."""
+    import ele_trading.domain as domain
+    import ele_trading.markets.single_settlement as single_settlement
     import ele_trading.trading as trading
 
     for name in (
@@ -103,9 +105,9 @@ def test_active_package_exports_only_v2_trading_contracts():
         "MarketForecastBundle",
         "OperationalPlan",
         "IntradayPlan",
-        "SettlementReport",
     ):
-        assert hasattr(trading, name)
+        assert hasattr(domain, name)
+    assert hasattr(single_settlement, "SettlementReport")
     assert not hasattr(trading, "DayAheadPlan")
 
 
@@ -113,16 +115,16 @@ def test_market_config_is_one_to_one_and_contains_dr_rules():
     """Unknown or removed dual-settlement fields must not re-enter configuration."""
     from dataclasses import fields
 
-    from ele_trading.trading.config_loader import load_market_config
-    from ele_trading.trading.contracts import MarketConfig
+    from ele_trading.markets.single_settlement.config_loader import load_market_config
+    from ele_trading.markets.single_settlement.contracts import MarketConfig
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
     configured_fields = {field.name for field in fields(MarketConfig)}
 
     assert config.dt == 0.25
-    assert config.settlement_mode == "mengxi_single"
+    assert config.settlement_mode == "single_settlement"
     assert config.long_recovery_lower_ratio == 0.90
     assert config.dr_compensation_per_mwh > 0.0
     assert config.dr_penalty_per_mwh > 0.0
@@ -140,14 +142,14 @@ def test_market_config_is_one_to_one_and_contains_dr_rules():
 
 def test_settlement_report_items_adjustments_once():
     """Omitting or double-counting any signed adjustment would change the total."""
-    from ele_trading.trading.config_loader import load_market_config
-    from ele_trading.trading.settlement_mengxi import (
+    from ele_trading.markets.single_settlement.config_loader import load_market_config
+    from ele_trading.markets.single_settlement.settlement import (
         build_settlement_report,
         compute_long_recovery,
     )
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
     recovery = compute_long_recovery(
         q_long_month=50.0,
@@ -184,13 +186,13 @@ def test_settlement_report_items_adjustments_once():
 
 def test_day_ahead_plan_is_physical_and_ignores_explanatory_price_signal():
     """Using an explanatory day-ahead price as a financial input would alter this plan."""
-    from ele_trading.trading.config_loader import load_market_config
-    from ele_trading.trading.day_ahead_coupled import (
+    from ele_trading.markets.single_settlement.config_loader import load_market_config
+    from ele_trading.operations.day_ahead_coupled import (
         solve_day_ahead_operational,
     )
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
     bess = {
         "p_bcmax": 2.0,
@@ -233,13 +235,13 @@ def test_day_ahead_plan_is_physical_and_ignores_explanatory_price_signal():
 def test_day_ahead_objective_itemizes_contract_dr_and_scenario_cvar():
     """Dropping a cost component or the scenario tail risk would break the trace."""
     from ele_trading.scenario.contracts import Scenario, ScenarioSet
-    from ele_trading.trading.config_loader import load_market_config
-    from ele_trading.trading.day_ahead_coupled import (
+    from ele_trading.markets.single_settlement.config_loader import load_market_config
+    from ele_trading.operations.day_ahead_coupled import (
         solve_day_ahead_operational,
     )
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
     config.scenario_cvar_weight = 0.25
     bess = {
@@ -302,13 +304,13 @@ def test_day_ahead_objective_itemizes_contract_dr_and_scenario_cvar():
 def test_day_ahead_scenario_cost_uses_load_minus_wind_and_pv():
     """Joint scenarios must price net load, not gross demand alone."""
     from ele_trading.scenario.contracts import Scenario, ScenarioSet
-    from ele_trading.trading.config_loader import load_market_config
-    from ele_trading.trading.day_ahead_coupled import (
+    from ele_trading.markets.single_settlement.config_loader import load_market_config
+    from ele_trading.operations.day_ahead_coupled import (
         solve_day_ahead_operational,
     )
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
     config.scenario_cvar_weight = 0.0
     bess = {
@@ -372,11 +374,11 @@ def test_day_ahead_scenario_cost_uses_load_minus_wind_and_pv():
 
 def test_intraday_failure_freezes_prefix_and_clips_last_feasible_plan():
     """A failed solve must not rewrite history or execute an unsafe fallback."""
-    from ele_trading.trading.config_loader import load_market_config
-    from ele_trading.trading.day_ahead_coupled import (
+    from ele_trading.markets.single_settlement.config_loader import load_market_config
+    from ele_trading.operations.day_ahead_coupled import (
         solve_day_ahead_operational,
     )
-    from ele_trading.trading.intraday_rolling import (
+    from ele_trading.operations.intraday_rolling import (
         solve_intraday_rolling,
     )
 
@@ -385,7 +387,7 @@ def test_intraday_failure_freezes_prefix_and_clips_last_feasible_plan():
             raise RuntimeError("forced solver failure")
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
     bess = {
         "p_bcmax": 2.0,
@@ -432,16 +434,16 @@ def test_intraday_failure_freezes_prefix_and_clips_last_feasible_plan():
 def test_intraday_uses_latest_vintage_and_remaining_single_settlement_inputs():
     """Ignoring the rolling vintage, scenarios or contract inputs would break traceability."""
     from ele_trading.scenario.contracts import Scenario, ScenarioSet
-    from ele_trading.trading.config_loader import load_market_config
-    from ele_trading.trading.day_ahead_coupled import (
+    from ele_trading.markets.single_settlement.config_loader import load_market_config
+    from ele_trading.operations.day_ahead_coupled import (
         solve_day_ahead_operational,
     )
-    from ele_trading.trading.intraday_rolling import (
+    from ele_trading.operations.intraday_rolling import (
         solve_intraday_rolling,
     )
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
     config.scenario_cvar_weight = 0.1
     bess = {
@@ -522,13 +524,13 @@ def test_dr_participation_uses_only_market_config_economics():
     """Changing the configured default penalty must change the real decision."""
     import inspect
 
-    from ele_trading.trading.config_loader import load_market_config
+    from ele_trading.markets.single_settlement.config_loader import load_market_config
     from ele_trading.demand_response.allocator import (
         evaluate_dr_participation,
     )
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
     config.dr_window_start = 0
     config.dr_window_end = 4
@@ -570,11 +572,11 @@ def test_dr_participation_uses_only_market_config_economics():
 
 def test_mid_long_plan_has_no_financial_day_ahead_position():
     """Splitting uncovered energy into a day-ahead position would violate v2."""
-    from ele_trading.trading.config_loader import load_market_config
-    from ele_trading.trading.mid_long_planner import plan_mid_long_position
+    from ele_trading.markets.single_settlement.config_loader import load_market_config
+    from ele_trading.positions.mid_long_planner import plan_mid_long_position
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
     months = pd.period_range("2026-08", periods=3, freq="M")
     load = pd.Series([100.0, 120.0, 110.0], index=months)
@@ -601,11 +603,11 @@ def test_mid_long_plan_has_no_financial_day_ahead_position():
 
 def test_monthly_gap_without_orderbook_returns_transparent_corridor():
     """Returning a synthetic order instead of a corridor would hide missing data."""
-    from ele_trading.trading.config_loader import load_market_config
-    from ele_trading.trading.monthly_trader import build_position_corridor
+    from ele_trading.markets.single_settlement.config_loader import load_market_config
+    from ele_trading.positions.monthly_trader import build_position_corridor
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
     corridor = build_position_corridor(
         position_gap=-10.0,
@@ -627,8 +629,8 @@ def test_orchestrator_runs_injected_single_settlement_chain_with_trace():
         ForecastResult,
     )
     from ele_trading.scenario.joint_builder import build_joint_scenarios
-    from ele_trading.trading.config_loader import load_market_config
-    from ele_trading.trading.contracts import PositionState
+    from ele_trading.markets.single_settlement.config_loader import load_market_config
+    from ele_trading.domain.contracts import PositionState
     from ele_trading.trading.orchestrator import TradingOrchestrator
 
     events: list[str] = []
@@ -683,7 +685,7 @@ def test_orchestrator_runs_injected_single_settlement_chain_with_trace():
         return build_joint_scenarios(*args, **kwargs)
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
     config.scenario_count = 2
     bess = {
@@ -740,9 +742,9 @@ def test_walk_forward_backtest_keeps_actuals_out_of_production_forecasts():
         ForecastResult,
     )
     from ele_trading.scenario.joint_builder import build_joint_scenarios
-    from ele_trading.trading.backtest import run_walk_forward_backtest
-    from ele_trading.trading.config_loader import load_market_config
-    from ele_trading.trading.contracts import PositionState
+    from ele_trading.backtest.backtest import run_walk_forward_backtest
+    from ele_trading.markets.single_settlement.config_loader import load_market_config
+    from ele_trading.domain.contracts import PositionState
     from ele_trading.trading.orchestrator import TradingOrchestrator
 
     forecast_requests: list[ForecastRequest] = []
@@ -786,7 +788,7 @@ def test_walk_forward_backtest_keeps_actuals_out_of_production_forecasts():
             )
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
     config.scenario_count = 2
     config.scenario_cvar_weight = 0.2
@@ -850,6 +852,8 @@ def test_active_tree_has_no_dual_settlement_symbols_or_todo_imports():
         *trading_root.glob("*.py"),
         *(PROJECT_ROOT / "app" / "trading").glob("*.py"),
     ]
+    # 双结算公式符号的唯一权威实现是 markets/dual_settlement 插件；
+    # 编排层（trading/ 与 app/trading/）不得重新实现或内嵌这些公式。
     prohibited = (
         "compute_settlement_C",
         "compute_settlement_C2",
@@ -876,14 +880,19 @@ def test_active_tree_has_no_dual_settlement_symbols_or_todo_imports():
     ]
     assert normal_test_imports == []
 
-    archive = (
-        trading_root
-        / "todo"
-        / "dual_settlement_v1"
-        / "settlement_mengxi.py"
+    # v1 双结算归档已删除：结算引擎激活为 markets/dual_settlement 插件，
+    # 其余（v1 契约/报量报价日前/回测）由 git 历史保留。
+    assert not (trading_root / "todo").exists()
+    plugin = (
+        PROJECT_ROOT
+        / "src"
+        / "ele_trading"
+        / "markets"
+        / "dual_settlement"
+        / "settlement.py"
     ).read_text()
-    assert "compute_settlement_C2" in archive
-    assert "compute_cpen_dayah" in archive
+    assert "compute_settlement_C2" in plugin
+    assert "compute_cpen_dayah" in plugin
 
 
 def test_thin_pipeline_app_runs_the_injected_chain():

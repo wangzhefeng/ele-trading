@@ -1,4 +1,4 @@
-"""蒙西交易线共享的入口脚本引导：sys.path、样例加载、配置加载。"""
+"""单结算交易线共享的入口脚本引导：sys.path、样例加载、配置加载。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 DATA_TRADING = PROJECT_ROOT / "data" / "trading"
-MENGXI_YAML = PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
+MARKET_CONFIG_YAML = PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
 RESULTS_TRADING = PROJECT_ROOT / "results" / "trading"
 
 # 与 tests/test_day_ahead_coupled.py 一致的 BES 样例（96 点/15min 粒度）
@@ -29,7 +29,7 @@ SAMPLE_BESS = {
 
 def load_daily_samples() -> dict:
     """加载 data/trading/daily_sample_*.csv → {日期: DataFrame}。"""
-    from ele_trading.trading.sample_data import (
+    from ele_trading.trading.demo_fixtures import (
         SampleTradingDataProvider,
     )
 

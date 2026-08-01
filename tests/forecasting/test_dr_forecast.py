@@ -10,7 +10,7 @@ from ele_trading.forecasting.load_forecast import LoadForecaster
 from ele_trading.forecasting.price_forecast import SimplePriceForecaster
 from ele_trading.forecasting.contracts import ForecastRequest
 from ele_trading.forecasting.provider import SimpleForecastProvider, assert_no_future_info
-from ele_trading.trading.contracts import MarketConfig
+from ele_trading.markets.single_settlement.contracts import MarketConfig
 from ele_trading.demand_response.allocator import (
     estimate_arbitrage_opportunity_cost,
     evaluate_dr_participation,

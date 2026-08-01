@@ -1,8 +1,8 @@
 """Demand-response product participation module.
 
 Provides config-driven evaluation of DR participation economics,
-separate from the Mengxi single-settlement trading chain. Consumes
-``MarketConfig`` (dr_* fields) from ``ele_trading.trading.contracts``.
+separate from the single-settlement trading chain. Consumes
+``MarketConfig`` (dr_* fields) from ``ele_trading.markets.single_settlement.contracts``.
 """
 
 from ele_trading.demand_response.allocator import (

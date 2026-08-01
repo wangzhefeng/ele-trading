@@ -18,7 +18,7 @@
 
 当前主要链路：
 
-- **蒙西交易链路（主线）**：中长期仓位 → 月度分解 → 日前运行计划 → 日内滚动 → 实时电能 + 中长期差价合约单结算 → walk-forward 回测，外加需求响应。实现在 `src/ele_trading/trading/`，当前设计依据为 `docs/策略算法框架详细设计-v2.md`；v1 双结算设计仅作历史溯源。
+- **单结算交易链路（主线）**：中长期仓位 → 月度分解 → 日前运行计划 → 日内滚动 → 实时电能 + 中长期差价合约单结算 → walk-forward 回测，外加需求响应。按「模式接口化分层」组织：契约在 `src/ele_trading/domain/`、市场规则插件在 `src/ele_trading/markets/single_settlement/`（规则研究参考蒙西市场规则）、头寸在 `positions/`、运行在 `operations/`、编排在 `trading/`、回测在 `backtest/`；当前设计依据为 `docs/策略算法框架详细设计-v2.md`；v1 双结算设计仅作历史溯源。
 - **市场储能链路**：价格读取、储能套利、MPC、Two-stage + CVaR、结算、回测。
 - **归档用户侧链路**：用户侧、分布式和 CVXPY 调度保留于 `src/ele_trading/user_side_dispatch/`（合并自原 `data_provider/todo/` 与 `optimization/todo/`），不属于活动 API 或常规入口。
 - **风光储链路**：负荷构造、PV/风电出力 profile、BESS/Wind+BESS/Wind+PV+BESS 容量规划。
@@ -36,7 +36,13 @@
 ```text
 ele-trading/
 ├── src/ele_trading/              # 核心 Python 包（电力市场交易与调度）
-│   ├── trading/                  # 蒙西交易主线（中长期/月度/日前/日内/结算/回测/DR）
+│   ├── domain/                   # 市场无关领域契约 + 交易事件契约骨架
+│   ├── markets/single_settlement/ # 单结算模式市场规则插件（配置契约/加载校验/结算引擎）
+│   ├── positions/                # 中长期/月度头寸决策
+│   ├── operations/               # 日前运行计划与日内滚动控制
+│   ├── trading/                  # 参与方交易编排（TradingOrchestrator）与 demo fixtures
+│   ├── backtest/                 # walk-forward 回测与交易/BESS 指标
+│   ├── demand_response/          # 需求响应参与决策（品种层）
 │   ├── data_provider/            # 配置、样例数据、负荷、气象、时间序列处理
 │   ├── forecasting/              # 价格、负荷、风光功率、ForecastProvider 接口和天气特征工程
 │   ├── scenario/                 # 价格场景采样与缩减
@@ -53,7 +59,7 @@ ele-trading/
 │   ├── utils/                    # 自包含工具子集（迁移自 ele_trading.utils）
 │   └── todo/                     # 待整合的迁移暂存区（老版 capacity_planning 整体并入）
 ├── app/                          # 可直接运行的入口（按 trading/optimization/user_side_dispatch 分目录；容量规划与资源仿真入口在 src/investment_estimation/app/）
-├── configs/                      # YAML 配置（按 optimization/trading/user_side_dispatch 分目录；容量规划配置在 src/investment_estimation/configs/）
+├── configs/                      # YAML 配置（按 optimization/markets/user_side_dispatch 分目录；容量规划配置在 src/investment_estimation/configs/）
 ├── data/                         # 最小样例数据、legacy 兼容数据
 ├── docs/                         # 策略算法框架详细设计与算法笔记（需量预测、v2 迁移清单）
 ├── tests/                        # 单元测试和入口脚本冒烟测试
@@ -66,19 +72,19 @@ ele-trading/
 
 ## 核心模块
 
-### `trading`（蒙西交易主线）
+### 单结算交易主线（`trading` + `domain` + `markets` + `positions` + `operations` + `backtest`）
 
-实现《策略算法框架详细设计 v2》的蒙西交易策略链，是当前开发主线。算法内核与命令行入口均已就位：
+实现《策略算法框架详细设计 v2》的单结算交易策略链，按「模式接口化分层」组织：
 
-- `contracts.py`：单结算数据契约 dataclass（`MarketConfig`/`OperationalPlan`/`IntradayPlan`/`SettlementReport`/`PositionState`/`MarketForecastBundle`/`DecisionTrace` 等，无日前金融申报量）。
-- `settlement_mengxi.py`：蒙西单结算 `build_settlement_report`（实时电能 `Q_real*p_real` + 中长期差价 `Q_long*(p_long-p_ref)` + 长协回收 + DR/退化/执行分项，不重复计费）+ 结算时段折算 `aggregate_to_settle_periods`。
-- `day_ahead_coupled.py`：日前运行计划 `solve_day_ahead_operational`（共享 BESS 物理核 + 可选场景 CVaR；日前价仅作解释性信号，不进结算）。
-- `intraday_rolling.py`：日内滚动 `solve_intraday_rolling`（冻结已执行前缀 + 剩余窗口重优化 + 求解失败回退物理裁剪）。
-- `orchestrator.py`：`TradingOrchestrator` 串联 持仓 → 预测 → 联合场景 → 日前运行 → 日内 → 单结算。
-- `mid_long_planner.py` / `monthly_trader.py`：中长期仓位结构与分月分解、集中竞价阶梯申报与缺口再平衡（无订单簿时输出透明量价走廊）。
-- `demand_response/`（平级包）：需求响应独立事后评估工具（不参与主链路）。主链路 DR 联合优化在 `day_ahead_coupled.py`（`dr_enabled=True` 时两阶段求解），履约结算在 `settlement_mengxi.compute_dr_settlement`。
-- `sample_data.py`：`SampleTradingDataProvider`（30 天 96 点样例）+ `WalkForwardSeasonalNaiveProvider`（按 issue-time vintage 的无前瞻 walk-forward 预测）。
-- `backtest.py` / `metrics.py`：walk-forward 回测（无储能/确定性/风险/oracle 四基准，仅 oracle 可用未来）与 BESS/风险/退化指标。
+- `domain/contracts.py`：市场无关契约（`PositionState`/`MarketForecastBundle`/`OperationalPlan`/`IntradayPlan`/`DecisionTrace` 等，无日前金融申报量）；`domain/events.py`：`Forecast→Bid→Award→Dispatch→Metering→Settlement` 事件契约骨架。
+- `markets/single_settlement/`：单结算模式规则插件——`contracts.py`（`MarketConfig`/`SettlementReport`）、`config_loader.py`（YAML 一一映射校验）、`settlement.py`（`build_settlement_report`：实时电能 `Q_real*p_real` + 中长期差价 `Q_long*(p_long-p_ref)` + 长协回收 + DR/退化/执行分项，不重复计费；`aggregate_to_settle_periods` 结算时段折算；`compute_dr_settlement` DR 履约结算）。
+- `positions/mid_long_planner.py` / `positions/monthly_trader.py`：中长期仓位结构与分月分解、集中竞价阶梯申报与缺口再平衡（无订单簿时输出透明量价走廊）。
+- `operations/day_ahead_coupled.py`：日前运行计划 `solve_day_ahead_operational`（共享 BESS 物理核 + 可选场景 CVaR + `dr_enabled=True` 时 DR 两阶段联合优化；日前价仅作解释性信号，不进结算）。
+- `operations/intraday_rolling.py`：日内滚动 `solve_intraday_rolling`（冻结已执行前缀 + 剩余窗口重优化 + 求解失败回退物理裁剪 + DR 履约硬约束）。
+- `trading/orchestrator.py`：`TradingOrchestrator` 串联 持仓 → 预测 → 联合场景 → 日前运行 → 日内 → 单结算。
+- `trading/demo_fixtures.py`：`SampleTradingDataProvider`（30 天 96 点样例）+ `WalkForwardSeasonalNaiveProvider`（按 issue-time vintage 的无前瞻 walk-forward 预测）+ fixture 生成器。
+- `backtest/backtest.py` / `backtest/metrics.py`：walk-forward 回测（无储能/确定性/风险/oracle 四基准，仅 oracle 可用未来）与 BESS/风险/退化指标。
+- `demand_response/`（平级包）：需求响应独立事后评估工具（不参与主链路）。主链路 DR 联合优化在 `operations/day_ahead_coupled.py`，履约结算在 `markets/single_settlement/settlement.compute_dr_settlement`。
 - 入口：`app/trading/run_{mid_long,monthly,day_ahead,intraday,dr,backtest}.py` + 统一 `run_pipeline.py`；30 天 walk-forward 回归基线产物见 `results/trading/backtest/v2_baseline/`。
 
 ### `data_provider`
@@ -178,7 +184,7 @@ uv run python src/investment_estimation/app/capacity_planning/run_wind_pv_bess_c
 
 ## 配置文件
 
-`configs/` 下配置按算法链路组织（`optimization/`、`trading/`、`user_side_dispatch/` 归档配置）；容量规划配置位于 `src/investment_estimation/configs/capacity_planning/`。字段说明见 `configs/README.md`。
+`configs/` 下配置按算法链路组织（`optimization/`、`markets/`、`user_side_dispatch/` 归档配置）；容量规划配置位于 `src/investment_estimation/configs/capacity_planning/`。字段说明见 `configs/README.md`。
 
 ## 验证
 
@@ -188,7 +194,7 @@ uv run python src/investment_estimation/app/capacity_planning/run_wind_pv_bess_c
 uv run python -m pytest -q
 ```
 
-当前测试（450 passed, 4 skipped, 3 deselected，无失败）包含蒙西交易主线（结算/日前/日内/回测/中长期/DR/预测 39 项）、核心算法、样例数据构造、入口脚本、投资测算与气象特征等切片。`tests/README.md` 有按模块的清单与冒烟边界。
+当前测试（473 passed, 4 skipped, 3 deselected，无失败）包含单结算交易主线（结算/日前/日内/回测/中长期/DR/预测 39 项）、包层级结构守卫（`tests/test_structure_layers.py`）、双结算插件（`tests/markets/` 18 项）、核心算法、样例数据构造、入口脚本、投资测算与气象特征等切片。`tests/README.md` 有按模块的清单与冒烟边界。
 
 ## v2 重构进度
 
@@ -201,15 +207,13 @@ uv run python -m pytest -q
 | Phase 2 契约 + 数据层 | ✅ | `ForecastRequest/Result`、`MarketDataSnapshot`；消除下层 → `trading` 反向依赖（含 `data_provider` 守卫） |
 | Phase 3 完整预测 | ✅ | 气象/价格/负荷/风/光五类预测、registry、层级协调、评估指标 |
 | Phase 4 联合场景 + 优化 | ✅ | `Scenario/ScenarioSet`、后向 Wasserstein L1 缩减、共享 BESS 核、PuLP+CBC 两阶段 CVaR |
-| Phase 5 单结算交易链 | ✅ | 单结算权威、`OperationalPlan`、`TradingOrchestrator`、walk-forward 回测；v1 双结算归档至 `trading/todo/dual_settlement_v1/` |
+| Phase 5 单结算交易链 | ✅ | 单结算权威、`OperationalPlan`、`TradingOrchestrator`、walk-forward 回测；v1 双结算结算引擎后于 2026-08-01 激活为 `markets/dual_settlement/` 插件，归档其余部分删除 |
 | Phase 6 回测/性能/发布 | ✅ | 30 天 walk-forward 回归基线、失败模式测试、§10.6 性能预算测试（`-m slow`）、文档同步 |
 
 ### 已知约束与遗留
 
 - 标 `TODO(rule-confirm)` 的市场参数（中长期回收、two-stage 偏差成本等）为待业务规则确认的默认值，用于生产决策前需标定。
-- 6 个 pre-existing 测试失败均位于 out-of-scope 的 `src/investment_estimation/` 与 legacy 桥接（见上文「验证」与 `MEMORY.md`），不属于 v2 活动交易链（§1.1）。
 - 性能预算测试默认跳过，显式运行：`UV_CACHE_DIR=.uv_cache uv run pytest -m slow -q`。
-- 所有 v2 改动目前在工作树（按约定未提交）。
 
 ## 数据边界
 

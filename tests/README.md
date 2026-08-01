@@ -13,7 +13,10 @@
 | `tests/data_provider/` | `ele_trading.data_provider` | 数据质量、加载泛化 |
 | `tests/utils/` | `ele_trading.utils` | 数据对齐、数值、时间索引工具 |
 | `tests/investment_estimation/` | `investment_estimation` | 容量规划、IRR、资源仿真、调度、绘图 |
-| `tests/trading/` | `ele_trading.trading` | 蒙西交易主线（含 DR 联合优化、结算、回测） |
+| `tests/trading/` | `ele_trading.trading`（编排层及全链） | 单结算交易链路（含 DR 联合优化、结算、编排、故障模式、性能） |
+| `tests/positions/` | `ele_trading.positions` | 中长期分解与月度交易 |
+| `tests/backtest/` | `ele_trading.backtest` | 交易/BESS 指标、30 天回测回归基线 |
+| `tests/markets/` | `ele_trading.markets` | 双结算插件公式与配置加载 |
 | `tests/user_side_dispatch/` | 归档 | 用户侧/分布式/CVXPY 测试，常规收集排除 |
 | 根目录 | 跨包 | 项目结构边界、契约、入口冒烟、YAML 纪律 |
 
@@ -47,7 +50,7 @@ uv run python -m pytest tests/ -m slow -q
 uv run python -m pytest tests/user_side_dispatch/test_user_side_bess_dispatch.py -q
 
 # 运行指定测试函数
-uv run python -m pytest tests/trading/test_metrics.py::test_sharpe_finite -v
+uv run python -m pytest tests/backtest/test_metrics.py::test_sharpe_finite -v
 ```
 
 ## 测试文件清单
@@ -110,16 +113,26 @@ uv run python -m pytest tests/trading/test_metrics.py::test_sharpe_finite -v
 | `test_tariff_and_price_aware_dispatch.py` | `investment_estimation/todo` | 电价与价格感知调度 |
 | `test_bess_charge_discharge_plot.py` | `investment_estimation/utils/bess_charge_discharge_plot.py` | 充放电绘图 |
 
-### `tests/trading/` — 交易链路
+### `tests/trading/` — 交易链路（编排层及全链）
 
 | 测试文件 | 覆盖模块 | 说明 |
 |----------|----------|------|
-| `test_metrics.py` | `trading/metrics.py` | 扩展指标（Sharpe、MDD、EFC、RTE、利用率） |
-| `test_mid_long_monthly.py` | `trading/mid_long_planner.py`、`trading/monthly_trader.py` | 中长期分解与月度交易 |
-| `test_v2_phase5_trading.py` | active `trading` chain | 单结算恒等式、合同/配置、运行计划、日内回退、DR、编排、无前瞻回测、归档边界和 pipeline app |
-| `test_v2_phase6_failure_modes.py` | `trading/backtest.py`、`trading/orchestrator.py` | 数据缺失/求解失败等故障模式 |
-| `test_v2_phase6_performance.py` | `trading` chain | 30 天回测性能基线（slow） |
-| `test_v2_phase6_regression.py` | `trading` chain | 30 天回测回归基线（slow） |
+| `test_v2_phase5_trading.py` | active 单结算 chain | 单结算恒等式、合同/配置、运行计划、日内回退、DR、编排、无前瞻回测、归档边界和 pipeline app |
+| `test_v2_phase6_failure_modes.py` | `backtest/backtest.py`、`trading/orchestrator.py` | 数据缺失/求解失败等故障模式 |
+| `test_v2_phase6_performance.py` | 单结算 chain | 30 天回测性能基线（slow） |
+
+### `tests/positions/` — 头寸决策
+
+| 测试文件 | 覆盖模块 | 说明 |
+|----------|----------|------|
+| `test_mid_long_monthly.py` | `positions/mid_long_planner.py`、`positions/monthly_trader.py` | 中长期分解与月度交易 |
+
+### `tests/backtest/` — 回测与指标
+
+| 测试文件 | 覆盖模块 | 说明 |
+|----------|----------|------|
+| `test_metrics.py` | `backtest/metrics.py` | 扩展指标（Sharpe、MDD、EFC、RTE、利用率） |
+| `test_v2_phase6_regression.py` | 单结算 chain | 30 天回测回归基线（slow） |
 
 ### 根目录 — 项目级结构/跨域测试
 
@@ -128,6 +141,7 @@ uv run python -m pytest tests/trading/test_metrics.py::test_sharpe_finite -v
 | `test_v2_phase0_structure.py` | 包结构边界 | Phase 0 目录/模块归属 |
 | `test_v2_phase1b_structure.py` | 包结构边界 | Phase 1b 结构回归 |
 | `test_v2_phase2_contracts.py` | forecast/data snapshot contracts + AST boundaries | Phase 2 契约、模块权威与依赖方向 |
+| `test_structure_layers.py` | 包层级依赖方向 | domain/markets/positions/operations/trading/backtest 分层守卫 |
 | `test_yaml_config_loading.py` | src/app YAML 纪律扫描 | 配置读取统一走 `read_yaml` |
 | `test_entry_scripts.py` | `app/` 入口脚本 | 跨域入口冒烟（见下） |
 
@@ -163,9 +177,9 @@ uv run python -m pytest tests/trading/test_metrics.py::test_sharpe_finite -v
 （pytest 配置 `norecursedirs = ["user_side_dispatch"]`，常规收集不会
 包含），只能通过显式路径运行。
 
-v1 双结算回归位于
-`src/ele_trading/trading/todo/dual_settlement_v1/tests/`，同样只允许显式
-运行；活动测试不得导入该归档包。
+v1 双结算归档（原 `src/ele_trading/trading/todo/dual_settlement_v1/`）已
+删除：结算引擎测试随实现迁移至 `tests/markets/`（活动收集）；v1 契约/
+报量报价日前/回测的回归测试由 git 历史保留。
 
 ## 依赖说明
 

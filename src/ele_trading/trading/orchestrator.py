@@ -1,4 +1,4 @@
-"""Dependency-injected orchestration for the Mengxi trading chain."""
+"""Dependency-injected orchestration for the single-settlement trading chain."""
 
 from __future__ import annotations
 
@@ -14,19 +14,21 @@ from ele_trading.forecasting.contracts import (
 )
 from ele_trading.forecasting.provider import assert_no_future_info
 from ele_trading.scenario.contracts import Scenario, ScenarioSet
-from ele_trading.trading.contracts import (
+from ele_trading.domain.contracts import (
     IntradayPlan,
-    MarketConfig,
     MarketForecastBundle,
     OperationalPlan,
     PositionState,
+)
+from ele_trading.markets.single_settlement.contracts import (
+    MarketConfig,
     SettlementReport,
 )
-from ele_trading.trading.day_ahead_coupled import (
+from ele_trading.operations.day_ahead_coupled import (
     solve_day_ahead_operational,
 )
-from ele_trading.trading.intraday_rolling import solve_intraday_rolling
-from ele_trading.trading.settlement_mengxi import (
+from ele_trading.operations.intraday_rolling import solve_intraday_rolling
+from ele_trading.markets.single_settlement.settlement import (
     build_settlement_report,
     compute_dr_settlement,
 )

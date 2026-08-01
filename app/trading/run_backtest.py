@@ -16,13 +16,13 @@ from pathlib import Path
 
 import pandas as pd
 
-from _bootstrap import DATA_TRADING, MENGXI_YAML, RESULTS_TRADING, SAMPLE_BESS
+from _bootstrap import DATA_TRADING, MARKET_CONFIG_YAML, RESULTS_TRADING, SAMPLE_BESS
 
 from ele_trading.scenario.joint_builder import build_joint_scenarios
-from ele_trading.trading.backtest import run_walk_forward_backtest
-from ele_trading.trading.config_loader import load_market_config
+from ele_trading.backtest.backtest import run_walk_forward_backtest
+from ele_trading.markets.single_settlement.config_loader import load_market_config
 from ele_trading.trading.orchestrator import TradingOrchestrator
-from ele_trading.trading.sample_data import (
+from ele_trading.trading.demo_fixtures import (
     SampleTradingDataProvider,
     WalkForwardSeasonalNaiveProvider,
 )
@@ -69,10 +69,10 @@ def main() -> None:
         for day in decision_days
     }
 
-    config = load_market_config(MENGXI_YAML)
+    config = load_market_config(MARKET_CONFIG_YAML)
     if args.scenario_count is not None:
         config.scenario_count = args.scenario_count
-    config_version = hashlib.sha256(MENGXI_YAML.read_bytes()).hexdigest()
+    config_version = hashlib.sha256(MARKET_CONFIG_YAML.read_bytes()).hexdigest()
     orchestrator = TradingOrchestrator(
         data_provider=data_provider,
         forecast_provider=WalkForwardSeasonalNaiveProvider(frames),
@@ -93,7 +93,7 @@ def main() -> None:
     out_dir = args.out_dir or (RESULTS_TRADING / "backtest" / args.run_id)
     out_dir.mkdir(parents=True, exist_ok=True)
     report.to_csv(out_dir / "backtest_report.csv")
-    shutil.copyfile(MENGXI_YAML, out_dir / "market_mengxi.yaml")
+    shutil.copyfile(MARKET_CONFIG_YAML, out_dir / "single_settlement.yaml")
     manifest = {
         "run_id": args.run_id,
         "config_sha256": config_version,
