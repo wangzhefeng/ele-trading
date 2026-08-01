@@ -1,26 +1,26 @@
-# demand_response — 需求响应参与决策
+# demand_response — 独立 DR 经济性评估
 
-独立策略模块，评估 DR 产品参与的经济性。与蒙西单结算交易主线解耦，
-通过 ``MarketConfig`` 的 ``dr_*`` 字段获取经济参数（补偿价、罚金、
-最小响应量、窗口、聚合方式等）。
+本包提供事前 DR 参与评估，与默认交易编排中的 DR 联合优化和事后结算是不同职责。
 
-## 模块
+## 当前模块
 
-| 文件 | 职责 |
-|---|---|
-| `contracts.py` | `DRDecision` 参与决策结果契约 |
-| `allocator.py` | 机会成本估算 + 参与决策评估 |
+| 文件 | 当前职责 | 成熟度 |
+|---|---|---|
+| `contracts.py` | `DRDecision` | 活动结果契约 |
+| `allocator.py` | 机会成本估算和二值参与判定 | 启发式 |
 
-## 算法
+## 当前算法
 
-1. **机会成本**（`estimate_arbitrage_opportunity_cost`）：DR 窗口内放弃的计划放电价值 = Σ max(p_net_plan, 0) × 实时价预测 × dt。
-2. **参与决策**（`evaluate_dr_participation`）：
-   - 响应量 = Σ 窗口内可调容量 × dt
-   - 净裕度 = 补偿 − 机会成本 − 违约罚金 − 退化成本
-   - 双阈值二值判定：响应量 ≥ 最小响应量 **且** 净裕度 > 最小裕度 → 参与
+1. `estimate_arbitrage_opportunity_cost()` 根据 DR 窗口内原计划放电、实时价预测和 `dt` 估算放弃套利的价值。
+2. `evaluate_dr_participation()` 计算响应量、补偿、机会成本、违约罚金、退化成本和净裕度，再按最小响应量与最小裕度做二值判定。
 
-经济参数全部来自 `configs/markets/single_settlement.yaml`，无硬编码。
+经济参数当前来自 `markets.single_settlement.MarketConfig`，因此独立 allocator 仍与默认单结算配置耦合。
 
-## 入口
+## 与主链 DR 的区别
 
-`app/trading/run_dr.py`：日前计划 → 计算可调容量 → DR 评估。
+- 独立评估入口：`app/trading/run_dr.py`；
+- 日前联合优化：`operations/day_ahead_coupled.py`；
+- 日内履约：`operations/intraday_rolling.py`；
+- 事后补偿与罚金：`markets/single_settlement/settlement.compute_dr_settlement()`。
+
+v3 需要决定 DR 产品契约、机会成本、联合优化和结算是否共享统一策略接口，见[市场策略设计](../../../docs/策略算法框架详细设计-v3.md#75-市场策略)。

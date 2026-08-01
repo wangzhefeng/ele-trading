@@ -1,39 +1,36 @@
-# trading — 参与方交易编排层
+# trading — 当前参与方交易编排
 
-本包是单结算交易链的编排落点：`TradingOrchestrator` 串联 持仓 → 预测 →
-联合场景 → 日前运行 → 日内滚动 → 结算 的完整链路；`demo_fixtures` 提供
-demo 样例数据与 fixture 生成器。日前价格只可作为显式解释信号，不进入
-财务结算。
+本包是默认单结算链的编排落点，负责把数据、预测、场景、日前、日内和结算组合成一个可运行流程。
 
-## 活动模块
+## 当前模块
 
-| 模块 | 职责 |
-|------|------|
-| `orchestrator.py` | 注入数据、预测、场景、配置和求解器并运行完整链 |
-| `demo_fixtures.py` | `SampleTradingDataProvider`（30 天 96 点样例）、`WalkForwardSeasonalNaiveProvider`（按 issue-time vintage 的无前瞻预测）、fixture 生成器 |
+| 模块 | 当前职责 |
+|---|---|
+| `orchestrator.py` | 注入 data provider、forecast provider、场景 builder、配置和求解器并运行完整链 |
+| `demo_fixtures.py` | 30 天 96 点 `SampleTradingDataProvider`、无前瞻 `WalkForwardSeasonalNaiveProvider` 和 fixture 生成器 |
 
-分层后的契约归属：领域契约在 `domain/`（`PositionState`/`OperationalPlan`/
-`IntradayPlan`/`DecisionTrace` 等），市场规则在 `markets/single_settlement/`
-（`MarketConfig`/`SettlementReport`/结算引擎/配置加载），头寸决策在
-`positions/`，日前与日内运行在 `operations/`，回测与指标在 `backtest/`。
-
-## 归档
-
-v1 双结算归档（原 `todo/dual_settlement_v1/`）已删除：结算引擎（C/C2/
-Cpen_dayah/Cpen_long）已激活为 `markets/dual_settlement/` 插件（唯一权威
-实现）；v1 契约、报量报价日前、回测与 app 由 git 历史保留，需要溯源时
-查 `git log`。活动代码不得 import 已删除的 `ele_trading.trading.todo`。
-
-## 活动流向
+## 当前流向
 
 ```text
 data provider → PositionState
-forecast provider/registry → MarketForecastBundle
+forecast provider → price/load/wind_power/pv_power ForecastResult
 scenario builder → ScenarioSet
-OperationalPlan → IntradayPlan → SettlementReport
+OperationalPlan → IntradayPlan
+single-settlement → SettlementReport
 ```
 
-活动入口（v2 §8.2）：`app/trading/run_{mid_long,monthly,day_ahead,intraday,dr,backtest}.py`
-以及统一编排入口 `app/trading/run_pipeline.py`。`run_backtest.py` 把 30 天
-walk-forward 回归基线写入 `results/trading/backtest/v2_baseline/`。样例数据只
-用于接口和回归验证；生产数据必须经 `data_provider` 注入。
+## 当前固定假设
+
+- 编排器固定请求价格、负荷、风电和光伏四类预测；
+- 当前 frequency 固定为 `15min`；
+- 配置和结算报告固定使用单结算实现；
+- 日前价格作为运行信号，实际结算使用事后实际价格；
+- 实际负荷和价格只在完成决策后进入结算。
+
+这些是当前实现事实，不是 v3 永久架构。市场策略注入、频率契约和事件编排由 [v3 设计](../../../docs/策略算法框架详细设计-v3.md#77-编排与结算)决定。
+
+## 活动入口与归档
+
+活动入口为 `app/trading/run_{mid_long,monthly,day_ahead,intraday,dr,backtest}.py` 和 `run_pipeline.py`。样例数据只用于接口和回归验证，生产数据必须经数据/provider 边界注入。
+
+旧双结算报价、日前和回测实现只存在于 git 历史；当前唯一双结算代码位于 `markets/dual_settlement/`，但未接本包编排。

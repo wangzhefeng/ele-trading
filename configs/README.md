@@ -1,43 +1,47 @@
 # 配置目录说明
 
-`configs/` 存放项目级 YAML 配置样例（仅服务 `src/ele_trading/`）。配置只描述参数、路径和运行开关；算法约束、目标函数和数据处理逻辑应放在 `src/ele_trading/` 或对应 `app/` 入口中。
+`configs/` 存放 `src/ele_trading/` 项目级入口使用的 YAML。配置描述参数、路径和运行开关；算法约束、目标函数、市场计算和数据处理逻辑只能位于相应业务包中，不能放在 YAML 或 `app/`。
 
-## 当前配置清单
+## 活动配置
 
-配置按入口职责分目录：
+| 文件 | 当前消费者 | 用途 |
+|---|---|---|
+| `optimization/bess.yaml` | BESS 套利和 MPC 入口 | SOC、功率、效率、退化成本和时间步长样例 |
+| `markets/single_settlement.yaml` | 单结算加载器和默认交易链 | 市场、场景、BESS、DR、月度与求解参数 |
+| `markets/dual_settlement.yaml` | 双结算加载器和结算规则测试 | 结算时段、偏差带和中长期回收参数 |
 
-- `optimization/`：储能套利/MPC 的 BESS 物理参数配置。
-- `markets/`：市场规则插件配置（按结算模式组织）。
-- `user_side_dispatch/`：归档用户侧/CVXPY 配置。
+当前市场 YAML 由相应 `config_loader` 加载，并对 typed config 执行未知字段、缺失字段和取值校验。单结算配置目前映射到一个跨多个领域的 `MarketConfig`；v3 将重新评估组合式配置和 `schema_version`，在决策落地前本文只记录当前行为。
 
-> 容量规划配置（6 个）位于 `src/investment_estimation/configs/capacity_planning/`。
+## 归档配置
 
-| 文件 | 对应入口 / 模块 | 用途 |
-|------|------------------|------|
-| `optimization/bess.yaml` | `optimization/run_bess_arbitrage.py`、`optimization/run_mpc_demo.py` | 基础储能 SOC、功率、效率、退化成本、时间步长 |
-| `markets/single_settlement.yaml` | `markets/single_settlement/config_loader.load_market_config()` → 单结算交易链（规则研究参考蒙西市场规则） | 字段与 `MarketConfig` 严格一一对应：`market` 单结算与 `dt=0.25`、`long_recovery` 月度回收、`scenario` LHS/MC 与 CVaR、`bess` 物理参数、`dr` 补偿/违约/最低裕度/最小响应量/窗口/开关/基线模式、`monthly` 交易边界和 `solver`；待确认规则均标 `TODO(rule-confirm)` |
-| `markets/dual_settlement.yaml` | `markets/dual_settlement/config_loader.load_market_config()` → 双结算插件（规则研究参考蒙西 v1.3 双结算设计） | 字段与双结算 `MarketConfig` 一一对应：`market` 模式与结算时段、`deviation` 日前偏差考核带、`mid_long` 中长期月度回收带与倍率 |
+`user_side_dispatch/` 下 4 个 YAML 只服务 `app/user_side_dispatch/` 归档入口：
 
-## 配置边界
+- `user_side_bess_dispatch.yaml`
+- `user_side_pv_dispatch.yaml`
+- `user_side_pv_bess_dispatch.yaml`
+- `cvxp_bess_dispatch.yaml`
 
-- 市场规则参数放入 `markets/<模式>.yaml`（经对应 `markets/<模式>/config_loader` 加载，YAML 叶字段与 `MarketConfig` 严格一一对应，未知或缺失字段均拒绝）。
-- 设备物理参数放入对应设备或调度配置，例如 `*_dispatch.yaml`、`*_capacity_planning.yaml`。
-- 路径类参数使用相对项目根目录的路径，入口脚本负责解析为绝对路径。
-- 新增配置文件时，应同步补充对应入口、读取逻辑、测试和本 README。
-- `user_side_dispatch/` 下的用户侧、分布式和 CVXPY 配置仅服务归档入口，不得由活动代码加载。
+活动代码不得把这些归档配置当作默认市场交易配置。
 
-## 运行示例
+## 平级包边界
+
+`src/investment_estimation/` 使用自己的包内配置和文档。本目录不复制其配置清单，也不把它纳入 `src/ele_trading/` 的配置契约。
+
+## 当前配置纪律
+
+- YAML 读取统一通过项目的 `read_yaml` 边界。
+- 市场规则参数通过相应市场配置和加载器注入，不隐藏在通用算法中。
+- 设备参数放入对应设备或调度配置，不混入无关入口。
+- 路径参数以项目根目录为解析基准，由入口或加载器解析。
+- 新增或修改配置字段时，同步更新 typed config、加载校验、消费者测试和本 README。
+- 15 分钟链路中的 `dt` 当前使用 `0.25` 小时，并在配置中显式注明。
+
+## 运行与验证
 
 ```bash
 uv run python app/optimization/run_bess_arbitrage.py
-uv run python src/investment_estimation/app/capacity_planning/run_dist_bess_dispatch.py
-uv run python src/investment_estimation/app/capacity_planning/run_wind_pv_bess_capacity_planning_1.py
-uv run python src/investment_estimation/app/capacity_planning/run_wind_pv_bess_capacity_planning_2.py
-uv run python src/investment_estimation/app/capacity_planning/run_wind_pv_bess_irr_planning.py
+uv run python app/trading/run_pipeline.py
+uv run python -m pytest -q tests/test_yaml_config_loading.py tests/trading tests/markets
 ```
 
-完整验证：
-
-```bash
-uv run python -m pytest -q
-```
+目标配置架构和待决策项见 [v3 设计](../docs/策略算法框架详细设计-v3.md#6-待重新决策的现有实现)。

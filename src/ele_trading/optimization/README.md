@@ -1,55 +1,37 @@
-# optimization — 优化调度模块
+# optimization — 活动优化内核
 
-本模块承接活动市场储能和场景输入，输出储能套利、MPC 和 Two-stage 风险优化结果。用户侧、分布式和 CVXPY 路径已归档，不属于活动 API。
+本模块承接价格或 `ScenarioSet` 输入，提供活动 BESS 套利、MPC 和 Two-stage + CVaR 基线。当前活动模型使用 PuLP/CBC；用户侧、分布式和 CVXPY 实现位于平级归档包 `user_side_dispatch`，本目录不存在 `todo/`。
 
 ## 当前文件
 
-| 文件 | 职责 |
-|------|------|
-| `contracts.py` | 活动通用结果契约：`BESSArbitrageResult`、`MPCStepResult` |
-| `bess_model.py` | PuLP 共享 SOC、效率、功率、terminal、throughput、no-export 约束 |
-| `risk.py` | CVaR 辅助变量与风险目标 helper |
-| `solver.py` | typed PuLP/CBC 求解状态边界 |
-| `bess_arbitrage.py` | 复用共享 BESS kernel 的确定性单市场储能套利 |
-| `mpc_bess.py` | 单窗口 MPC 和滚动 MPC |
-| `two_stage_cvar.py` | 消费 `ScenarioSet` 的可运行 Two-stage + CVaR 优化 |
-| `todo/` | 归档用户侧、分布式和 CVXPY 模块；显式导入，且 CVXPY 需要 `archived-user-side` extra |
+| 文件 | 当前职责 |
+|---|---|
+| `contracts.py` | `BESSArbitrageResult`、`MPCStepResult` |
+| `bess_model.py` | 可复用的 SOC、效率、功率、terminal、throughput 和 no-export 约束 |
+| `risk.py` | CVaR 辅助变量、风险目标和事后 VaR/CVaR |
+| `solver.py` | PuLP/CBC typed 求解状态和失败边界 |
+| `bess_arbitrage.py` | 复用共享 BESS kernel 的确定性套利 |
+| `mpc_bess.py` | 单窗口和滚动 MPC |
+| `two_stage_cvar.py` | 消费 `ScenarioSet` 的 Two-stage + CVaR |
 
-## 市场储能套利
+## 当前算法边界
 
-`solve_bess_arbitrage()` 把储能视为独立市场资产，在已知价格序列下最大化：
+### BESS 套利
 
-```text
-放电卖电收入 - 充电买电成本 - 线性退化成本
-```
+在已知价格序列下优化放电收入减充电成本和线性退化成本，包含 SOC、功率、互斥和可选终端约束。它是独立储能基准，不使用负荷预测。
 
-核心约束包括 SOC 动态、功率上限、充放电互斥和可选末端 SOC 约束。该模型不使用负荷预测，适合做独立储能套利基准和收益上限评估。
+### MPC
 
-## MPC 滚动调度
+`solve_one_mpc_window()` 求解单窗口，`run_bess_mpc()` 滚动执行首步。当前 MPC 自己维护 SOC、功率和互斥约束，尚未复用 `bess_model.py`，是 v3 的明确收敛对象。
 
-`solve_one_mpc_window()` 求解单个预测窗口，`run_bess_mpc()` 在价格序列上滚动执行。当前支持 `terminal_soc_fraction` 终端 SOC 下界，避免窗口末端过度放电。
+### Two-stage + CVaR
 
-## Two-stage + CVaR
+`solve_two_stage_cvar()` 使用 PuLP/CBC 求解第一阶段 bid 和场景 recourse，返回求解状态、期望成本、VaR、CVaR 和 trace metadata。市场偏差成本必须由调用方显式传入。
 
-`solve_two_stage_cvar()` 通过 PuLP+CBC 构造并求解日前申报 + 实时场景调节：
+`build_two_stage_cvar_model()` 是为现有示例保留的 compatibility adapter，不是未来扩展入口。
 
-- 第一阶段：日前申报量。
-- 第二阶段：各场景下充放电、SOC、偏差和收益。
-- 风险项：以场景成本为 loss 的加权 CVaR 线性化。
-- 正负偏差考核系数必须由上层显式传入，optimization 不提供市场默认值。
-- 返回 typed solve status、第一阶段 bid、场景 recourse、期望成本、VaR、
-  CVaR 和来源 trace metadata；失败时不返回伪造的零计划。
+## 归档边界
 
-`build_two_stage_cvar_model()` 仅为当前旧示例入口保留未求解 PuLP model
-adapter，不是 v2 主 API；其 `kappa_pos` / `kappa_neg` 同样必须显式传入。
+归档实现、样例和接口位于 `src/ele_trading/user_side_dispatch/`，对应入口和配置位于 `app/user_side_dispatch/` 与 `configs/user_side_dispatch/`。活动 optimization 不转出归档 API。
 
-演示入口为 `app/optimization/run_two_stage_skeleton.py`。
-
-## 归档用户侧、分布式与 CVXPY 模块
-
-归档实现、样例输入与契约统一位于 `user_side_dispatch/`(用户侧风光储调度
-模块，合并自原 `optimization/todo/` 与 `data_provider/todo/`)，入口和配置
-分别位于 `app/user_side_dispatch/` 与
-`configs/user_side_dispatch/`。活动代码不得导入它们；需要运行
-CVXPY 归档模块时先执行 `uv sync --extra archived-user-side`。归档详情、
-依赖和恢复条件见 `user_side_dispatch/README.md`。
+共享物理核、目标策略、求解器 adapter 和结果提取的目标边界由 [v3 设计](../../../docs/策略算法框架详细设计-v3.md#74-通用物理与求解内核)决定。

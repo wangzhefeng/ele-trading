@@ -1,45 +1,36 @@
-# markets — 市场规则插件层
+# markets — 当前结算规则插件
 
-市场规则按**结算模式**（而非地区名）组织为 `markets/<模式>/` 插件。
-每个插件自包含：配置契约 + 加载校验 + 结算引擎；规则参数全部经
-`configs/markets/<模式>.yaml` 注入，代码不得硬编码。
+本包当前按结算模式组织配置契约、加载校验和结算计算。它已经形成结算规则插件边界，但头寸、运行、编排和回测仍直接依赖默认单结算类型，因此还不是完整市场策略插件体系。
 
-## 当前插件
+## `single_settlement/`
 
-### `single_settlement/` — 单结算模式（规则研究参考蒙西市场规则）
+| 模块 | 当前职责 |
+|---|---|
+| `contracts.py` | 跨市场、运行、场景、BESS、DR、月度和求解参数的 `MarketConfig`，以及 `SettlementReport` |
+| `config_loader.py` | YAML 映射、未知/缺失字段和取值校验 |
+| `settlement.py` | 实时电能、合同差价、月度回收、DR、退化、执行调整和分项报告 |
 
-| 模块 | 职责 |
-|------|------|
-| `contracts.py` | `MarketConfig`（市场/运行/求解规则，字段与 YAML 严格一一对应）、`SettlementReport`（分项结算报告） |
-| `config_loader.py` | `load_market_config`：YAML 一一映射加载与校验（未知/缺失字段均拒绝） |
-| `settlement.py` | 单结算引擎：`build_settlement_report`（实时电能 `Q_real*p_real` + 中长期差价 `Q_long*(p_long-p_ref)` + 月度回收 + DR/退化/执行分项，不重复计费）、`aggregate_to_settle_periods`、`compute_dr_settlement` |
+单结算是当前活动主链使用的默认模式。`build_settlement_report()` 对各签名分项只计一次，并保留 baseline/delta cost。
 
-### `dual_settlement/` — 双结算（偏差带考核）模式（规则研究参考蒙西 v1.3 双结算设计）
+## `dual_settlement/`
 
-| 模块 | 职责 |
-|------|------|
-| `contracts.py` | `MarketConfig`（偏差带/中长期回收/结算时段）、`SettlementReport`（双结算口径报告） |
-| `config_loader.py` | `load_market_config`：YAML 加载与校验（`band_deviation` 模式、带序、结算时段） |
-| `settlement.py` | 双结算引擎：`compute_settlement_C`（量价结算）、`compute_settlement_C2`（差价结算，与 C 代数恒等）、`compute_cpen_dayah`（日前偏差考核）、`compute_cpen_long`（中长期月度回收） |
+| 模块 | 当前职责 |
+|---|---|
+| `contracts.py` | 双结算配置与报告 |
+| `config_loader.py` | 偏差带、带序和结算时段校验 |
+| `settlement.py` | C/C2、日前偏差考核和中长期回收 |
 
-当前为带测试的规则引擎库（`tests/markets/` 18 项），未接入主链编排——
-v1 报量报价日前属参与者角色差异，待报价契约设计时另行实现。
+双结算当前是带测试的独立规则库，没有接入 `positions`、`operations`、`TradingOrchestrator` 或 `backtest`。其存在不表示完整第二市场链已经实现。
 
-### `shared.py` — 跨模式共享工具
+## 共享能力
 
-`aggregate_to_settle_periods`（结算时段能量守恒聚合）统一实现于此，
-两个插件共用。
+`shared.py` 提供两个模式共同使用的 `aggregate_to_settle_periods()`，负责结算时段聚合和能量守恒校验。
 
-## 接口接缝记录（第二模式接入时发现）
+## 当前边界与待决策项
 
-1. `aggregate_to_settle_periods` 原先在两个结算实现中各有一份（语义等价、
-   校验严格度不同）——已上提 `shared.py`，统一采用单结算现役实现
-   （含 ndim 校验）。
-2. 两种模式的 `SettlementReport` 字段结构不同（分项口径差异）——模式接口
-   允许各插件自定义报告契约，`domain` 不强求统一报告结构。
-3. 双结算插件配置字段仅为结算子集——v1 完整配置中的报量报价/风控/策略
-   权重属决策层而非规则层，未随插件移植。
+- 市场参数当前从 `configs/markets/<模式>.yaml` 加载；
+- 两种模式的 `SettlementReport` 分项结构不同；
+- 双结算配置只覆盖当前结算规则，不包含完整报价、风控和策略参数；
+- 新市场是否按结算模式、参与者角色或更高层策略接口组织，由 v3 决定。
 
-配置：`configs/markets/single_settlement.yaml`、`configs/markets/dual_settlement.yaml`；
-标 `TODO(rule-confirm)` 的参数为待书面规则确认的默认值。第二个市场进入时
-新建 `markets/<新模式>/`，不从现有插件复制地区命名。
+目标 `SettlementPolicy`、市场插件范围和配置拆分见 [v3 设计](../../../docs/策略算法框架详细设计-v3.md#75-市场策略)。

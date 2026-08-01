@@ -1,47 +1,35 @@
 # AGENTS.md
 
-> 本文件是 ele-trading 项目 **agent 规则的唯一权威**，仅含**项目特有**硬约束。
-> 通用编码准则（Think Before Coding / Simplicity First / Surgical Changes / Goal-Driven Execution）
-> 由各 agent 的全局配置提供（`~/.claude/CLAUDE.md`、`~/.codex/AGENTS.md`），此处不复制。
->
-> 违反下列硬边界会导致不可运行或错误结果。
+本文件只规定仓库内通用协作方式，不承载项目架构、市场规则、算法公式、求解器选择或模块归属。当前代码事实见 `docs/电力市场交易当前实现基线.md`；业务约束、算法边界和目标架构见 `docs/策略算法框架详细设计-v3.md`。
 
-## 电力交易项目特有约束
+## 1. Think Before Coding
 
-### 求解器要求
+- 实施前先核对实际代码、入口、配置和测试，不用 README 推断未验证行为。
+- 明确目标、范围、假设和可验证的完成条件；存在多种高影响解释时先澄清。
+- 历史文档只用于追溯，不得直接作为当前需求或验收依据。
 
-- Two-stage + CVaR 模型需系统安装 `glpk`（`brew install glpk`）或 `cbc`。
-- 调度/优化模型统一通过建模框架构建（PuLP+CBC 为调度类默认，Pyomo+SCIP 用于容量 sizing 类，CVXPY 用于凸规划变体），禁止直接调用底层求解器 C API。
-- `cvxpy` 是可选依赖：CVXPY 路径通过 `__getattr__` 延迟导入，缺失时 PuLP/Pyomo 路径正常可用，不阻塞项目主链路。
-- 入口脚本需使用 `app/<分类>/` 目录下的 `run_*.py`（如 `app/trading/`、`app/optimization/`），不得在测试或 notebook 中直接调用求解器。容量规划与资源仿真入口位于 `src/investment_estimation/app/`，其中容量规划入口指向 `investment_estimation.todo`。
+## 2. Simplicity First
 
-### 场景模块兼容
+- 只实现已确认的需求，不增加推测性的功能、配置或抽象。
+- 优先选择能够满足目标的最小改动。
+- 单次使用的逻辑不为未来可能性提前设计扩展框架。
 
-- 场景采样默认使用 LHS（`method='lhs'`），新代码必须保留 `method='mc'` 向后兼容参数。
-- 场景缩减使用 Kantorovich/Wasserstein L1 后向缩减，不得简单 Top-K 剔除。
+## 3. Surgical Changes
 
-### 扩展指标参数
+- 只修改与当前任务直接相关的文件和代码。
+- 不顺手重构、格式化或删除无关内容。
+- 保留用户已有改动；若发生重叠，先理解并兼容现有状态。
+- 只清理由本次修改产生的未使用导入、变量或文件。
 
-- `compute_extended_metrics()` 调用必须传入正确的 `e_cap`（储能容量）参数，否则 EFC 计算无意义。
-- 雨流退化核算 `compute_rainflow_degradation()` 需传入完整 SOC 序列和 `deg_cost_per_cycle`。
+## 4. Goal-Driven Execution
 
-### 偏差考核参数
+- 将任务转换成可验证目标，并在实现后运行与风险相称的检查。
+- 修复缺陷时先建立可复现证据；结构调整时验证调整前后的公共行为。
+- 声明完成前检查实际 diff、测试结果和文档一致性。
 
-- 活动结算口径以单结算模式为唯一实现：`markets/single_settlement/settlement.py` 的 `build_settlement_report`（实时电能 `Q_real*p_real` + 中长期差价 `Q_long*(p_long-p_ref)` + 长协回收 + DR/退化/执行分项，`p_ref==p_real` 时与单结算恒等式等价，v2 §6.1；规则研究参考蒙西市场规则）。v1.3 双结算的 `compute_settlement_C`/`compute_settlement_C2`/`compute_cpen_dayah`/`compute_cpen_long` 已激活为 `markets/dual_settlement/` 插件（唯一权威实现，未接主链编排）；广东式分层偏差考核 `compute_deviation_penalty()` 已移除，活动代码不得加回。
-- 偏差带、考核系数、申报风控等市场参数统一经 `configs/markets/single_settlement.yaml` + `markets/single_settlement/config_loader.load_market_config()` 加载，字段与 `markets/single_settlement/contracts.MarketConfig` 一一对应；标 `TODO(rule-confirm)` 的参数为待规则确认的默认值（v1.3 §3.5）。
-- 禁止在代码中硬编码市场参数（如罚款系数、价格限幅）。
-- 市场规则按**结算模式**（而非地区名）组织为 `markets/<模式>/` 插件；活动代码不得出现地区名命名（如 mengxi）。
+## 5. 文档纪律
 
-### 配置与数据一致性
-
-- `configs/` 中的 YAML 文件必须与对应入口脚本的参数字段一一对应。
-- `dt` 参数在 15 分钟颗粒度场景下必须设为 0.25，并在配置中明确注释。
-- 新增环境变量或配置字段必须同步更新 `configs/README.md`。
-- 交易/调度侧通用内核归属 `src/ele_trading/optimization/`；领域契约（市场无关）归属 `src/ele_trading/domain/`；市场规则插件归属 `src/ele_trading/markets/<模式>/`（当前为 `single_settlement`，规则研究参考蒙西市场规则）；中长期/月度头寸归属 `src/ele_trading/positions/`；日前运行与日内滚动归属 `src/ele_trading/operations/`；walk-forward 回测与指标归属 `src/ele_trading/backtest/`；参与方交易编排（`TradingOrchestrator` 与 demo fixtures）归属 `src/ele_trading/trading/`；投资收益测算（IRR/NPV、容量扫描、场景编排、收益测算、资源仿真、CSV 导出及老版容量规划的全部内容）归属平级自包含包 `src/investment_estimation/`，其中老版 `ele_trading/capacity_planning` 已整体并入 `src/investment_estimation/todo/`（待整合暂存区）。`src/ele_trading/capacity_planning/` 已删除，不要在 `ele_trading` 下重建容量规划/收益测算模块。
-- 包层级依赖方向（结构守卫测试 `tests/test_structure_layers.py` 强制）：`domain` ← `markets` ← `positions`/`operations` ← `trading` ← `backtest`；下层不得反向 import 上层。
-- 项目级 agent 规则的唯一权威是根目录 `AGENTS.md`；`CLAUDE.md` 为指针，不在此文件之外另立内容副本。
-
-### 数据边界
-
-- `data/` 中的样例数据仅用于接口验证、demo 和回归测试，不代表真实市场数据，不能直接用于生产策略评估。
-- 生产数据通过 `data_provider` 统一接入，禁止 app 脚本直接硬编码文件路径。
+- `docs/策略算法框架详细设计-v3.md` 是唯一在研设计；其中标记为“待决策”的内容不构成实施授权。
+- `docs/电力市场交易当前实现基线.md` 只记录当前事实，不规定未来架构。
+- 代码、配置、入口、测试和 README 的事实声明必须一致。
+- 修改公共行为、入口、配置或验证口径时，同步更新对应文档。

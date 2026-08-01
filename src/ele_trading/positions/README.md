@@ -1,11 +1,13 @@
-# positions — 中长期/月度头寸决策层
+# positions — 中长期与月度头寸基线
 
-## 模块
+## 当前模块
 
-| 模块 | 职责 |
-|------|------|
-| `contracts.py` | `PositionPlan`、`BidLadder`、`CorridorAdvice` 头寸契约 |
-| `mid_long_planner.py` | 中长期覆盖结构与实时敞口（`plan_mid_long_position`） |
-| `monthly_trader.py` | 月度集中竞价阶梯申报（`build_bid_ladder`）、缺口再平衡（`rebalance_position_gap`）、无订单簿时的透明量价走廊（`build_position_corridor`） |
+| 模块 | 当前职责 | 成熟度 |
+|---|---|---|
+| `contracts.py` | `PositionPlan`、`BidLadder`、`CorridorAdvice` | 活动契约 |
+| `mid_long_planner.py` | 价差到覆盖比例的映射、月度分解和实时敞口 | 启发式 |
+| `monthly_trader.py` | 阶梯报价、缺口再平衡、无订单簿透明走廊 | 启发式 |
 
-市场规则参数经 `markets.single_settlement.MarketConfig` 注入，不硬编码。
+当前月度阶梯使用 `uniform` 或 `linear` 简化出清概率，不代表真实订单簿或成交概率模型。无订单簿时只输出透明量价走廊，不构造虚假对手方。
+
+当前函数直接接收 `markets.single_settlement.MarketConfig`，因此头寸层尚未与默认市场配置解耦。目标 `PositionPolicy`、参数边界和真实市场标定要求由 [v3 设计](../../../docs/策略算法框架详细设计-v3.md#75-市场策略)决定。
