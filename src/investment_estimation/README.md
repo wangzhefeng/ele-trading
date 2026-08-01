@@ -1553,7 +1553,7 @@ results/v*_annual_cashflows.csv
 
 ```bash
 PYTHONPATH=src ./.venv/bin/python -m compileall src/investment_estimation
-PYTHONPATH=src ./.venv/bin/python -m pytest tests/test_investment_estimation_v1.py -q
+PYTHONPATH=src ./.venv/bin/python -m pytest tests/investment_estimation/test_investment_estimation_v1.py -q
 
 PYTHONPATH=src ./.venv/bin/python -m investment_estimation.app.run_mvp_demo \
   --config src/investment_estimation/configs/mvp_demo.yaml

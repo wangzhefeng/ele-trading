@@ -14,13 +14,13 @@
 | `sample_data.py` | 内置最小样例路径和快捷加载函数 |
 | `weather_data.py` | 气象数据聚合入口（facade）：自身无实现，re-export 下两个模块 |
 | `resource_weather.py` | 气象实现：Open-Meteo ERA5 抓取 + 气象 CSV IO（被 resource_simulation 等 app 使用） |
-| `weather_io.py` | 气象实现：Mongo/NetCDF/气象模拟器/实测文件夹（目前仅 `tests/test_weather.py` 消费） |
-| `todo/` | 目标年份/profile、投资 case、资源容量仿真类型、用户侧及 CVXPY 样例归档 |
+| `weather_io.py` | 气象实现：Mongo/NetCDF/气象模拟器/实测文件夹（目前仅 `tests/forecasting/test_weather.py` 消费） |
+
+> 原 `todo/` 归档已拆分迁出：用户侧/CVXPY 样例归 `ele_trading.user_side_dispatch/`，投资 case 与目标年份/profile 归 `investment_estimation/todo/`。
 
 ## 数据来源
 
 - `data/trading/prices/`：交易线价格最小样例（日前/日内）。
-- `data/trading/config/`：交易线储能最小样例配置。
 - `data/trading/daily_sample_*.csv`：蒙西 96 点日清分样例（`ele_trading.trading.sample_data` 生成）。
 - `configs/*.yaml`：入口脚本和样例构造参数。
 - 外部天气源：Open-Meteo、NetCDF、Mongo 或本地测点文件。

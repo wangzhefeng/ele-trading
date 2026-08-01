@@ -1,47 +1,38 @@
 # 配置目录说明
 
-`configs/` 存放项目级 YAML 配置样例。配置只描述参数、路径和运行开关；算法约束、目标函数和数据处理逻辑应放在 `src/ele_trading/` 或对应 `app/` 入口中。
+`configs/` 存放项目级 YAML 配置样例（仅服务 `src/ele_trading/`）。配置只描述参数、路径和运行开关；算法约束、目标函数和数据处理逻辑应放在 `src/ele_trading/` 或对应 `app/` 入口中。
 
 ## 当前配置清单
 
 配置按入口职责分目录：
 
-- `optimization/`：活动优化和调度入口配置；其 `todo/` 子目录为归档用户侧/CVXPY 配置。
-- `capacity_planning/`：容量规划、IRR 和分布式储能搜索配置（对应入口指向 `investment_estimation.todo`）。
-- `resource_simulation/`：PV/Wind 物理仿真配置（对应入口指向 `investment_estimation.todo.resource_simulation`）。
-- `market/`：市场、场景和结算规则样例。
+- `optimization/`：储能套利/MPC 的 BESS 物理参数配置。
+- `trading/`：蒙西交易主线配置。
+- `user_side_dispatch/`：归档用户侧/CVXPY 配置。
+
+> 容量规划配置（6 个）位于 `src/investment_estimation/configs/capacity_planning/`。
 
 | 文件 | 对应入口 / 模块 | 用途 |
 |------|------------------|------|
 | `optimization/bess.yaml` | `optimization/run_bess_arbitrage.py`、`optimization/run_mpc_demo.py` | 基础储能 SOC、功率、效率、退化成本、时间步长 |
-| `market/market.yaml` | 数据/市场样例 | 基础日前市场元信息 |
-| `market/market_guangdong.yaml` | 用户侧调度规则参考（偏差考核已移除） | 广东现货市场 15 分钟颗粒度、价格限幅样例 |
-| `market_mengxi.yaml` | `trading/config_loader.load_market_config()` → 蒙西单结算交易链 | 字段与 `MarketConfig` 严格一一对应：`market` 单结算与 `dt=0.25`、`long_recovery` 月度回收、`scenario` LHS/MC 与 CVaR、`bess` 物理参数、`dr` 补偿/违约/最低裕度/最小响应量/窗口/开关/基线模式、`monthly` 交易边界和 `solver`；待确认规则均标 `TODO(rule-confirm)` |
-| `market/scenario.yaml` | `scenario` 模块 | 价格场景数量、噪声、随机种子和权重样例 |
-| `capacity_planning/capacity_planning.yaml` | `capacity_planning/run_wind_pv_bess_capacity_planning_2.py` | 风光储联合容量规划三场景演示、约束、搜索步长和成本参数 |
-| `capacity_planning/bess_capacity_planning.yaml` | `capacity_planning/run_bess_capacity_planning.py` | 固定风光容量下 BESS 最小容量规划 |
-| `capacity_planning/wind_bess_capacity_planning.yaml` | `capacity_planning/run_wind_bess_capacity_planning.py` | Wind+BESS 容量规划、平移充电策略、二分搜索参数 |
-| `capacity_planning/wind_pv_bess_capacity_planning.yaml` | `capacity_planning/run_wind_pv_bess_capacity_planning_1.py` | Wind+PV+BESS 容量规划、PV 搜索、BESS 搜索和能量门槛检查 |
-| `capacity_planning/wind_pv_bess_irr_planning.yaml` | `capacity_planning/run_wind_pv_bess_irr_planning.py` | IRR 目标型 Wind+PV+BESS 容量规划、PPA 反推、综合电价约束、项目财务模型和资源调参并行运行参数 |
-| `capacity_planning/dist_bess_dispatch.yaml` | `capacity_planning/run_dist_bess_dispatch.py` | 分布式储能数据目录、时间范围、preset、系统、搜索模式 |
+| `trading/market_mengxi.yaml` | `trading/config_loader.load_market_config()` → 蒙西单结算交易链 | 字段与 `MarketConfig` 严格一一对应：`market` 单结算与 `dt=0.25`、`long_recovery` 月度回收、`scenario` LHS/MC 与 CVaR、`bess` 物理参数、`dr` 补偿/违约/最低裕度/最小响应量/窗口/开关/基线模式、`monthly` 交易边界和 `solver`；待确认规则均标 `TODO(rule-confirm)` |
 
 ## 配置边界
 
-- 市场规则参数放入 `market/market_*.yaml`；蒙西交易主线的完整单结算配置在根级 `market_mengxi.yaml`（经 `trading/config_loader` 加载，YAML 叶字段与 `MarketConfig` 严格一一对应，未知或缺失字段均拒绝）。
-- 设备物理参数放入对应设备或调度配置，例如 `optimization/bess.yaml`、`*_dispatch.yaml`、`*_capacity_planning.yaml`。
+- 市场规则参数放入 `trading/market_mengxi.yaml`（经 `trading/config_loader` 加载，YAML 叶字段与 `MarketConfig` 严格一一对应，未知或缺失字段均拒绝）。
+- 设备物理参数放入对应设备或调度配置，例如 `*_dispatch.yaml`、`*_capacity_planning.yaml`。
 - 路径类参数使用相对项目根目录的路径，入口脚本负责解析为绝对路径。
 - 新增配置文件时，应同步补充对应入口、读取逻辑、测试和本 README。
-- `optimization/todo/` 下的用户侧、分布式和 CVXPY 配置仅服务归档入口，不得由活动代码加载。
-- `wind_pv_bess_irr_planning.yaml` 的 `resource_tuning.parallel_enabled`、`max_workers`、`incremental_write` 和 `retain_intermediate_diagnostics` 只控制 coarse/fine 资源场景的运行方式、增量摘要落盘和中间 diagnostics 保留策略，不改变 IRR、PPA 或最优解排序口径。
+- `user_side_dispatch/` 下的用户侧、分布式和 CVXPY 配置仅服务归档入口，不得由活动代码加载。
 
 ## 运行示例
 
 ```bash
 uv run python app/optimization/run_bess_arbitrage.py
-uv run python app/capacity_planning/run_dist_bess_dispatch.py
-uv run python app/capacity_planning/run_wind_pv_bess_capacity_planning_1.py
-uv run python app/capacity_planning/run_wind_pv_bess_capacity_planning_2.py
-uv run python app/capacity_planning/run_wind_pv_bess_irr_planning.py
+uv run python src/investment_estimation/app/capacity_planning/run_dist_bess_dispatch.py
+uv run python src/investment_estimation/app/capacity_planning/run_wind_pv_bess_capacity_planning_1.py
+uv run python src/investment_estimation/app/capacity_planning/run_wind_pv_bess_capacity_planning_2.py
+uv run python src/investment_estimation/app/capacity_planning/run_wind_pv_bess_irr_planning.py
 ```
 
 完整验证：

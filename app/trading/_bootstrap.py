@@ -11,7 +11,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 DATA_TRADING = PROJECT_ROOT / "data" / "trading"
-MENGXI_YAML = PROJECT_ROOT / "configs" / "market_mengxi.yaml"
+MENGXI_YAML = PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
 RESULTS_TRADING = PROJECT_ROOT / "results" / "trading"
 
 # 与 tests/test_day_ahead_coupled.py 一致的 BES 样例（96 点/15min 粒度）

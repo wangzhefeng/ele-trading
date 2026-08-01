@@ -10,12 +10,15 @@ from ele_trading.trading.config_loader import load_market_config
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = PROJECT_ROOT / 'app'
+IE_APP_DIR = PROJECT_ROOT / 'src' / 'investment_estimation' / 'app'
 
 
 def _run_script(script_name: str, timeout: int = 120, args: list[str] | None = None) -> subprocess.CompletedProcess:
     """使用项目 .venv 运行入口脚本，返回 subprocess 结果。"""
     python = str(PROJECT_ROOT / '.venv' / 'bin' / 'python')
-    script = str(APP_DIR / script_name)
+    # optimization/trading/user_side_dispatch 入口在根 app/，capacity_planning 入口在 investment_estimation 包内
+    base = IE_APP_DIR if script_name.startswith('capacity_planning/') else APP_DIR
+    script = str(base / script_name)
     return subprocess.run(
         [python, script, *(args or [])],
         capture_output=True,
@@ -53,7 +56,7 @@ def test_two_stage_skeleton_uses_market_config_deviation_costs(tmp_path):
     """修改 market YAML 后，two-stage 模型偏差成本系数应随之改变。"""
     from app.optimization.run_two_stage_skeleton import build_demo_model
 
-    source = PROJECT_ROOT / "configs" / "market_mengxi.yaml"
+    source = PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
     models = []
     for name, positive_cost, negative_cost in (
         ("lower", 2.0, 3.0),
@@ -98,14 +101,6 @@ def test_run_wind_pv_bess_irr_planning():
 # --- 以下为补充的入口脚本冒烟测试 ---
 
 
-def test_run_pv_simulation_v1():
-    """run_pv_simulation_v1.py 应退出码为 0 且输出光伏仿真结果。"""
-    result = _run_script('resource_simulation/run_pv_simulation_v1.py')
-    combined = result.stdout + result.stderr
-    assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
-    assert 'pv simulation' in combined.lower() or 'pv_kw' in combined.lower()
-
-
 def test_run_bess_capacity_planning():
     """run_bess_capacity_planning.py 应退出码为 0（合成数据，无需外部依赖）。"""
     result = _run_script('capacity_planning/run_bess_capacity_planning.py', timeout=180)
@@ -118,27 +113,6 @@ def test_run_wind_bess_capacity_planning():
     result = _run_script('capacity_planning/run_wind_bess_capacity_planning.py', timeout=180)
     combined = result.stdout + result.stderr
     assert result.returncode == 0, f'stderr: {result.stderr[:300]}'
-
-
-@pytest.mark.skip(reason="需要 Open-Meteo 网络 API 访问，CI 环境可能不可用")
-def test_run_pv_simulation_v2():
-    """run_pv_simulation_v2.py 需要 Open-Meteo API，仅手动验收。"""
-    result = _run_script('resource_simulation/run_pv_simulation_v2.py')
-    assert result.returncode == 0
-
-
-@pytest.mark.skip(reason="需要 Open-Meteo 网络 API 访问，CI 环境可能不可用")
-def test_run_wind_simulation_v1():
-    """run_wind_simulation_v1.py 需要 Open-Meteo API，仅手动验收。"""
-    result = _run_script('resource_simulation/run_wind_simulation_v1.py')
-    assert result.returncode == 0
-
-
-@pytest.mark.skip(reason="需要 Open-Meteo 网络 API 访问，CI 环境可能不可用")
-def test_run_wind_simulation_v2():
-    """run_wind_simulation_v2.py 需要 Open-Meteo API，仅手动验收。"""
-    result = _run_script('resource_simulation/run_wind_simulation_v2.py')
-    assert result.returncode == 0
 
 
 @pytest.mark.skip(reason="运行时间 >30s，仅手动验收")

@@ -117,7 +117,7 @@ def test_market_config_is_one_to_one_and_contains_dr_rules():
     from ele_trading.trading.contracts import MarketConfig
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
     )
     configured_fields = {field.name for field in fields(MarketConfig)}
 
@@ -147,7 +147,7 @@ def test_settlement_report_items_adjustments_once():
     )
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
     )
     recovery = compute_long_recovery(
         q_long_month=50.0,
@@ -190,7 +190,7 @@ def test_day_ahead_plan_is_physical_and_ignores_explanatory_price_signal():
     )
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
     )
     bess = {
         "p_bcmax": 2.0,
@@ -239,7 +239,7 @@ def test_day_ahead_objective_itemizes_contract_dr_and_scenario_cvar():
     )
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
     )
     config.scenario_cvar_weight = 0.25
     bess = {
@@ -308,7 +308,7 @@ def test_day_ahead_scenario_cost_uses_load_minus_wind_and_pv():
     )
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
     )
     config.scenario_cvar_weight = 0.0
     bess = {
@@ -385,7 +385,7 @@ def test_intraday_failure_freezes_prefix_and_clips_last_feasible_plan():
             raise RuntimeError("forced solver failure")
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
     )
     bess = {
         "p_bcmax": 2.0,
@@ -441,7 +441,7 @@ def test_intraday_uses_latest_vintage_and_remaining_single_settlement_inputs():
     )
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
     )
     config.scenario_cvar_weight = 0.1
     bess = {
@@ -528,7 +528,7 @@ def test_dr_participation_uses_only_market_config_economics():
     )
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
     )
     config.dr_window_start = 0
     config.dr_window_end = 4
@@ -574,7 +574,7 @@ def test_mid_long_plan_has_no_financial_day_ahead_position():
     from ele_trading.trading.mid_long_planner import plan_mid_long_position
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
     )
     months = pd.period_range("2026-08", periods=3, freq="M")
     load = pd.Series([100.0, 120.0, 110.0], index=months)
@@ -605,7 +605,7 @@ def test_monthly_gap_without_orderbook_returns_transparent_corridor():
     from ele_trading.trading.monthly_trader import build_position_corridor
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
     )
     corridor = build_position_corridor(
         position_gap=-10.0,
@@ -683,7 +683,7 @@ def test_orchestrator_runs_injected_single_settlement_chain_with_trace():
         return build_joint_scenarios(*args, **kwargs)
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
     )
     config.scenario_count = 2
     bess = {
@@ -786,7 +786,7 @@ def test_walk_forward_backtest_keeps_actuals_out_of_production_forecasts():
             )
 
     config = load_market_config(
-        PROJECT_ROOT / "configs" / "market_mengxi.yaml"
+        PROJECT_ROOT / "configs" / "trading" / "market_mengxi.yaml"
     )
     config.scenario_count = 2
     config.scenario_cvar_weight = 0.2

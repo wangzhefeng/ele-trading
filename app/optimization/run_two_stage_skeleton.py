@@ -16,7 +16,7 @@ from ele_trading.trading.config_loader import load_market_config
 from ele_trading.trading.contracts import MarketConfig
 
 
-MENGXI_YAML = PROJECT_ROOT / 'configs' / 'market_mengxi.yaml'
+MENGXI_YAML = PROJECT_ROOT / 'configs' / 'trading' / 'market_mengxi.yaml'
 
 
 def build_demo_model(market_config: MarketConfig):

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import yaml
+from investment_estimation.utils.io import read_yaml
 
 from investment_estimation.resource_simulation import WindSimulator, fetch_weather_open_meteo, load_weather_csv
 
@@ -43,7 +43,7 @@ def main(config_path: str | None = None) -> None:
     """命令行入口：运行风电 v2 资源仿真。"""
 
     path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
-    config = _read_yaml(path)
+    config = read_yaml(path)
     df = run_wind_simulation_v2(config, base_dir=_config_base_dir(path))
     print(f"wind_rows={len(df)}")
 
@@ -66,9 +66,6 @@ def _load_weather(config: dict[str, Any], base_dir: Path) -> pd.DataFrame:
         )
     return df.set_index(pd.to_datetime(df["timestamp"]))
 
-
-def _read_yaml(path: Path) -> dict[str, Any]:
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
 def _config_base_dir(path: Path) -> Path:

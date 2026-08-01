@@ -5,7 +5,10 @@ def test_yaml_config_loading_goes_through_read_yaml():
     """配置 YAML 读取应统一走 ele_trading.utils.io.read_yaml。"""
     project_root = Path(__file__).resolve().parents[1]
     allowed = {
+        # read_yaml 的实现文件，自身使用 yaml 模块合法（注释不含被扫描字面量）
         project_root / "src" / "ele_trading" / "utils" / "io.py",
+        project_root / "src" / "investment_estimation" / "utils" / "io.py",
+        project_root / "src" / "investment_estimation" / "config_loader" / "yaml_loader.py",
     }
     blocked_tokens = (
         "yaml." + "safe_load",

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import yaml
+from investment_estimation.utils.io import read_yaml
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
@@ -44,7 +44,7 @@ def main(config_path: str | None = None) -> None:
     """命令行入口：合并 PV/Wind 资源曲线。"""
 
     path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
-    config = _read_yaml(path)
+    config = read_yaml(path)
     df = run_build_resource_profile(config, base_dir=_config_base_dir(path))
     print(f"resource_rows={len(df)}")
 
@@ -62,9 +62,6 @@ def _read_resource_part(path: str | Path, required_col: str) -> pd.DataFrame:
         raise ValueError(f"{required_col} must be non-negative.")
     return result
 
-
-def _read_yaml(path: Path) -> dict[str, Any]:
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
 def _config_base_dir(path: Path) -> Path:

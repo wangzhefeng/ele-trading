@@ -47,8 +47,9 @@ adapter，不是 v2 主 API；其 `kappa_pos` / `kappa_neg` 同样必须显式�
 
 ## 归档用户侧、分布式与 CVXPY 模块
 
-归档实现位于 `optimization/todo/`，样例输入位于
-`data_provider/todo/`，入口和配置分别位于 `app/optimization/todo/` 与
-`configs/optimization/todo/`。活动代码不得导入它们；需要运行 CVXPY
-归档模块时先执行 `uv sync --extra archived-user-side`。归档详情、依赖和恢复
-条件见各自 `todo/README.md`。
+归档实现、样例输入与契约统一位于 `user_side_dispatch/`(用户侧风光储调度
+模块，合并自原 `optimization/todo/` 与 `data_provider/todo/`)，入口和配置
+分别位于 `app/user_side_dispatch/` 与
+`configs/user_side_dispatch/`。活动代码不得导入它们；需要运行
+CVXPY 归档模块时先执行 `uv sync --extra archived-user-side`。归档详情、
+依赖和恢复条件见 `user_side_dispatch/README.md`。

@@ -830,7 +830,7 @@ canonical dispatch -> monthly settlement -> IRR / owner KPI
   - 需量电费从 `net_load_kw` 峰值计算，不允许从月度电量反推。
   - PPA 反推后业主综合电价回到目标值。
 - 兼容回归：
-  - `tests/test_wind_pv_bess_irr_planner.py` 继续通过，除非因修正物理 bug 导致数值变化；变化必须说明。
+  - `tests/investment_estimation/test_wind_pv_bess_irr_planner.py` 继续通过，除非因修正物理 bug 导致数值变化；变化必须说明。
   - `capacity_planning.__all__`、主要 `plan_*` / `scan_*` / `run_*` 入口仍可导入。
   - `python3 -m compileall src/ele_trading/capacity_planning` 通过。
 

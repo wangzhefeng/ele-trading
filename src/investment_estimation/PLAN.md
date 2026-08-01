@@ -733,7 +733,7 @@ v1 当前保持为基础 `capacity_search` 能力版本。它的核心不是引�
 7. `app/`  
    新增 `run_capacity_search.py`，通过 `--config` 运行 v1 搜索场景。MVP 与 v1 的运行流程均已直接写入 `app/` 下对应脚本，不再使用独立 `pipeline/` 模块。
 
-8. `tests/test_investment_estimation_v1.py`  
+8. `tests/investment_estimation/test_investment_estimation_v1.py`  
    新增 v1 测试，覆盖配置加载、数据校验、财务指标和容量搜索。
 
 当前 v1 示例运行输出：

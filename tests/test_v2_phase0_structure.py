@@ -25,17 +25,16 @@ ARCHIVED_DATA_PROVIDER_MODULES = (
     "user_side_pv_sample.py",
 )
 ARCHIVED_OPTIMIZATION_MODULES = (
-    "user_side_bess_dispatch.py",
-    "user_side_bess_dispatch_cvxpy.py",
-    "user_side_bess_distributed_dispatch_class.py",
-    "user_side_pv_bess_dispatch.py",
-    "user_side_pv_dispatch.py",
-    "user_side_renewable_bess_dispatch_class.py",
-    "user_side_renewable_dispatch_class.py",
-    "user_side_wind_bess_dispatch.py",
-    "user_side_wind_dispatch.py",
-    "user_side_wind_pv_bess_dispatch.py",
+    ("adapters", "dispatch_adapters.py"),
+    ("adapters", "distributed_dispatch_adapters.py"),
+    ("algorithms", "user_side_bess_dispatch_pulp.py"),
+    ("algorithms", "user_side_bess_dispatch_cvxpy.py"),
+    ("algorithms", "user_side_bess_distributed_dispatch_class.py"),
+    ("algorithms", "user_side_renewable_bess_dispatch_class.py"),
+    ("algorithms", "user_side_renewable_bess_distributed_dispatch_class.py"),
+    ("algorithms", "user_side_renewable_dispatch_class.py"),
 )
+USER_SIDE_DISPATCH_ROOT = SOURCE_ROOT / "ele_trading" / "user_side_dispatch"
 
 
 def _python_files(root: Path, *, exclude_todo: bool = False) -> list[Path]:
@@ -118,10 +117,10 @@ def test_phase1a_archived_non_cvxpy_imports_do_not_require_cvxpy():
     _import_without(
         "cvxpy",
         [
-            "ele_trading.data_provider.todo",
-            "ele_trading.data_provider.todo.user_side_bess_sample",
-            "ele_trading.optimization.todo",
-            "ele_trading.optimization.todo.user_side_bess_dispatch",
+            "ele_trading.user_side_dispatch",
+            "ele_trading.user_side_dispatch.user_side_bess_sample",
+            "ele_trading.user_side_dispatch.adapters.dispatch_adapters",
+            "ele_trading.user_side_dispatch.algorithms.user_side_bess_dispatch_pulp",
         ],
     )
 
@@ -141,28 +140,32 @@ def test_phase1a_user_side_modules_exist_only_in_archives():
     data_provider_root = SOURCE_ROOT / "ele_trading" / "data_provider"
     optimization_root = SOURCE_ROOT / "ele_trading" / "optimization"
 
-    assert (data_provider_root / "todo" / "__init__.py").is_file()
-    assert (data_provider_root / "todo" / "README.md").is_file()
+    assert (USER_SIDE_DISPATCH_ROOT / "__init__.py").is_file()
+    assert (USER_SIDE_DISPATCH_ROOT / "README.md").is_file()
+    assert (USER_SIDE_DISPATCH_ROOT / "adapters" / "__init__.py").is_file()
+    assert (USER_SIDE_DISPATCH_ROOT / "algorithms" / "__init__.py").is_file()
     assert all(
-        (data_provider_root / "todo" / module_name).is_file()
+        (USER_SIDE_DISPATCH_ROOT / module_name).is_file()
         and not (data_provider_root / module_name).exists()
         for module_name in ARCHIVED_DATA_PROVIDER_MODULES
     )
     assert all(
-        (optimization_root / "todo" / module_name).is_file()
+        (USER_SIDE_DISPATCH_ROOT / subdir / module_name).is_file()
         and not (optimization_root / module_name).exists()
-        for module_name in ARCHIVED_OPTIMIZATION_MODULES
+        for subdir, module_name in ARCHIVED_OPTIMIZATION_MODULES
     )
+    assert not (data_provider_root / "todo").exists()
+    assert not (optimization_root / "todo").exists()
 
 
 def test_phase1a_contracts_are_split_between_active_and_archived_packages():
-    """active 仅保留通用结果契约，用户侧与 CVXPY 契约只在 todo。"""
+    """active 仅保留通用结果契约，用户侧与 CVXPY 契约只在归档包。"""
     optimization_root = SOURCE_ROOT / "ele_trading" / "optimization"
     assert (optimization_root / "contracts.py").is_file()
     assert not (optimization_root / "interfaces.py").exists()
 
     active_contracts = (optimization_root / "contracts.py").read_text(encoding="utf-8")
-    archived_contracts = (optimization_root / "todo" / "interfaces.py").read_text(encoding="utf-8")
+    archived_contracts = (USER_SIDE_DISPATCH_ROOT / "interfaces.py").read_text(encoding="utf-8")
     assert "BESSArbitrageResult" in active_contracts
     assert "MPCStepResult" in active_contracts
     assert "UserSideBESSParams" not in active_contracts
@@ -206,10 +209,10 @@ for package, names in {
 
 
 def test_phase1a_normal_pytest_discovery_excludes_archived_tests():
-    """tests/todo 必须保留手动执行能力，但不得进入常规 pytest 收集。"""
+    """tests/user_side_dispatch 必须保留手动执行能力，但不得进入常规 pytest 收集。"""
     pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert "norecursedirs" in pyproject
-    assert '"todo"' in pyproject
+    assert '"user_side_dispatch"' in pyproject
 
 
 def test_investment_estimation_production_sources_do_not_import_active_ele_trading():

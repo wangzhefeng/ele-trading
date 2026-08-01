@@ -13,7 +13,7 @@
 - Two-stage + CVaR 模型需系统安装 `glpk`（`brew install glpk`）或 `cbc`。
 - 调度/优化模型统一通过建模框架构建（PuLP+CBC 为调度类默认，Pyomo+SCIP 用于容量 sizing 类，CVXPY 用于凸规划变体），禁止直接调用底层求解器 C API。
 - `cvxpy` 是可选依赖：CVXPY 路径通过 `__getattr__` 延迟导入，缺失时 PuLP/Pyomo 路径正常可用，不阻塞项目主链路。
-- 入口脚本需使用 `app/<分类>/` 目录下的 `run_*.py`（如 `app/capacity_planning/`、`app/optimization/`、`app/resource_simulation/`），不得在测试或 notebook 中直接调用求解器。`app/capacity_planning/` 与 `app/resource_simulation/` 下的入口指向 `investment_estimation.todo`。
+- 入口脚本需使用 `app/<分类>/` 目录下的 `run_*.py`（如 `app/trading/`、`app/optimization/`），不得在测试或 notebook 中直接调用求解器。容量规划与资源仿真入口位于 `src/investment_estimation/app/`，其中容量规划入口指向 `investment_estimation.todo`。
 
 ### 场景模块兼容
 
@@ -28,7 +28,7 @@
 ### 偏差考核参数
 
 - 活动结算口径以蒙西单结算为唯一实现：`trading/settlement_mengxi.py` 的 `build_settlement_report`（实时电能 `Q_real*p_real` + 中长期差价 `Q_long*(p_long-p_ref)` + 长协回收 + DR/退化/执行分项，`p_ref==p_real` 时与单结算恒等式等价，v2 §6.1）。v1.3 双结算的 `compute_settlement_C`/`compute_settlement_C2`/`compute_cpen_dayah`/`compute_cpen_long` 已迁入 `trading/todo/dual_settlement_v1/`，活动代码不得加回；广东式分层偏差考核 `compute_deviation_penalty()` 同样已移除。
-- 蒙西偏差带、考核系数、申报风控等市场参数统一经 `configs/market_mengxi.yaml` + `trading/config_loader.load_market_config()` 加载，字段与 `trading/contracts.MarketConfig` 一一对应；标 `TODO(rule-confirm)` 的参数为待规则确认的默认值（v1.3 §3.5）。
+- 蒙西偏差带、考核系数、申报风控等市场参数统一经 `configs/trading/market_mengxi.yaml` + `trading/config_loader.load_market_config()` 加载，字段与 `trading/contracts.MarketConfig` 一一对应；标 `TODO(rule-confirm)` 的参数为待规则确认的默认值（v1.3 §3.5）。
 - 禁止在代码中硬编码市场参数（如罚款系数、价格限幅）。
 
 ### 配置与数据一致性

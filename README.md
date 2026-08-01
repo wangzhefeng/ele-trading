@@ -1,6 +1,6 @@
 # 电力交易算法架构
 
-`ele-trading` 是面向虚拟电厂、电力现货交易、风光储容量规划和气象特征工程的研究型原型项目。当前主线集中在 `src/ele_trading/` 核心包，并通过 `app/` 入口脚本和 `configs/` 配置样例串起可运行链路；用户侧、分布式和 CVXPY 调度已归档至显式 `todo` 路径。
+`ele-trading` 是面向虚拟电厂、电力现货交易、风光储容量规划和气象特征工程的研究型原型项目。当前主线集中在 `src/ele_trading/` 核心包，并通过 `app/` 入口脚本和 `configs/` 配置样例串起可运行链路；用户侧、分布式和 CVXPY 调度已归档至独立包 `src/ele_trading/user_side_dispatch/`。
 
 ## 项目目标
 
@@ -18,9 +18,9 @@
 
 当前主要链路：
 
-- **蒙西交易链路（主线）**：中长期仓位 → 月度分解 → 日前运行计划 → 日内滚动 → 实时电能 + 中长期差价合约单结算 → walk-forward 回测，外加需求响应。实现在 `src/ele_trading/trading/`，当前设计依据为 `docs/策略算法框架详细设计_v2.md`；v1 双结算设计仅作历史溯源。
+- **蒙西交易链路（主线）**：中长期仓位 → 月度分解 → 日前运行计划 → 日内滚动 → 实时电能 + 中长期差价合约单结算 → walk-forward 回测，外加需求响应。实现在 `src/ele_trading/trading/`，当前设计依据为 `docs/策略算法框架详细设计-v2.md`；v1 双结算设计仅作历史溯源。
 - **市场储能链路**：价格读取、储能套利、MPC、Two-stage + CVaR、结算、回测。
-- **归档用户侧链路**：用户侧、分布式和 CVXPY 调度保留于 `src/ele_trading/{data_provider,optimization}/todo/`，不属于活动 API 或常规入口。
+- **归档用户侧链路**：用户侧、分布式和 CVXPY 调度保留于 `src/ele_trading/user_side_dispatch/`（合并自原 `data_provider/todo/` 与 `optimization/todo/`），不属于活动 API 或常规入口。
 - **风光储链路**：负荷构造、PV/风电出力 profile、BESS/Wind+BESS/Wind+PV+BESS 容量规划。
 - **天气特征链路**：气象数据生成、读取、空间插值、相关性分析、聚类选点和权重计算。
 
@@ -40,7 +40,8 @@ ele-trading/
 │   ├── data_provider/            # 配置、样例数据、负荷、气象、时间序列处理
 │   ├── forecasting/              # 价格、负荷、风光功率、ForecastProvider 接口和天气特征工程
 │   ├── scenario/                 # 价格场景采样与缩减
-│   ├── optimization/             # 活动储能套利、MPC、Two-stage 优化（用户侧/CVXPY 在 todo/）
+│   ├── optimization/             # 活动储能套利、MPC、Two-stage 优化
+│   ├── user_side_dispatch/       # 归档用户侧/分布式/CVXPY 调度（合并自原 data_provider/todo 与 optimization/todo）
 │   └── utils/                    # IO、日志、时间、数据对齐工具
 ├── src/investment_estimation/    # 投资收益测算包（独立自包含，不依赖 ele_trading）
 │   ├── data_provider/            # 投资测算数据接入
@@ -51,8 +52,8 @@ ele-trading/
 │   ├── resource_simulation/      # 风光资源物理出力仿真
 │   ├── utils/                    # 自包含工具子集（迁移自 ele_trading.utils）
 │   └── todo/                     # 待整合的迁移暂存区（老版 capacity_planning 整体并入）
-├── app/                          # 可直接运行的入口（按 trading/optimization/capacity_planning/resource_simulation/legacy 分目录）
-├── configs/                      # YAML 配置（按 market/optimization/capacity_planning/resource_simulation/legacy 分目录）
+├── app/                          # 可直接运行的入口（按 trading/optimization/user_side_dispatch 分目录；容量规划与资源仿真入口在 src/investment_estimation/app/）
+├── configs/                      # YAML 配置（按 optimization/trading/user_side_dispatch 分目录；容量规划配置在 src/investment_estimation/configs/）
 ├── data/                         # 最小样例数据、legacy 兼容数据
 ├── docs/                         # 策略算法框架详细设计与算法笔记（需量预测、v2 迁移清单）
 ├── tests/                        # 单元测试和入口脚本冒烟测试
@@ -87,9 +88,7 @@ ele-trading/
 - `contracts.py` / `market_data.py`：`MarketDataSnapshot`、市场 CSV 读取与活动交易数据集直接构造。
 - `weather_data.py` / `asset_data.py` / `quality.py`：气象、资产和时间质量权威入口。
 - `schemas.py`：通用 `ObservedPowerSeries`、价格和场景活动类型。
-- `loader.py`：仅保留无投资语义的 market/asset 兼容转发。
-- `resource_weather.py`、`weather_io.py`、`time_series_ops.py`：已弃用兼容入口。
-- `todo/`：归档目标年份/profile、投资 case、用户侧和 CVXPY 样例构造，不是活动 data-provider API。
+- `resource_weather.py`：Open-Meteo ERA5 抓取 + 气象 CSV IO；`weather_io.py`：Mongo/NetCDF/模拟器（仅 tests 消费）。
 
 ### `forecasting`
 
@@ -114,7 +113,8 @@ ele-trading/
 - `bess_arbitrage.py`：单市场储能套利和容量 sizing。
 - `mpc_bess.py`：单窗口 MPC 与滚动 MPC。
 - `two_stage_cvar.py`：Two-stage + CVaR 可求解模型。
-- `todo/`：归档的用户侧、分布式和 CVXPY 调度；需要时通过显式归档路径导入，并安装 `uv sync --extra archived-user-side`。
+
+归档的用户侧、分布式和 CVXPY 调度在平级包 `user_side_dispatch/`；需要时安装 `uv sync --extra archived-user-side`。
 
 ### `investment_estimation`
 
@@ -171,14 +171,14 @@ uv run python app/optimization/run_bess_arbitrage.py
 uv run python app/optimization/run_mpc_demo.py
 uv run python app/optimization/run_two_stage_skeleton.py
 uv run python app/trading/run_backtest.py
-uv run python app/capacity_planning/run_wind_pv_bess_capacity_planning_1.py
+uv run python src/investment_estimation/app/capacity_planning/run_wind_pv_bess_capacity_planning_1.py
 ```
 
 更完整的入口清单见 `app/README.md`。
 
 ## 配置文件
 
-`configs/` 下配置按算法链路组织，包括市场、储能、场景、legacy 数据桥接和容量规划；归档用户侧/CVXPY 配置位于 `configs/optimization/todo/`。字段说明见 `configs/README.md`。
+`configs/` 下配置按算法链路组织（`optimization/`、`trading/`、`user_side_dispatch/` 归档配置）；容量规划配置位于 `src/investment_estimation/configs/capacity_planning/`。字段说明见 `configs/README.md`。
 
 ## 验证
 
@@ -188,11 +188,11 @@ uv run python app/capacity_planning/run_wind_pv_bess_capacity_planning_1.py
 uv run python -m pytest -q
 ```
 
-当前测试（448 收集，432 passed）包含蒙西交易主线（结算/日前/日内/回测/中长期/DR/预测 39 项）、核心算法、样例数据构造、入口脚本、投资测算与气象特征等切片。`tests/README.md` 有按模块的清单与冒烟边界；少量 pre-existing 失败（legacy 数据桥接、容量规划清理、配置加载冲突等 6 项）见 `MEMORY.md`。
+当前测试（450 passed, 4 skipped, 3 deselected，无失败）包含蒙西交易主线（结算/日前/日内/回测/中长期/DR/预测 39 项）、核心算法、样例数据构造、入口脚本、投资测算与气象特征等切片。`tests/README.md` 有按模块的清单与冒烟边界。
 
 ## v2 重构进度
 
-按 `docs/策略算法框架详细设计_v2.md` §9 的阶段划分，活动 `src/ele_trading/` 重构进度：
+按 `docs/策略算法框架详细设计-v2.md` §9 的阶段划分，活动 `src/ele_trading/` 重构进度：
 
 | 阶段 | 状态 | 说明 |
 |------|------|------|

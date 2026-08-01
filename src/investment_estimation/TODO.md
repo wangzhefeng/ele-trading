@@ -659,9 +659,9 @@ configs/optimization/
    - `cloud_factor`
    - `system_loss`
 
-3. `configs/market/market_guangdong.yaml`
+3. `configs/trading/market_mengxi.yaml`
 
-   可用于后续偏差考核、价格限幅、15 分钟市场参数配置参考。
+   可用于后续市场参数、偏差考核、价格限幅和 15 分钟颗粒度市场参数配置参考。
 
 4. `configs/capacity_planning/capacity_planning.yaml`
 
@@ -1105,7 +1105,7 @@ PYTHONPATH=src python -m investment_estimation.app.build_resource_profile --conf
 
 待办：
 
-1. 增加 `tests/test_investment_estimation_resource_simulation.py`。
+1. 增加 `tests/investment_estimation/test_investment_estimation_resource_simulation.py`。
 2. 测试 `SimulationResult` 字段。
 3. 测试光伏 `replay` 模式，避免依赖 pvlib 清晰天空计算和网络。
 4. 测试风电 `rescale_wind_output_to_target_flh()` 满发小时数校准。
@@ -1114,7 +1114,7 @@ PYTHONPATH=src python -m investment_estimation.app.build_resource_profile --conf
 验证：
 
 ```text
-PYTHONPATH=src pytest tests/test_investment_estimation_resource_simulation.py -q
+PYTHONPATH=src pytest tests/investment_estimation/test_investment_estimation_resource_simulation.py -q
 ```
 
 #### 第六步：文档同步

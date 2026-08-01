@@ -34,8 +34,8 @@
 
 ### `app/` 与 `configs/`
 
-- `app/`：入口脚本按 `trading/`（7+1：run_pipeline + run_{mid_long,monthly,day_ahead,intraday,dr,backtest}）、`optimization/`（3）、`capacity_planning/`（6，指向 `investment_estimation.todo`）、`resource_simulation/`（4）分目录。
-- `configs/`：YAML 按算法链路组织；蒙西交易线配置为根目录 `configs/market_mengxi.yaml`。
+- `app/`：入口脚本按 `trading/`（7）、`optimization/`（3）、`user_side_dispatch/`（4，归档）分目录。容量规划入口（6 个）和 PV/Wind 资源仿真入口位于 `src/investment_estimation/app/`。
+- `configs/`：YAML 按算法链路组织；蒙西交易线配置为根目录 `configs/trading/market_mengxi.yaml`。容量规划配置位于 `src/investment_estimation/configs/capacity_planning/`。
 
 ### 归属硬约束
 
@@ -43,7 +43,7 @@
 
 ## 3. 当前主线状态（蒙西交易线 v2）
 
-依据 `docs/策略算法框架详细设计_v2.md`（v2 为当前权威设计；`_v1.md`/无后缀版本为历史溯源）。算法内核与命令行入口均已落地于 `src/ele_trading/trading/`：
+依据 `docs/策略算法框架详细设计-v2.md`（v2 为当前权威设计；`-v1.md`/`-v0.md` 为历史溯源）。算法内核与命令行入口均已落地于 `src/ele_trading/trading/`：
 
 - **数据契约** `contracts.py`：`MarketConfig`/`OperationalPlan`/`IntradayPlan`/`SettlementReport`/`PositionState`/`MarketForecastBundle`/`DecisionTrace`（无日前金融申报量）。
 - **单结算** `settlement_mengxi.py::build_settlement_report`：实时电能 `Q_real*p_real` + 中长期差价 `Q_long*(p_long-p_ref)` + 长协回收 + DR/退化/执行分项（不重复计费）。
@@ -55,26 +55,17 @@
 - **样例数据** `sample_data.py`：30 天 96 点样例 + `WalkForwardSeasonalNaiveProvider`（按 issue-time vintage 的无前瞻 walk-forward 预测）。
 - **回测/指标** `backtest.py` / `metrics.py`：walk-forward 回测（无储能/确定性/风险/oracle 四基准，仅 oracle 可用未来）+ BESS/风险/退化指标。
 - **入口**：`app/trading/run_{mid_long,monthly,day_ahead,intraday,dr,backtest}.py` + 统一 `run_pipeline.py`。
-- **配置**：`configs/market_mengxi.yaml`（经 `trading/config_loader.load_market_config()` 加载，字段与 `MarketConfig` 对应）。
+- **配置**：`configs/trading/market_mengxi.yaml`（经 `trading/config_loader.load_market_config()` 加载，字段与 `MarketConfig` 对应）。
 - **回测基线产物**：`results/trading/backtest/v2_baseline/`。
 
-> **提交状态（2026-07-26）**：v1.3→v2 重构当前在 working tree（**未提交**），HEAD（dev, `42a57cb`）仍为 v1.3。v1.3 双结算（`compute_settlement_C/C2/cpen_*`）已归档至 `trading/todo/dual_settlement_v1/`，活动 `trading/` 下为 v2 单结算实现（`build_settlement_report`）。接手前先 `git status` 确认，不要把未提交的 v2 迁移误判为已落地或回滚。
-
-## 4. 测试基线（2026-07-26 实测，working tree，含进行中的 v2 迁移）
+## 4. 测试基线（2026-08-01 实测，目录重构后）
 
 ```bash
 uv run python -m pytest -q
-# → 432 passed, 6 failed, 7 skipped, 3 deselected（448 collected），~87s
+# → 450 passed, 4 skipped, 3 deselected，~89s（无失败）
 ```
 
-3 个失败均为 **pre-existing**（非回归），分两类：
-
-| 类别 | 失败测试 | 根因 |
-|------|----------|------|
-| 容量规划（2） | `test_capacity_planning_v4_phase1::test_wind_pv_bess_irr_runner_requires_explicit_data_dir_or_demo`、`test_entry_scripts::test_run_wind_bess_capacity_planning` | `_resolve_data_dir` 符号缺失 / capacity_planning 清理残留 |
-| 配置加载（1） | `test_yaml_config_loading::test_yaml_config_loading_goes_through_read_yaml` | 「全部 yaml 经 `ele_trading.utils.io.read_yaml`」规则与 `investment_estimation` 自包含性的架构冲突 |
-
-> 注：legacy 数据桥接 3 个失败（`test_legacy_data_bridge`、`test_run_wind_pv_legacy_profit_eval`）随 legacy 链路整链删除（2026-08-01）。
+此前 6 个 pre-existing 失败已全部清除：legacy 数据桥接 3 个随 legacy 链路整链删除；容量规划 2 个与配置加载 1 个随本次目录重构（capacity_planning 并入 `investment_estimation/app/`、配置归位）解决。
 
 ## 5. 硬约束
 
@@ -82,11 +73,9 @@ uv run python -m pytest -q
 
 ## 6. 已知缺口与待办
 
-- **resource_simulation 重复**：`investment_estimation/resource_simulation/`（新版）与 `todo/resource_simulation/`（老版 cp 迁入）并存，待去重。
-- **forecasting 物理预测暂挂起**：`forecasting/pv_forecast.py`、`wind_forecast.py` 的 physics 分支延迟 import `todo.resource_simulation`（仅 physics 分支触发 ImportError），待 resource_simulation 正本归属确定后一并处理。
 - **todo/ 与新版模块合并去重**：`todo/` 为迁移暂存区，非最终形态。
-- **3 个 pre-existing 测试失败**：见 §4，属 capacity_planning 清理范畴，可另起任务。
 - **`app/trading/` 入口已就位**（早期 LOG 记为待办，现已由 `run_*.py` ×7 + `run_pipeline.py` 补齐，**该条待办已关闭**）。
+- **resource_simulation 重复已解决**（2026-08-01）：删除根 `app/resource_simulation/`、`configs/resource_simulation/` 和 `todo/resource_simulation/` 副本，只保留 `investment_estimation.resource_simulation`（正本）和 `investment_estimation/app/` 入口。capacity_planning 入口的 `todo.resource_simulation` 引用已统一改指新版。
 
 ## 7. 关键决策（勿重新争论）
 
@@ -101,8 +90,8 @@ uv run python -m pytest -q
 |------|------|
 | `AGENTS.md` | 项目 agent 规则唯一权威（仅项目特有硬约束；通用编码准则在各 agent 全局配置） |
 | `README.md` | 项目总览、系统闭环、设计原则、仓库结构、核心模块、Two-stage+CVaR 模型、v2 重构进度、快速开始 |
-| `docs/策略算法框架详细设计_v2.md` | 蒙西交易线当前权威设计（`_v1.md`/无后缀版为历史溯源，另会话维护中） |
-| `app/README.md` | 入口脚本清单（21 个）与运行约定 |
+| `docs/策略算法框架详细设计-v2.md` | 蒙西交易线当前权威设计（`-v1.md`/`-v0.md` 为历史溯源，另会话维护中） |
+| `app/README.md` | 入口脚本清单与运行约定（活动 10 个：optimization 3 + trading 7；归档 user_side_dispatch 4 个） |
 | `configs/README.md` | YAML 配置清单与对应入口 |
 | `tests/README.md` | 测试清单与冒烟边界 |
 | `src/ele_trading/{trading,data_provider,forecasting,scenario,optimization}/README.md` | 各子包说明 |
