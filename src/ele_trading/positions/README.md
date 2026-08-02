@@ -7,6 +7,7 @@
 | `contracts.py` | `PositionPlan`、`BidLadder`、`CorridorAdvice` | 活动契约 |
 | `mid_long_planner.py` | 价差到覆盖比例的映射、月度分解和实时敞口 | 启发式 |
 | `monthly_trader.py` | 阶梯报价、缺口再平衡、无订单簿透明走廊 | 启发式 |
+| `mid_long_optimizer.py` | CVaR 约束优化头寸策略（覆盖/预算/换手惩罚/年度总量，v4 P0，可选） | 可选增强 |
 
 当前月度阶梯使用 `uniform` 或 `linear` 简化出清概率，不代表真实订单簿或成交概率模型。无订单簿时只输出透明量价走廊，不构造虚假对手方。
 

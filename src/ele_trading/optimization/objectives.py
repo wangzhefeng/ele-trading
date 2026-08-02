@@ -47,6 +47,22 @@ def throughput_degradation_cost(
     )
 
 
+def arbitrage_gross_revenue(
+    variables: BESSVariables,
+    steps,
+    prices,
+    *,
+    dt: float,
+):
+    """套利毛收益（不含退化）：Σ price × (p_dis − p_ch) × dt。"""
+    return lpSum(
+        prices[step]
+        * (variables.p_discharge[step] - variables.p_charge[step])
+        * dt
+        for step in steps
+    )
+
+
 def arbitrage_net_revenue(
     variables: BESSVariables,
     steps,
@@ -55,13 +71,13 @@ def arbitrage_net_revenue(
     deg_cost_per_mwh: float,
     dt: float,
 ):
-    """套利净收益（最大化目标）：Σ [price×(p_dis−p_ch)×dt − 退化成本]。"""
-    return lpSum(
-        prices[step]
-        * (variables.p_discharge[step] - variables.p_charge[step])
-        * dt
-        - deg_cost_per_mwh
-        * (variables.p_charge[step] + variables.p_discharge[step])
-        * dt
-        for step in steps
+    """套利净收益（最大化目标）：毛收益 − 线性退化成本（Level 0）。"""
+    return (
+        arbitrage_gross_revenue(variables, steps, prices, dt=dt)
+        - throughput_degradation_cost(
+            variables,
+            steps,
+            deg_cost_per_mwh=deg_cost_per_mwh,
+            dt=dt,
+        )
     )

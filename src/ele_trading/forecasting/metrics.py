@@ -143,6 +143,32 @@ def direction_accuracy(
     )
 
 
+def quantile_calibration_error(
+    actual: Iterable[float],
+    quantile_forecast: Iterable[float],
+    *,
+    quantile: float,
+    unit: str,
+    grain: str,
+) -> ForecastMetric:
+    """分位校准误差（v4 §4.2.2/§8.3）：|实际覆盖率 - 标称覆盖率|。
+
+    实际覆盖率 = P(y ≤ q_τ)；完全校准的分位预测该值等于 τ，
+    误差为 0。值越大说明该分位越偏（低估或高估）。
+    """
+    if not 0.0 < quantile < 1.0:
+        raise ValueError("quantile must be within (0, 1)")
+    actual_values, forecast_values = _paired(actual, quantile_forecast)
+    actual_coverage = float(np.mean(actual_values <= forecast_values))
+    return _metric(
+        "quantile_calibration_error",
+        abs(actual_coverage - quantile),
+        "ratio",
+        unit,
+        grain,
+    )
+
+
 def _paired(
     actual: Iterable[float],
     predicted: Iterable[float],

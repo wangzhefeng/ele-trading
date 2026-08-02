@@ -7,6 +7,51 @@ import pandas as pd
 import rainflow
 
 
+def price_capture_ratio(
+    strategy_revenue: float,
+    oracle_revenue: float,
+) -> float:
+    """价格捕获率（v4 §8.3）：实际收益 / 完美预见上限收益。
+
+    oracle_revenue 非正（无参考上限）时返回 0.0。
+    """
+    if oracle_revenue <= 0.0:
+        return 0.0
+    return float(strategy_revenue / oracle_revenue)
+
+
+def deviation_penalty_share(
+    deviation_penalty: float,
+    total_cost: float,
+) -> float:
+    """偏差考核成本占比（v4 §8.3）：偏差考核 / 总成本。"""
+    if total_cost <= 0.0:
+        return 0.0
+    return float(deviation_penalty / total_cost)
+
+
+def quantile_calibration_error(
+    actual,
+    quantile_forecast,
+    *,
+    quantile: float,
+) -> float:
+    """分位校准误差（v4 §8.3）：|P(y ≤ q_τ) − τ|。"""
+    if not 0.0 < quantile < 1.0:
+        raise ValueError("quantile must be within (0, 1)")
+    actual_values = np.asarray(list(actual), dtype=float)
+    forecast_values = np.asarray(list(quantile_forecast), dtype=float)
+    if (
+        len(actual_values) != len(forecast_values)
+        or len(actual_values) == 0
+    ):
+        raise ValueError(
+            "calibration arrays must have the same non-zero length"
+        )
+    actual_coverage = float(np.mean(actual_values <= forecast_values))
+    return abs(actual_coverage - quantile)
+
+
 def summarize_bess_metrics(result_df: pd.DataFrame) -> dict[str, float]:
     """汇总储能回测关键指标（原有接口，向后兼容）。"""
     return {

@@ -30,6 +30,7 @@ dependencies = [
     "seaborn>=0.13.2",
     "scikit-learn>=1.8.0",
     "statsmodels>=0.14.0",
+    "lightgbm>=4.7.0",
 ]
 
 [project.optional-dependencies]

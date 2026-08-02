@@ -5,7 +5,8 @@
 | 模块 | 当前职责 | 成熟度 |
 |---|---|---|
 | `backtest.py` | 驱动 `TradingOrchestrator`，比较无储能、确定性、风险和 oracle 四组结果 | 可运行基线 |
-| `metrics.py` | BESS、Sharpe、最大回撤、EFC、RTE、利用率和雨流退化指标 | 活动指标 |
+| `metrics.py` | BESS、Sharpe、最大回撤、EFC、RTE、利用率、雨流退化指标，价格捕获率/偏差占比/分位校准误差（v4 P0） | 活动指标 |
+| `data_protocol.py` | 真实数据切分契约（train/validation/test + 无前瞻 vintage 校验，v4 P0） | 可选增强 |
 
 回测要求未来实际值只进入事后结算和显式标记的 oracle。确定性与风险策略必须使用决策时刻可获得的 forecast vintage。
 

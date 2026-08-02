@@ -8,8 +8,8 @@
 |---|---|---|
 | `contracts.py` | `Scenario` / `ScenarioSet` 对齐、概率和来源版本契约 | canonical |
 | `joint_builder.py` | 从四类 `ForecastResult` 构建联合场景 | canonical |
-| `reduction.py` | 联合 Wasserstein L1 后向缩减与兼容 wrapper | canonical + compatibility |
-| `sampler.py` | `PriceScenario` 和独立价格扰动采样 | legacy compatibility |
+| `reduction.py` | 联合 Wasserstein L1 后向缩减 | canonical |
+| `diagnostics.py` | 场景集质量诊断（权重守恒、边际一致、相关保持、极端覆盖、复现性，v4 P0） | 可选增强 |
 
 ## 当前生成逻辑
 
@@ -21,6 +21,8 @@
 - 使用经过校验的 Gaussian copula 相关矩阵；
 - 输出共同单位、概率、随机种子、模型版本和来源时间元数据。
 
+`diagnostics.diagnose_scenario_set`（v4 P0）对活动场景集执行五项诊断（权重守恒、边际一致、相关保持、极端覆盖、复现性），不修改场景集，只报告；无历史参考时相关/极端覆盖显式 skipped。
+
 ## 当前缩减逻辑
 
 `reduce_scenarios()` 的 canonical 输入输出是 `ScenarioSet`：
@@ -28,8 +30,7 @@
 - 使用按 target 尺度归一的联合 L1 距离；
 - 逐轮重新计算候选保留集的最小运输代价；
 - 将移除场景概率转移到最近保留场景并归一化；
-- 支持关键净负荷峰值/爬坡保护与分布漂移诊断；
-- `PriceScenario` wrapper 仅服务现有兼容测试和窄调用面。
+- 支持关键净负荷峰值/爬坡保护与分布漂移诊断。
 
 ## 成熟度边界
 

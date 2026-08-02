@@ -65,14 +65,26 @@
 - **配置**：`configs/markets/single_settlement.yaml`（schema v1 六区段）；旧扁平格式经 `scripts/migrate_market_config_v3.py` 一次性迁移，loader 不再接受。
 - **回测基线产物**：`results/trading/backtest/v2_baseline/`（与 v2 基线逐项一致）。
 
-## 4. 测试基线（2026-08-02 实测，v3 迁移 M0–M6 落地后）
+### v4 P0（Phase A 算法增强，可选启用，默认行为不变）
+
+v4 设计（`docs/策略算法框架详细设计-v4.md`）在 v3 架构边界内增强各层算法能力，D-008~D-013 默认值保持不变。P0 已落地六项（全部可选，不改变默认链路）：
+
+- **预测** `forecasting/lightgbm_provider.py`：LightGBM 点预测 + 分位回归（price/load，日历+滞后+滚动统计特征，无前瞻约束）；`forecasting/metrics.quantile_calibration_error`。
+- **场景** `scenario/diagnostics.py`：五项诊断（权重守恒/边际一致/相关保持/极端覆盖/复现性）。
+- **优化** `optimization/degradation.py`：Level 1 日历+循环退化分离（LP 可线性化），`bess_arbitrage` 增 `degradation="level1"` 可选。
+- **头寸** `positions/mid_long_optimizer.py`：CVaR 约束优化头寸（覆盖/预算/换手惩罚/年度总量），默认仍走启发式。
+- **回测** `backtest/data_protocol.py`：真实数据切分契约（train/validation/test + 无前瞻 vintage 校验）；`backtest/metrics` 增价格捕获率/偏差占比/分位校准误差。
+
+## 4. 测试基线（2026-08-02 实测，v4 P0 落地后）
 
 ```bash
 uv run python -m pytest -q
-# → 575 passed, 4 skipped, 3 deselected（含用户侧 60 项 + 事件契约 20 项 + 市场协议 9 项）
+# → 612 passed, 4 skipped, 5 deselected（全量，含投资测算+用户侧；5 deselected 含 v4 Phase A 新增 2 项 slow）
 ```
 
-v3 新增测试：`tests/domain/`（事件契约 20）、`tests/markets/test_market_mode_protocol.py`（协议 9）、`tests/markets/test_single_settlement_config.py`（六区段配置 8）、`tests/test_structure_layers.py` 增 `test_main_chain_imports_no_concrete_market_mode` + `test_user_side_dispatch_stays_independent`、`tests/trading/test_v3_event_chain.py`（事件链）、用户侧恢复常规收集（60 项）。
+active-only 节点命令（排除投资测算）最新结果为 507 passed，见 `docs/电力市场交易当前实现基线.md` §8。
+
+v4 P0 新增测试：`tests/forecasting/test_lightgbm_provider.py`、`tests/scenario/test_diagnostics.py`、`tests/optimization/test_degradation.py`、`tests/positions/test_mid_long_optimizer.py`、`tests/backtest/test_data_protocol.py`、`tests/backtest/test_v4_phase_a_acceptance.py`（Phase A 六项验收，含 walk-forward pinball loss 对比）。性能基准（`-m slow`）显式运行通过。
 
 ## 5. 硬约束
 
@@ -105,7 +117,7 @@ v3 新增测试：`tests/domain/`（事件契约 20）、`tests/markets/test_mar
 | `README.md` | 项目总览、系统闭环、设计原则、仓库结构、核心模块、Two-stage+CVaR 模型、v2 重构进度、快速开始 |
 | `docs/策略算法框架详细设计-v3.md` | 当前在研设计（D-001~D-007 决策已生效；`-v2.md`/`-v1.md`/`-v0.md` 为历史溯源） |
 | `docs/电力市场交易当前实现基线.md` | 当前实现事实快照（成熟度、模块职责、契约、入口、缺口、验证） |
-| `docs/v3迁移基线冻结-M0.md` | v3 M0 退出证据（回归基线、公共 API 冻结清单、后续阶段复核点） |
+| `docs/策略算法框架详细设计-v4.md` | v4 算法增强设计（D-008~D-013，P0 已实施，P1/P2 待真实数据） |
 | `app/README.md` | 入口脚本清单与运行约定（活动 10 个：optimization 3 + trading 7；归档 user_side_dispatch 4 个） |
 | `configs/README.md` | YAML 配置清单与对应入口 |
 | `tests/README.md` | 测试清单与冒烟边界 |

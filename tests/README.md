@@ -107,13 +107,7 @@ uv run python -m pytest -q tests/backtest/test_metrics.py::test_sharpe_finite
 
 ## 6. 最近验证快照
 
-2026-08-02 的 active-only 完整节点命令结果为：
-
-```text
-366 passed, 3 deselected, 3 warnings
-```
-
-完整命令、分支、提交和结果解释见[当前实现基线](../docs/电力市场交易当前实现基线.md#8-验证快照)。测试通过证明接口和样例回归，不证明生产数据、预测精度、市场参数或策略收益有效。
+active-only 完整节点命令的最新结果见[当前实现基线 §8 验证快照](../docs/电力市场交易当前实现基线.md#8-验证快照)。测试通过证明接口和样例回归，不证明生产数据、预测精度、市场参数或策略收益有效。
 
 ## 7. 测试维护要求
 

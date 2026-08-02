@@ -11,7 +11,7 @@
 | `contracts.py` | `ForecastRequest` / `ForecastResult` 的索引、分位、单位、版本和无前瞻校验 |
 | `registry.py` | 按 target、模型名和版本注册/解析模型 |
 | `provider.py` | 通用 `ForecastProvider.forecast(request)` 和 typed convenience API |
-| `metrics.py` | MAE、RMSE、pinball loss、区间覆盖率和方向准确率 |
+| `metrics.py` | MAE、RMSE、pinball loss、区间覆盖率、方向准确率、分位校准误差（v4 P0） |
 
 ### 可运行基线
 
@@ -26,6 +26,12 @@
 | `weather_feature.py` | 相关性、滞后、聚类、插值、测点匹配和空间权重 |
 
 `seasonal_naive_provider.py` 与 `trading.demo_fixtures.WalkForwardSeasonalNaiveProvider` 是显式 demo/回测 provider，不是隐藏生产默认值。
+
+### 可选增强（v4 P0）
+
+| 文件 | 当前职责 | 状态 |
+|---|---|---|
+| `lightgbm_provider.py` | LightGBM 点预测 + 分位回归（pinball loss），支持 price/load 目标，日历+滞后+滚动统计特征，无前瞻约束 | 可选增强（默认非默认模型） |
 
 ## 当前跨包行为
 
