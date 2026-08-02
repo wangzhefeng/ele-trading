@@ -1,7 +1,10 @@
 """markets — 市场规则插件层。
 
 按结算模式（而非地区名）组织子包；每个子包是一个自包含的规则插件
-（配置契约 + 加载校验 + 结算引擎）。``shared`` 提供跨模式通用结算工具。
+（配置契约 + 加载校验 + 结算引擎 + MarketMode 装配）。``shared``
+提供跨模式通用结算工具；``sections`` 提供主链共享的组合式配置
+子对象词汇；``protocol`` 定义主链唯一依赖的 MarketMode /
+SettlementEngine 协议（v3 M4 / D-002）。
 当前插件：
 
 - ``single_settlement``：单结算模式（实时电能 + 中长期差价 + 回收及逐项
@@ -12,5 +15,11 @@
 """
 
 from . import dual_settlement, single_settlement
+from .protocol import MarketMode, SettlementEngine
 
-__all__ = ["dual_settlement", "single_settlement"]
+__all__ = [
+    "MarketMode",
+    "SettlementEngine",
+    "dual_settlement",
+    "single_settlement",
+]

@@ -29,6 +29,8 @@ from pulp import (
 from ele_trading.scenario.contracts import Scenario, ScenarioSet
 
 from .bess_model import BESSConfig, BESSVariables, add_bess_constraints
+from .extraction import extract_bess_values
+from .objectives import throughput_degradation_cost
 from .risk import (
     CVaRAuxiliaries,
     add_cvar_auxiliaries,
@@ -301,23 +303,26 @@ def _build_problem(
                 f"deviation_balance_{scenario_index}_{step}",
             )
         # 场景收益 = 日前申报收入 + 实时偏差结算 - 偏差考核 - 退化成本
-        revenue = lpSum(
-            (
-                day_ahead[step] * bid[step]
-                + float(
-                    scenario.trajectories[price_target].iloc[step]
+        revenue = (
+            lpSum(
+                (
+                    day_ahead[step] * bid[step]
+                    + float(
+                        scenario.trajectories[price_target].iloc[step]
+                    )
+                    * (net_export[step] - bid[step])
+                    - deviation_penalty_positive * positive[step]
+                    - deviation_penalty_negative * negative[step]
                 )
-                * (net_export[step] - bid[step])
-                - deviation_penalty_positive * positive[step]
-                - deviation_penalty_negative * negative[step]
-                - degradation_cost
-                * (
-                    bess.p_charge[step]
-                    + bess.p_discharge[step]
-                )
+                * bess_config.dt
+                for step in steps
             )
-            * bess_config.dt
-            for step in steps
+            - throughput_degradation_cost(
+                bess,
+                steps,
+                deg_cost_per_mwh=degradation_cost,
+                dt=bess_config.dt,
+            )
         )
         bess_by_scenario[scenario.scenario_id] = bess
         net_export_by_scenario[scenario.scenario_id] = net_export
@@ -454,18 +459,13 @@ def solve_two_stage_cvar(
     recourse: dict[str, ScenarioRecourse] = {}
     for scenario_id, bess in context.bess.items():
         scenario = scenario_lookup[scenario_id]
+        bess_values = extract_bess_values(bess, steps)
         recourse[scenario_id] = ScenarioRecourse(
             scenario_id=scenario_id,
             probability=scenario.probability,
-            p_charge=[
-                float(value(bess.p_charge[step])) for step in steps
-            ],
-            p_discharge=[
-                float(value(bess.p_discharge[step])) for step in steps
-            ],
-            soc=[
-                float(value(bess.soc[step])) for step in steps
-            ],
+            p_charge=bess_values["p_charge"],
+            p_discharge=bess_values["p_discharge"],
+            soc=bess_values["soc"],
             net_export=[
                 float(value(context.net_export[scenario_id][step]))
                 for step in steps

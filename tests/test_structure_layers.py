@@ -18,6 +18,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = PROJECT_ROOT / "src" / "ele_trading"
 
@@ -46,6 +48,18 @@ FORBIDDEN = {
     "operations": ("ele_trading.trading", "ele_trading.backtest"),
     "trading": ("ele_trading.backtest",),
     "backtest": (),
+    # v3 M6：用户侧为独立领域能力，只依赖 utils，不得耦合市场主链
+    "user_side_dispatch": (
+        "ele_trading.markets",
+        "ele_trading.positions",
+        "ele_trading.operations",
+        "ele_trading.backtest",
+        "ele_trading.trading",
+        "ele_trading.demand_response",
+        "ele_trading.forecasting",
+        "ele_trading.scenario",
+        "ele_trading.data_provider",
+    ),
 }
 
 
@@ -98,3 +112,46 @@ def test_operations_does_not_import_upper_layers():
 
 def test_trading_does_not_import_backtest():
     assert _violations("trading") == []
+
+
+def test_user_side_dispatch_stays_independent():
+    """user_side_dispatch 为独立领域能力，不得 import 市场主链（v3 M6）。"""
+    assert _violations("user_side_dispatch") == []
+
+
+# ---------------- v3 M4：主链不得 import 具体市场模式插件 ----------------
+
+CONCRETE_MODE_PREFIXES = (
+    "ele_trading.markets.single_settlement",
+    "ele_trading.markets.dual_settlement",
+)
+MAIN_CHAIN_PACKAGES = (
+    "positions",
+    "operations",
+    "demand_response",
+    "trading",
+    "backtest",
+)
+
+
+def _concrete_mode_violations(package: str) -> list[str]:
+    package_root = SOURCE_ROOT / package
+    bad: list[str] = []
+    for path in sorted(package_root.rglob("*.py")):
+        if "todo" in path.relative_to(SOURCE_ROOT).parts:
+            continue
+        for module in _imported_modules(path):
+            if any(
+                module == prefix or module.startswith(prefix + ".")
+                for prefix in CONCRETE_MODE_PREFIXES
+            ):
+                bad.append(
+                    f"{path.relative_to(PROJECT_ROOT).as_posix()} -> {module}"
+                )
+    return bad
+
+
+@pytest.mark.parametrize("package", MAIN_CHAIN_PACKAGES)
+def test_main_chain_imports_no_concrete_market_mode(package: str):
+    """主链只依赖 markets.protocol / markets.sections（v3 M4 / D-002）。"""
+    assert _concrete_mode_violations(package) == []

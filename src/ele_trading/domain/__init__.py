@@ -14,9 +14,11 @@ from .events import (
     BidEvent,
     DispatchEvent,
     ForecastEvent,
+    MarketCalendar,
     MeteringEvent,
     SettlementEvent,
     TradingEvent,
+    derive_input_versions,
 )
 
 __all__ = [
@@ -28,10 +30,12 @@ __all__ = [
     "ForecastEvent",
     "IntradayAdjustment",
     "IntradayPlan",
+    "MarketCalendar",
     "MarketForecastBundle",
     "MeteringEvent",
     "OperationalPlan",
     "PositionState",
     "SettlementEvent",
     "TradingEvent",
+    "derive_input_versions",
 ]

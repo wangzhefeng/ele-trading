@@ -74,8 +74,8 @@ class TestMonthlyTrader:
 
     def test_price_clipping(self, config):
         """Prices should be clipped to market limits."""
-        config.monthly_price_floor = 300.0
-        config.monthly_price_cap = 310.0
+        config.monthly.monthly_price_floor = 300.0
+        config.monthly.monthly_price_cap = 310.0
         ladder = build_bid_ladder(
             q_low=100.0, q_high=200.0,
             p_low=280.0, p_high=320.0,

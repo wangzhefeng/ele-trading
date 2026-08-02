@@ -1,6 +1,7 @@
 """Phase 5 single-settlement trading-chain behavior."""
 
 from __future__ import annotations
+from ele_trading.markets.single_settlement.mode import SINGLE_SETTLEMENT_MODE
 
 from pathlib import Path
 
@@ -123,12 +124,12 @@ def test_market_config_is_one_to_one_and_contains_dr_rules():
     )
     configured_fields = {field.name for field in fields(MarketConfig)}
 
-    assert config.dt == 0.25
-    assert config.settlement_mode == "single_settlement"
-    assert config.long_recovery_lower_ratio == 0.90
-    assert config.dr_compensation_per_mwh > 0.0
-    assert config.dr_penalty_per_mwh > 0.0
-    assert config.dr_minimum_margin >= 0.0
+    assert config.market.dt == 0.25
+    assert config.market.settlement_mode == "single_settlement"
+    assert config.market.long_recovery_lower_ratio == 0.90
+    assert config.dr.dr_compensation_per_mwh > 0.0
+    assert config.dr.dr_penalty_per_mwh > 0.0
+    assert config.dr.dr_minimum_margin >= 0.0
     assert configured_fields.isdisjoint(
         {
             "lam_l",
@@ -243,7 +244,7 @@ def test_day_ahead_objective_itemizes_contract_dr_and_scenario_cvar():
     config = load_market_config(
         PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
-    config.scenario_cvar_weight = 0.25
+    config.scenario.scenario_cvar_weight = 0.25
     bess = {
         "p_bcmax": 1.0,
         "p_bdmax": 1.0,
@@ -294,6 +295,7 @@ def test_day_ahead_objective_itemizes_contract_dr_and_scenario_cvar():
         p_long=np.array([300.0, 300.0]),
         p_ref=np.array([250.0, 450.0]),
         scenario_set=scenario_set,
+        settlement=SINGLE_SETTLEMENT_MODE.settlement,
     )
 
     components = plan.decision_trace.objective_components
@@ -312,7 +314,7 @@ def test_day_ahead_scenario_cost_uses_load_minus_wind_and_pv():
     config = load_market_config(
         PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
-    config.scenario_cvar_weight = 0.0
+    config.scenario.scenario_cvar_weight = 0.0
     bess = {
         "p_bcmax": 0.0,
         "p_bdmax": 0.0,
@@ -423,7 +425,7 @@ def test_intraday_failure_freezes_prefix_and_clips_last_feasible_plan():
     assert result.schedule.decision_trace.fallback_used is True
     assert (
         result.schedule.resource_schedule["p_discharge"]
-        <= np.array([0.1, 0.1]) / config.dt + 1e-9
+        <= np.array([0.1, 0.1]) / config.market.dt + 1e-9
     ).all()
     assert result.schedule.soc.between(
         bess["socmin"],
@@ -445,7 +447,7 @@ def test_intraday_uses_latest_vintage_and_remaining_single_settlement_inputs():
     config = load_market_config(
         PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
-    config.scenario_cvar_weight = 0.1
+    config.scenario.scenario_cvar_weight = 0.1
     bess = {
         "p_bcmax": 2.0,
         "p_bdmax": 2.0,
@@ -507,6 +509,7 @@ def test_intraday_uses_latest_vintage_and_remaining_single_settlement_inputs():
         p_long=np.array([300.0, 300.0]),
         p_ref=np.array([500.0, 600.0]),
         scenario_set=scenario_set,
+        settlement=SINGLE_SETTLEMENT_MODE.settlement,
     )
 
     assert result.fallback_used is False
@@ -532,12 +535,12 @@ def test_dr_participation_uses_only_market_config_economics():
     config = load_market_config(
         PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
-    config.dr_window_start = 0
-    config.dr_window_end = 4
-    config.dr_compensation_per_mwh = 100.0
-    config.dr_penalty_per_mwh = 400.0
-    config.dr_minimum_margin = 10.0
-    config.dr_minimum_response_mwh = 0.5
+    config.dr.dr_window_start = 0
+    config.dr.dr_window_end = 4
+    config.dr.dr_compensation_per_mwh = 100.0
+    config.dr.dr_penalty_per_mwh = 400.0
+    config.dr.dr_minimum_margin = 10.0
+    config.dr.dr_minimum_response_mwh = 0.5
     adjustable = np.ones(4)
     p_net_plan = np.zeros(4)
     price = np.full(4, 300.0)
@@ -549,7 +552,7 @@ def test_dr_participation_uses_only_market_config_economics():
         realtime_price_forecast=price,
         expected_shortfall_mwh=0.1,
     )
-    config.dr_penalty_per_mwh = 1000.0
+    config.dr.dr_penalty_per_mwh = 1000.0
     rejected = evaluate_dr_participation(
         adjustable,
         config,
@@ -687,7 +690,7 @@ def test_orchestrator_runs_injected_single_settlement_chain_with_trace():
     config = load_market_config(
         PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
-    config.scenario_count = 2
+    config.scenario.scenario_count = 2
     bess = {
         "p_bcmax": 2.0,
         "p_bdmax": 2.0,
@@ -703,6 +706,7 @@ def test_orchestrator_runs_injected_single_settlement_chain_with_trace():
         forecast_provider=StaticForecastProvider(),
         forecast_registry="registry-v1",
         scenario_builder=recording_scenario_builder,
+        market_mode=SINGLE_SETTLEMENT_MODE,
         config=config,
         bess=bess,
         config_version="config-v1",
@@ -790,13 +794,14 @@ def test_walk_forward_backtest_keeps_actuals_out_of_production_forecasts():
     config = load_market_config(
         PROJECT_ROOT / "configs" / "markets" / "single_settlement.yaml"
     )
-    config.scenario_count = 2
-    config.scenario_cvar_weight = 0.2
+    config.scenario.scenario_count = 2
+    config.scenario.scenario_cvar_weight = 0.2
     orchestrator = TradingOrchestrator(
         data_provider=PositionProvider(),
         forecast_provider=ArchivedForecastProvider(),
         forecast_registry="archive-v1",
         scenario_builder=build_joint_scenarios,
+        market_mode=SINGLE_SETTLEMENT_MODE,
         config=config,
         bess={
             "p_bcmax": 2.0,

@@ -13,6 +13,11 @@ from ele_trading.optimization.bess_model import (
     BESSConfig,
     add_bess_constraints,
 )
+from ele_trading.optimization.extraction import extract_bess_values
+from ele_trading.optimization.objectives import (
+    net_load_energy_cost,
+    throughput_degradation_cost,
+)
 from ele_trading.optimization.risk import add_cvar_auxiliaries
 from ele_trading.optimization.solver import (
     SolveStatus,
@@ -24,10 +29,8 @@ from ele_trading.domain.contracts import (
     DRCommitment,
     OperationalPlan,
 )
-from ele_trading.markets.single_settlement.contracts import MarketConfig
-from ele_trading.markets.single_settlement.settlement import (
-    compute_contract_difference,
-)
+from ele_trading.markets.protocol import SettlementEngine
+from ele_trading.markets.sections import MarketConfig
 
 
 def _finite_vector(value: np.ndarray, name: str) -> np.ndarray:
@@ -127,10 +130,10 @@ def _build_model(
     """构建 BESS 物理约束 + 能量/退化/差价成本目标函数（不含 DR 项）。"""
     horizon = len(load)
     steps = tuple(range(horizon))
-    margin = config.operational_power_margin
+    margin = config.bess.operational_power_margin
     terminal_soc = (
-        float(config.soc_terminal_min)
-        if config.soc_terminal_min is not None
+        float(config.bess.soc_terminal_min)
+        if config.bess.soc_terminal_min is not None
         else float(bess["socini"])
     )
     physical = BESSConfig(
@@ -141,11 +144,11 @@ def _build_model(
         p_dis_max=margin * float(bess["p_bdmax"]),
         eta_ch=float(bess["p_bceff"]),
         eta_dis=float(bess["p_bdeff"]),
-        dt=config.dt,
+        dt=config.market.dt,
         terminal_soc=terminal_soc,
         max_throughput=(
-            config.throughput_max_ratio * 2.0 * float(bess["cap"])
-            if config.throughput_max_ratio > 0.0
+            config.bess.throughput_max_ratio * 2.0 * float(bess["cap"])
+            if config.bess.throughput_max_ratio > 0.0
             else None
         ),
         no_export=True,
@@ -157,31 +160,23 @@ def _build_model(
         steps,
         physical,
         net_load={
-            step: float(load[step]) / config.dt
+            step: float(load[step]) / config.market.dt
             for step in steps
         },
         prefix="operational",
     )
-    bundle.energy_cost = lpSum(
-        (
-            load[step]
-            + (
-                bundle.variables.p_charge[step]
-                - bundle.variables.p_discharge[step]
-            )
-            * config.dt
-        )
-        * price[step]
-        for step in steps
+    bundle.energy_cost = net_load_energy_cost(
+        bundle.variables,
+        steps,
+        load,
+        price,
+        dt=config.market.dt,
     )
-    bundle.degradation_cost = lpSum(
-        config.deg_cost_per_mwh
-        * (
-            bundle.variables.p_charge[step]
-            + bundle.variables.p_discharge[step]
-        )
-        * config.dt
-        for step in steps
+    bundle.degradation_cost = throughput_degradation_cost(
+        bundle.variables,
+        steps,
+        deg_cost_per_mwh=config.bess.deg_cost_per_mwh,
+        dt=config.market.dt,
     )
     if scenario_set is None:
         bundle.expected_energy_cost = bundle.energy_cost
@@ -208,7 +203,7 @@ def _build_model(
                     scenario_set,
                     scenario,
                     "load",
-                    dt=config.dt,
+                    dt=config.market.dt,
                 )
                 if "load" in scenario.trajectories
                 else load
@@ -219,20 +214,15 @@ def _build_model(
                         scenario_set,
                         scenario,
                         renewable_target,
-                        dt=config.dt,
+                        dt=config.market.dt,
                     )
             scenario_load = np.maximum(scenario_load, 0.0)
-            scenario_energy = lpSum(
-                (
-                    scenario_load[step]
-                    + (
-                        bundle.variables.p_charge[step]
-                        - bundle.variables.p_discharge[step]
-                    )
-                    * config.dt
-                )
-                * scenario_price[step]
-                for step in steps
+            scenario_energy = net_load_energy_cost(
+                bundle.variables,
+                steps,
+                scenario_load,
+                scenario_price,
+                dt=config.market.dt,
             )
             scenario_energy_costs[scenario.scenario_id] = scenario_energy
             scenario_costs[scenario.scenario_id] = (
@@ -253,13 +243,13 @@ def _build_model(
             bundle.model,
             scenario_costs,
             probabilities,
-            alpha=config.scenario_cvar_alpha,
+            alpha=config.scenario.scenario_cvar_alpha,
             prefix="operational_cvar",
         )
         bundle.cvar_expression = cvar.expression
         bundle.model += (
             bundle.expected_cost
-            + config.scenario_cvar_weight * bundle.cvar_expression
+            + config.scenario.scenario_cvar_weight * bundle.cvar_expression
         )
     return bundle
 
@@ -292,14 +282,9 @@ def _solve_and_extract(
             f"day-ahead operational solve failed: {solve_result.status.value}"
         )
 
-    p_charge = np.array(
-        [value(bundle.variables.p_charge[step]) for step in steps],
-        dtype=float,
-    )
-    p_discharge = np.array(
-        [value(bundle.variables.p_discharge[step]) for step in steps],
-        dtype=float,
-    )
+    values = extract_bess_values(bundle.variables, steps)
+    p_charge = np.array(values["p_charge"], dtype=float)
+    p_discharge = np.array(values["p_discharge"], dtype=float)
     schedule = pd.DataFrame(
         {
             "p_charge": p_charge,
@@ -308,16 +293,10 @@ def _solve_and_extract(
         }
     )
     soc = pd.Series(
-        [
-            float(bess["socini"]),
-            *[
-                float(value(bundle.variables.soc[step]))
-                for step in steps
-            ],
-        ],
+        [float(bess["socini"]), *values["soc"]],
         name="soc",
     )
-    margin = config.operational_power_margin
+    margin = config.bess.operational_power_margin
     active_constraints = _constraint_trace(
         schedule,
         soc,
@@ -381,6 +360,7 @@ def solve_day_ahead_operational(
     decision_time: pd.Timestamp | None = None,
     input_versions: Mapping[str, str] | None = None,
     config_version: str = "runtime-config",
+    settlement: SettlementEngine | None = None,
     solver=None,
 ) -> OperationalPlan:
     """Minimize next-day real-time energy and degradation costs.
@@ -412,12 +392,17 @@ def solve_day_ahead_operational(
             raise ValueError(
                 "q_long, p_long and p_ref must be provided together"
             )
+        if settlement is None:
+            raise ValueError(
+                "settlement engine is required for contract difference "
+                "（v3 M4：市场规则由 MarketMode 注入）"
+            )
         assert q_long is not None
         assert p_long is not None
         assert p_ref is not None
         contract_value = float(
             np.sum(
-                compute_contract_difference(
+                settlement.compute_contract_difference(
                     _finite_vector(q_long, "q_long"),
                     _finite_vector(p_long, "p_long"),
                     p_ref=_finite_vector(p_ref, "p_ref"),
@@ -438,11 +423,11 @@ def solve_day_ahead_operational(
 
     # ---- 确定 DR 开关 ----
     if dr_enabled is None:
-        dr_enabled = config.dr_enabled
+        dr_enabled = config.dr.dr_enabled
 
     horizon = len(load)
     steps = tuple(range(horizon))
-    dr_window = (config.dr_window_start, config.dr_window_end)
+    dr_window = (config.dr.dr_window_start, config.dr.dr_window_end)
     w_start, w_end = dr_window
 
     # ================================================================ #
@@ -462,7 +447,7 @@ def solve_day_ahead_operational(
             if w_hi > w_lo:
                 _add_window_discharge_floor(
                     bundle.model, bundle.variables, steps,
-                    window=(w_lo, w_hi), dt=config.dt,
+                    window=(w_lo, w_hi), dt=config.market.dt,
                     min_mwh=dr_min_window_discharge_mwh,
                 )
         schedule, soc, active_constraints, cost_val, risk_val, trace = (
@@ -500,7 +485,7 @@ def solve_day_ahead_operational(
         floor_window = dr_min_window or dr_window
         _add_window_discharge_floor(
             bundle_a.model, bundle_a.variables, steps,
-            window=floor_window, dt=config.dt,
+            window=floor_window, dt=config.market.dt,
             min_mwh=dr_min_window_discharge_mwh,
         )
     schedule_a, soc_a, _, cost_a, risk_a, _ = _solve_and_extract(
@@ -516,11 +501,11 @@ def solve_day_ahead_operational(
         solver=solver,
     )
 
-    if config.dr_baseline_mode == "fixed":
-        q0 = config.dr_baseline_mwh
+    if config.dr.dr_baseline_mode == "fixed":
+        q0 = config.dr.dr_baseline_mwh
     else:
         q0 = float(
-            schedule_a["p_discharge"].iloc[w_start:w_end].sum() * config.dt
+            schedule_a["p_discharge"].iloc[w_start:w_end].sum() * config.market.dt
         )
 
     # ================================================================ #
@@ -535,7 +520,7 @@ def solve_day_ahead_operational(
         floor_window = dr_min_window or dr_window
         _add_window_discharge_floor(
             bundle_b.model, bundle_b.variables, steps,
-            window=floor_window, dt=config.dt,
+            window=floor_window, dt=config.market.dt,
             min_mwh=dr_min_window_discharge_mwh,
         )
 
@@ -545,15 +530,15 @@ def solve_day_ahead_operational(
 
     # 窗口放电能量表达式
     window_discharge = lpSum(
-        bundle_b.variables.p_discharge[step] * config.dt
+        bundle_b.variables.p_discharge[step] * config.market.dt
         for step in steps
         if w_start <= step < w_end
     )
 
     # 大 M = 窗口最大可能放电能量
     window_len = w_end - w_start
-    margin = config.operational_power_margin
-    big_m = window_len * margin * float(bess["p_bdmax"]) * config.dt
+    margin = config.bess.operational_power_margin
+    big_m = window_len * margin * float(bess["p_bdmax"]) * config.market.dt
 
     # 增量 = max(0, 窗口放电 − Q0)，在 y=1 时绑定，y=0 时松弛
     # 下界：inc >= 窗口放电 − Q0 − M*(1−y)
@@ -573,12 +558,12 @@ def solve_day_ahead_operational(
     )
     # 申报 → 必须达门槛
     bundle_b.model += (
-        inc >= config.dr_minimum_response_mwh * y,
+        inc >= config.dr.dr_minimum_response_mwh * y,
         "dr_minimum_response",
     )
 
     # 目标函数追加补偿（负成本）：从 expected_cost 中减去
-    dr_compensation = config.dr_compensation_per_mwh * inc
+    dr_compensation = config.dr.dr_compensation_per_mwh * inc
     # 重设目标函数：原始 expected_cost - 补偿
     if scenario_set is None:
         bundle_b.model.setObjective(
@@ -588,7 +573,7 @@ def solve_day_ahead_operational(
         # 场景模式：补偿是确定性的，只从基线分支减去
         bundle_b.model.setObjective(
             bundle_b.expected_cost
-            + config.scenario_cvar_weight * bundle_b.cvar_expression
+            + config.scenario.scenario_cvar_weight * bundle_b.cvar_expression
             - dr_compensation
         )
 
@@ -612,7 +597,7 @@ def solve_day_ahead_operational(
     y_value = float(value(y))
     participate = bool(y_value > 0.5)
     committed_qty = inc_value if participate else 0.0
-    expected_compensation = config.dr_compensation_per_mwh * committed_qty
+    expected_compensation = config.dr.dr_compensation_per_mwh * committed_qty
 
     # 补充 DR 相关 trace 项
     trace_b.objective_components["dr_compensation"] = -expected_compensation
@@ -628,8 +613,8 @@ def solve_day_ahead_operational(
         reject_reason=None if participate else (
             "insufficient incentive: "
             f"inc={inc_value:.4f} MWh below "
-            f"minimum={config.dr_minimum_response_mwh:.4f} MWh"
-            if inc_value < config.dr_minimum_response_mwh
+            f"minimum={config.dr.dr_minimum_response_mwh:.4f} MWh"
+            if inc_value < config.dr.dr_minimum_response_mwh
             else "net margin below threshold"
         ),
     )

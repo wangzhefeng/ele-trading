@@ -7,11 +7,13 @@
 
 from __future__ import annotations
 
-from pulp import LpMaximize, LpProblem, PULP_CBC_CMD, lpSum, value
+from pulp import LpMaximize, LpProblem
 
-from ele_trading.utils import check_pulp_status
 from .bess_model import BESSConfig, add_bess_constraints
 from .contracts import BESSArbitrageResult
+from .extraction import extract_bess_values
+from .objectives import arbitrage_net_revenue
+from .solver import SolveStatus, solve_pulp_model
 
 
 def solve_bess_arbitrage(
@@ -64,24 +66,25 @@ def solve_bess_arbitrage(
     )
 
     # 目标：sum_t [ 电价 * (放电 - 充电) * dt - 退化成本 * (充电 + 放电) * dt ]
-    m += lpSum(
-        prices[t]
-        * (bess.p_discharge[t] - bess.p_charge[t])
-        * dt
-        - deg_cost
-        * (bess.p_charge[t] + bess.p_discharge[t])
-        * dt
-        for t in T
+    m += arbitrage_net_revenue(
+        bess,
+        T,
+        prices,
+        deg_cost_per_mwh=deg_cost,
+        dt=dt,
     )
 
-    m.solve(PULP_CBC_CMD(msg=False))
-    check_pulp_status(m, "bess arbitrage")
+    # 统一求解出口（v3 M3）：非最优显式失败，不返回伪造结果
+    result = solve_pulp_model(m)
+    if result.status is not SolveStatus.OPTIMAL:
+        raise RuntimeError(f"bess arbitrage failed: {result.message}")
 
+    values = extract_bess_values(bess, T)
     return {
-        'objective': value(m.objective),
-        'p_ch': [value(bess.p_charge[t]) for t in T],
-        'p_dis': [value(bess.p_discharge[t]) for t in T],
-        'soc': [value(bess.soc[t]) for t in T],
+        'objective': result.objective_value,
+        'p_ch': values["p_charge"],
+        'p_dis': values["p_discharge"],
+        'soc': values["soc"],
     }
 
 

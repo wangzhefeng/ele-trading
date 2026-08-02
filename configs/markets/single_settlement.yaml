@@ -1,13 +1,14 @@
 # Single-settlement market configuration (规则研究参考蒙西市场规则).
 # Values marked TODO(rule-confirm) are placeholders pending written rules.
+# v3 M2 (D-003): 六区段组合式 typed config；schema_version 缺失或不匹配时 loader 拒绝加载。
+
+schema_version: 1
 
 market:
   market_name: single_settlement  # 单结算模式标识
   settlement_mode: single_settlement
   settle_periods: 96
   dt: 0.25  # 15-minute periods
-
-long_recovery:
   long_recovery_lower_ratio: 0.90  # TODO(rule-confirm)
   long_recovery_upper_ratio: 1.05  # TODO(rule-confirm)
   long_recovery_multiplier: 1.20  # TODO(rule-confirm)

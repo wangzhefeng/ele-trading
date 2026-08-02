@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from ele_trading.markets.single_settlement.mode import SINGLE_SETTLEMENT_MODE
 from ele_trading.scenario.joint_builder import build_joint_scenarios
 from ele_trading.backtest.backtest import run_walk_forward_backtest
 from ele_trading.markets.single_settlement.config_loader import load_market_config
@@ -49,12 +50,13 @@ def _calendar(provider: SampleTradingDataProvider, n_days: int):
 
 def _orchestrator(provider, frames, *, scenario_count: int):
     config = load_market_config(MARKET_CONFIG_YAML)
-    config.scenario_count = scenario_count
+    config.scenario.scenario_count = scenario_count
     return TradingOrchestrator(
         data_provider=provider,
         forecast_provider=WalkForwardSeasonalNaiveProvider(frames),
         forecast_registry="seasonal-naive-walkforward-v1",
         scenario_builder=build_joint_scenarios,
+        market_mode=SINGLE_SETTLEMENT_MODE,
         config=config,
         bess=SAMPLE_BESS,
         config_version="regression-v1",

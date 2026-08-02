@@ -49,7 +49,6 @@ weather = [
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-norecursedirs = ["user_side_dispatch"]
 cache_dir = "tests/.pytest_cache"
 markers = [
     "slow: performance/budget tests skipped by default (run explicitly with -m slow)",

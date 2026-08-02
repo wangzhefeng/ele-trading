@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import overload
 
 import numpy as np
 import pandas as pd
 from scipy.spatial.distance import cdist
 
 from .contracts import Scenario, ScenarioSet
-from .sampler import PriceScenario
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,31 +24,6 @@ class ReductionDiagnostics:
     critical_peak_scenario_id: str
     critical_ramp_scenario_id: str
     critical_events_retained: bool
-
-
-def normalize_weights(
-    scenarios: list[PriceScenario],
-) -> list[PriceScenario]:
-    """Normalize legacy price-scenario weights to one."""
-    weights = np.asarray(
-        [scenario.weight for scenario in scenarios],
-        dtype=float,
-    )
-    if (
-        not np.isfinite(weights).all()
-        or (weights < 0.0).any()
-        or float(weights.sum()) <= 0.0
-    ):
-        raise ValueError("场景权重必须有限、非负且权重和大于 0")
-    total = float(weights.sum())
-    return [
-        PriceScenario(
-            name=scenario.name,
-            prices=list(scenario.prices),
-            weight=float(scenario.weight) / total,
-        )
-        for scenario in scenarios
-    ]
 
 
 def _joint_vectors(scenario_set: ScenarioSet) -> np.ndarray:
@@ -385,76 +358,8 @@ def _reduce_scenario_set(
     return reduced, diagnostics
 
 
-def _legacy_scenario_set(
-    scenarios: list[PriceScenario],
-) -> ScenarioSet:
-    normalized = normalize_weights(scenarios)
-    if not normalized:
-        raise ValueError("scenarios must not be empty")
-    horizon = len(normalized[0].prices)
-    if horizon <= 0 or any(
-        len(item.prices) != horizon for item in normalized
-    ):
-        raise ValueError("legacy price scenarios must share a non-empty horizon")
-    issue_time = pd.Timestamp("2000-01-01", tz="UTC")
-    index = pd.date_range(
-        issue_time + pd.Timedelta(hours=1),
-        periods=horizon,
-        freq="h",
-    )
-    return ScenarioSet(
-        horizon=horizon,
-        valid_time_index=index,
-        units={"price": "unknown"},
-        scenarios=tuple(
-            Scenario(
-                scenario_id=item.name,
-                probability=item.weight,
-                issue_time=issue_time,
-                trajectories={
-                    "price": pd.Series(
-                        item.prices,
-                        index=index,
-                        dtype=float,
-                    )
-                },
-                seed=0,
-                source_versions={"price": "legacy-price-scenario"},
-            )
-            for item in normalized
-        ),
-        metadata={"compatibility": "PriceScenario"},
-    )
-
-
-@overload
 def reduce_scenarios(
     scenarios: ScenarioSet,
-    top_k: int,
-    *,
-    quantiles: tuple[float, ...] = (0.1, 0.5, 0.9),
-    max_mean_drift: float | None = None,
-    max_quantile_drift: float | None = None,
-    preserve_critical_events: bool = True,
-    return_diagnostics: bool = False,
-) -> ScenarioSet: ...
-
-
-@overload
-def reduce_scenarios(
-    scenarios: list[PriceScenario],
-    top_k: int,
-    *,
-    quantiles: tuple[float, ...] = (0.1, 0.5, 0.9),
-    max_mean_drift: float | None = None,
-    max_quantile_drift: float | None = None,
-    preserve_critical_events: bool = True,
-    return_diagnostics: bool = False,
-) -> list[PriceScenario]: ...
-
-
-def reduce_scenarios(
-    scenarios: ScenarioSet | list[PriceScenario],
     top_k: int,
     *,
     quantiles: tuple[float, ...] = (0.1, 0.5, 0.9),
@@ -465,39 +370,17 @@ def reduce_scenarios(
 ):
     """Reduce joint scenarios by backward Wasserstein L1 selection.
 
-    ``ScenarioSet`` is the v2 API. A narrow ``PriceScenario`` adapter remains
-    for the active v1 sampler tests and delegates to the same reduction.
+    ``ScenarioSet`` 是唯一 canonical API（v3 D-007）；legacy
+    ``PriceScenario`` 兼容路径已随迁移完成删除。
     """
-    if isinstance(scenarios, ScenarioSet):
-        reduced, diagnostics = _reduce_scenario_set(
-            scenarios,
-            top_k,
-            quantiles=quantiles,
-            max_mean_drift=max_mean_drift,
-            max_quantile_drift=max_quantile_drift,
-            preserve_critical_events=preserve_critical_events,
-        )
-        if return_diagnostics:
-            return reduced, diagnostics
-        return reduced
-
-    scenario_set = _legacy_scenario_set(list(scenarios))
     reduced, diagnostics = _reduce_scenario_set(
-        scenario_set,
+        scenarios,
         top_k,
         quantiles=quantiles,
         max_mean_drift=max_mean_drift,
         max_quantile_drift=max_quantile_drift,
-        preserve_critical_events=False,
+        preserve_critical_events=preserve_critical_events,
     )
-    legacy = [
-        PriceScenario(
-            name=item.scenario_id,
-            prices=item.trajectories["price"].tolist(),
-            weight=item.probability,
-        )
-        for item in reduced.scenarios
-    ]
     if return_diagnostics:
-        return legacy, diagnostics
-    return legacy
+        return reduced, diagnostics
+    return reduced

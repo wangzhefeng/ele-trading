@@ -315,18 +315,6 @@ def test_joint_builder_accepts_full_cross_time_residual_correlation():
     assert scenarios.metadata["correlation_scope"] == "target_time"
 
 
-def test_legacy_price_wrapper_rejects_unknown_sampling_method():
-    """Treating a typo as MC breaks the compatibility method contract."""
-    from ele_trading.scenario.sampler import generate_price_scenarios
-
-    with pytest.raises(ValueError, match="method"):
-        generate_price_scenarios(
-            [100.0, 200.0],
-            num_scenarios=3,
-            method="typo",
-        )
-
-
 def test_active_scenario_optimization_imports_do_not_reach_trading_or_todo():
     """Active scenario/optimization imports must remain below the business layers."""
     probe = """
@@ -338,12 +326,13 @@ for module_name in (
     "ele_trading.scenario.contracts",
     "ele_trading.scenario.joint_builder",
     "ele_trading.scenario.reduction",
-    "ele_trading.scenario.sampler",
     "ele_trading.optimization",
     "ele_trading.optimization.bess_arbitrage",
     "ele_trading.optimization.bess_model",
     "ele_trading.optimization.contracts",
+    "ele_trading.optimization.extraction",
     "ele_trading.optimization.mpc_bess",
+    "ele_trading.optimization.objectives",
     "ele_trading.optimization.risk",
     "ele_trading.optimization.solver",
     "ele_trading.optimization.two_stage_cvar",

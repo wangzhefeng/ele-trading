@@ -29,7 +29,7 @@ from ele_trading.utils.log_util import logger
 
 def main() -> None:
     config = load_market_config(MARKET_CONFIG_YAML)
-    config.dr_enabled = True
+    config.dr.dr_enabled = True
     data_provider = SampleTradingDataProvider(DATA_TRADING)
     history_day, day = data_provider.available_days[-2:]
     decision_time = pd.Timestamp(day.date(), tz="Asia/Shanghai")
@@ -41,7 +41,7 @@ def main() -> None:
         ForecastRequest(
             target="price",
             scope_type="market",
-            scope_id=config.market_name,
+            scope_id=config.market.market_name,
             horizon=96,
             frequency="15min",
             issue_time=decision_time,
@@ -52,7 +52,7 @@ def main() -> None:
         ForecastRequest(
             target="load",
             scope_type="market",
-            scope_id=config.market_name,
+            scope_id=config.market.market_name,
             horizon=96,
             frequency="15min",
             issue_time=decision_time,
@@ -75,7 +75,7 @@ def main() -> None:
         plan.resource_schedule["p_discharge"]
         .iloc[w_start:w_end]
         .sum()
-        * config.dt
+        * config.market.dt
     )
     dr_adj, compensation, penalty = compute_dr_settlement(
         committed_qty=commitment.committed_qty,

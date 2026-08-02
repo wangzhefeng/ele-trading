@@ -13,7 +13,7 @@ uv sync
 uv run python app/<category>/<script_name>.py
 ```
 
-活动 PuLP 模型使用项目已安装的 CBC 求解路径。归档 CVXPY 入口需要额外安装：
+活动 PuLP 模型使用项目已安装的 CBC 求解路径。用户侧 CVXPY 入口需要额外安装：
 
 ```bash
 uv sync --extra archived-user-side
@@ -41,16 +41,16 @@ uv sync --extra archived-user-side
 | `run_dr.py` | 单结算配置、样例/预测 provider | 独立 DR 参与评估 |
 | `run_backtest.py` | 单结算配置、30 天样例 | walk-forward 回测与结果清单 |
 
-## 归档入口
+## 用户侧入口（独立领域能力，v3 M6 恢复）
 
-`app/user_side_dispatch/` 保留 4 个用户侧入口，不属于活动 API 或常规入口冒烟范围：
+`app/user_side_dispatch/` 保留 4 个用户侧入口；用户侧是独立领域能力，与市场主链互不依赖：
 
 - `run_user_side_bess_dispatch.py`
 - `run_user_side_pv_dispatch.py`
 - `run_user_side_pv_bess_dispatch.py`
 - `run_cvxp_bess_dispatch.py`
 
-归档入口的业务状态和恢复条件见 `src/ele_trading/user_side_dispatch/README.md`。
+用户侧能力的业务定位见 `src/ele_trading/user_side_dispatch/README.md`。
 
 ## 使用边界
 

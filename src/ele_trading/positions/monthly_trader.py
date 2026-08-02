@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ele_trading.markets.single_settlement.contracts import MarketConfig
+from ele_trading.markets.sections import MarketConfig
 from ele_trading.positions.contracts import (
     BidLadder,
     CorridorAdvice,
@@ -37,15 +37,15 @@ def build_position_corridor(
         float(
             np.clip(
                 price_band[0],
-                config.monthly_price_floor,
-                config.monthly_price_cap,
+                config.monthly.monthly_price_floor,
+                config.monthly.monthly_price_cap,
             )
         ),
         float(
             np.clip(
                 price_band[1],
-                config.monthly_price_floor,
-                config.monthly_price_cap,
+                config.monthly.monthly_price_floor,
+                config.monthly.monthly_price_cap,
             )
         ),
     )
@@ -126,8 +126,8 @@ def build_bid_ladder(
     bid_price = [
         np.clip(
             p,
-            config.monthly_price_floor,
-            config.monthly_price_cap,
+            config.monthly.monthly_price_floor,
+            config.monthly.monthly_price_cap,
         )
         for p in bid_price
     ]

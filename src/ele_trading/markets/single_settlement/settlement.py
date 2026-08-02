@@ -67,25 +67,25 @@ def compute_long_recovery(
 
     ratio = q_long_month / q_real_month
     if (
-        ratio > config.long_recovery_upper_ratio
+        ratio > config.market.long_recovery_upper_ratio
         and p_long_month < p_ref_month
     ):
         return (
-            config.long_recovery_multiplier
+            config.market.long_recovery_multiplier
             * (
                 q_long_month
-                - config.long_recovery_upper_ratio * q_real_month
+                - config.market.long_recovery_upper_ratio * q_real_month
             )
             * (p_ref_month - p_long_month)
         )
     if (
-        ratio < config.long_recovery_lower_ratio
+        ratio < config.market.long_recovery_lower_ratio
         and p_long_month > p_ref_month
     ):
         return (
-            config.long_recovery_multiplier
+            config.market.long_recovery_multiplier
             * (
-                config.long_recovery_lower_ratio * q_real_month
+                config.market.long_recovery_lower_ratio * q_real_month
                 - q_long_month
             )
             * (p_long_month - p_ref_month)
@@ -169,10 +169,10 @@ def compute_dr_settlement(
     if committed_qty <= 0.0:
         return 0.0, 0.0, 0.0
     inc_actual = max(0.0, executed_window_discharge_mwh - baseline_qty)
-    compensation = config.dr_compensation_per_mwh * min(
+    compensation = config.dr.dr_compensation_per_mwh * min(
         inc_actual, committed_qty
     )
     shortfall = max(0.0, committed_qty - inc_actual)
-    penalty = config.dr_penalty_per_mwh * shortfall
+    penalty = config.dr.dr_penalty_per_mwh * shortfall
     dr_adjustment = penalty - compensation
     return dr_adjustment, compensation, penalty

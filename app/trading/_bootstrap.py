@@ -38,3 +38,12 @@ def load_daily_samples() -> dict:
         day: provider.frame_for_day(day)
         for day in provider.available_days
     }
+
+
+def load_market_mode():
+    """组合根：选择活动市场模式（v3 M4 / D-002，当前为单结算）。"""
+    from ele_trading.markets.single_settlement.mode import (
+        SINGLE_SETTLEMENT_MODE,
+    )
+
+    return SINGLE_SETTLEMENT_MODE

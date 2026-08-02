@@ -208,11 +208,14 @@ for package, names in {
     assert result.returncode == 0, result.stderr
 
 
-def test_phase1a_normal_pytest_discovery_excludes_archived_tests():
-    """tests/user_side_dispatch 必须保留手动执行能力，但不得进入常规 pytest 收集。"""
+def test_user_side_dispatch_is_active_independent_domain():
+    """v3 D-001/M6：用户侧已恢复为活动独立领域，进入常规 pytest 收集，
+    且结构守卫 test_user_side_dispatch_stays_independent 强制其只依赖 utils。
+    pyproject 不再通过 norecursedirs 排除该目录。"""
     pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert "norecursedirs" in pyproject
-    assert '"user_side_dispatch"' in pyproject
+    assert "norecursedirs" not in pyproject, (
+        "v3 D-001/M6 已恢复用户侧为活动领域，pyproject 不得再用 norecursedirs 排除"
+    )
 
 
 def test_investment_estimation_production_sources_do_not_import_active_ele_trading():

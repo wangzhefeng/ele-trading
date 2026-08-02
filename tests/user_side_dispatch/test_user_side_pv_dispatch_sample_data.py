@@ -14,7 +14,7 @@ from ele_trading.utils.io import read_yaml
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-CONFIG_PATH = PROJECT_ROOT / 'configs' / 'optimization' / 'user_side_dispatch' / 'user_side_pv_dispatch.yaml'
+CONFIG_PATH = PROJECT_ROOT / 'configs' / 'user_side_dispatch' / 'user_side_pv_dispatch.yaml'
 
 
 def test_user_side_pv_dispatch_config_can_be_loaded():

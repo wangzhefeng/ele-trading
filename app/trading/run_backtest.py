@@ -20,7 +20,7 @@ from _bootstrap import DATA_TRADING, MARKET_CONFIG_YAML, RESULTS_TRADING, SAMPLE
 
 from ele_trading.scenario.joint_builder import build_joint_scenarios
 from ele_trading.backtest.backtest import run_walk_forward_backtest
-from ele_trading.markets.single_settlement.config_loader import load_market_config
+from ele_trading.markets.single_settlement.mode import SINGLE_SETTLEMENT_MODE
 from ele_trading.trading.orchestrator import TradingOrchestrator
 from ele_trading.trading.demo_fixtures import (
     SampleTradingDataProvider,
@@ -69,15 +69,16 @@ def main() -> None:
         for day in decision_days
     }
 
-    config = load_market_config(MARKET_CONFIG_YAML)
+    config = SINGLE_SETTLEMENT_MODE.load_config(MARKET_CONFIG_YAML)
     if args.scenario_count is not None:
-        config.scenario_count = args.scenario_count
+        config.scenario.scenario_count = args.scenario_count
     config_version = hashlib.sha256(MARKET_CONFIG_YAML.read_bytes()).hexdigest()
     orchestrator = TradingOrchestrator(
         data_provider=data_provider,
         forecast_provider=WalkForwardSeasonalNaiveProvider(frames),
         forecast_registry="seasonal-naive-walkforward-v1",
         scenario_builder=build_joint_scenarios,
+        market_mode=SINGLE_SETTLEMENT_MODE,
         config=config,
         bess=SAMPLE_BESS,
         config_version=config_version,
@@ -100,7 +101,7 @@ def main() -> None:
         "n_decision_days": int(len(report)),
         "intraday_start": args.intraday_start,
         "risk_aware_weight": args.risk_weight,
-        "scenario_count": config.scenario_count,
+        "scenario_count": config.scenario.scenario_count,
         "total_strategy_cost": float(report["strategy_cost"].sum()),
         "total_no_storage_cost": float(report["no_storage_cost"].sum()),
         "total_deterministic_cost": float(report["deterministic_cost"].sum()),

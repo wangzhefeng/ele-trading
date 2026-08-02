@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, cast
 
 import numpy as np
 import pandas as pd
@@ -20,18 +20,22 @@ from ele_trading.domain.contracts import (
     OperationalPlan,
     PositionState,
 )
-from ele_trading.markets.single_settlement.contracts import (
-    MarketConfig,
-    SettlementReport,
+from ele_trading.domain.events import (
+    AwardEvent,
+    DispatchEvent,
+    ForecastEvent,
+    MarketCalendar,
+    MeteringEvent,
+    SettlementEvent,
+    TradingEvent,
+    derive_input_versions,
 )
+from ele_trading.markets.protocol import MarketMode
+from ele_trading.markets.sections import MarketConfig
 from ele_trading.operations.day_ahead_coupled import (
     solve_day_ahead_operational,
 )
 from ele_trading.operations.intraday_rolling import solve_intraday_rolling
-from ele_trading.markets.single_settlement.settlement import (
-    build_settlement_report,
-    compute_dr_settlement,
-)
 
 
 @dataclass(slots=True)
@@ -43,7 +47,16 @@ class TradingPipelineResult:
     scenarios: ScenarioSet
     day_ahead_plan: OperationalPlan
     intraday_plan: IntradayPlan
-    settlement_report: SettlementReport
+    settlement_report: Any  # 报告类型由市场模式定义（v3 M4）
+    events: tuple[TradingEvent, ...]  # 事件链（v3 M5 / D-006）
+
+
+def _dispatch_model_tag(plan: OperationalPlan) -> str:
+    """从计划的 DecisionTrace 取 dispatch 模型版本（trace 缺失时 unknown）。"""
+    trace = plan.decision_trace
+    if trace is None:
+        return "unknown"
+    return str(trace.model_versions.get("dispatch", "unknown"))
 
 
 def _period_energy(result: ForecastResult, dt: float) -> np.ndarray:
@@ -91,6 +104,7 @@ class TradingOrchestrator:
         forecast_provider: Any,
         forecast_registry: Any,
         scenario_builder: Callable[..., ScenarioSet],
+        market_mode: MarketMode,
         config: MarketConfig,
         bess: Mapping[str, float],
         config_version: str,
@@ -100,6 +114,7 @@ class TradingOrchestrator:
         self.forecast_provider = forecast_provider
         self.forecast_registry = forecast_registry
         self.scenario_builder = scenario_builder
+        self.market_mode = market_mode
         self.config = config
         self.bess = dict(bess)
         self.config_version = config_version
@@ -116,7 +131,7 @@ class TradingOrchestrator:
             request = ForecastRequest(
                 target=target,
                 scope_type="market",
-                scope_id=self.config.market_name,
+                scope_id=self.config.market.market_name,
                 horizon=horizon,
                 frequency="15min",
                 issue_time=decision_time,
@@ -179,29 +194,66 @@ class TradingOrchestrator:
             bundle.load_forecast,
             bundle.wind_forecast,
             bundle.pv_forecast,
-            num_scenarios=self.config.scenario_count,
-            method=self.config.scenario_method,
-            random_seed=self.config.scenario_seed,
+            num_scenarios=self.config.scenario.scenario_count,
+            method=self.config.scenario.scenario_method,
+            random_seed=self.config.scenario.scenario_seed,
         )
-        input_versions = {
-            "position": position.source_version,
-            "price": bundle.price_forecast.model_version,
-            "load": bundle.load_forecast.model_version,
-            "wind_power": bundle.wind_forecast.model_version,
-            "pv_power": bundle.pv_forecast.model_version,
-            "forecast_registry": str(self.forecast_registry),
-        }
+        # ---- 事件链（v3 M5）：Award + Forecast 事件先建，
+        #      input_versions 由事件链唯一派生 ----
+        calendar = MarketCalendar(
+            market=self.config.market.market_name,
+            tz=str(decision_time.tz),
+            freq_minutes=int(round(self.config.market.dt * 60)),
+            settle_periods=self.config.market.settle_periods,
+        )
+        events: list[TradingEvent] = []
+        events.append(
+            AwardEvent(
+                issue_time=decision_time,
+                valid_time=cast(pd.Timestamp, valid_times[0]),
+                version=position.source_version,
+                source="position",
+                calendar=calendar,
+                unit="MWh",
+            )
+        )
+        for target, forecast_result in (
+            ("price", bundle.price_forecast),
+            ("load", bundle.load_forecast),
+            ("wind_power", bundle.wind_forecast),
+            ("pv_power", bundle.pv_forecast),
+        ):
+            events.append(
+                ForecastEvent(
+                    issue_time=cast(
+                        pd.Timestamp,
+                        pd.Timestamp(forecast_result.request.issue_time),
+                    ),
+                    valid_time=cast(
+                        pd.Timestamp,
+                        pd.Timestamp(forecast_result.point.index[0]),
+                    ),
+                    version=forecast_result.model_version,
+                    source=target,
+                    calendar=calendar,
+                    unit=str(forecast_result.unit),
+                )
+            )
+        input_versions = derive_input_versions(
+            events,
+            extra={"forecast_registry": str(self.forecast_registry)},
+        )
         load_energy = _period_energy(
             bundle.load_forecast,
-            self.config.dt,
+            self.config.market.dt,
         )
         wind_energy = _period_energy(
             bundle.wind_forecast,
-            self.config.dt,
+            self.config.market.dt,
         )
         pv_energy = _period_energy(
             bundle.pv_forecast,
-            self.config.dt,
+            self.config.market.dt,
         )
         net_load_forecast = np.maximum(
             load_energy - wind_energy - pv_energy,
@@ -225,6 +277,7 @@ class TradingOrchestrator:
             decision_time=decision_time,
             input_versions=input_versions,
             config_version=self.config_version,
+            settlement=self.market_mode.settlement,
             solver=self.solver,
         )
         executed_prefix = day_ahead.resource_schedule.iloc[
@@ -242,7 +295,7 @@ class TradingOrchestrator:
                     executed_prefix["p_discharge"]
                     .iloc[w_start:executed_in_window]
                     .sum()
-                    * self.config.dt
+                    * self.config.market.dt
                 )
 
         intraday = solve_intraday_rolling(
@@ -263,6 +316,7 @@ class TradingOrchestrator:
             executed_window_discharge_mwh=executed_window_discharge,
             intraday_start=intraday_start,
             config_version=self.config_version,
+            settlement=self.market_mode.settlement,
             solver=self.solver,
         )
         executed_schedule = pd.concat(
@@ -275,10 +329,10 @@ class TradingOrchestrator:
         q_real = np.maximum(
             actual_load_arr
             - executed_schedule["p_net"].to_numpy(dtype=float)
-            * self.config.dt,
+            * self.config.market.dt,
             0.0,
         )
-        baseline = build_settlement_report(
+        baseline = self.market_mode.settlement.build_settlement_report(
             q_real=actual_load_arr,
             p_real=actual_price_arr,
             q_long=q_long,
@@ -290,8 +344,8 @@ class TradingOrchestrator:
                 executed_schedule["p_charge"]
                 + executed_schedule["p_discharge"]
             ).sum()
-            * self.config.dt
-            * self.config.deg_cost_per_mwh
+            * self.config.market.dt
+            * self.config.bess.deg_cost_per_mwh
         )
 
         # ---- DR 履约结算 ----
@@ -302,16 +356,18 @@ class TradingOrchestrator:
                 executed_schedule["p_discharge"]
                 .iloc[w_start:w_end]
                 .sum()
-                * self.config.dt
+                * self.config.market.dt
             )
-            dr_adjustment, _, _ = compute_dr_settlement(
-                committed_qty=dr_commitment.committed_qty,
-                executed_window_discharge_mwh=executed_window_discharge_total,
-                baseline_qty=dr_commitment.baseline_qty,
-                config=self.config,
+            dr_adjustment, _, _ = (
+                self.market_mode.settlement.compute_dr_settlement(
+                    committed_qty=dr_commitment.committed_qty,
+                    executed_window_discharge_mwh=executed_window_discharge_total,
+                    baseline_qty=dr_commitment.baseline_qty,
+                    config=self.config,
+                )
             )
 
-        settlement = build_settlement_report(
+        settlement = self.market_mode.settlement.build_settlement_report(
             q_real=q_real,
             p_real=actual_price_arr,
             q_long=q_long,
@@ -324,6 +380,47 @@ class TradingOrchestrator:
             baseline_cost=baseline.total_cost,
             trace=intraday.schedule.decision_trace,
         )
+        # ---- 事件链收尾（v3 M5）：Dispatch → Metering → Settlement ----
+        events.append(
+            DispatchEvent(
+                issue_time=decision_time,
+                valid_time=cast(pd.Timestamp, valid_times[0]),
+                version=_dispatch_model_tag(day_ahead),
+                source="dispatch:day_ahead",
+                calendar=calendar,
+                unit="MW",
+            )
+        )
+        events.append(
+            DispatchEvent(
+                issue_time=decision_time,
+                valid_time=cast(pd.Timestamp, valid_times[intraday_start]),
+                version=_dispatch_model_tag(intraday.schedule),
+                source="dispatch:intraday",
+                calendar=calendar,
+                unit="MW",
+            )
+        )
+        events.append(
+            MeteringEvent(
+                issue_time=decision_time,
+                valid_time=cast(pd.Timestamp, valid_times[0]),
+                version=f"actuals:{decision_time.date()}",
+                source="metering",
+                calendar=calendar,
+                unit="MWh",
+            )
+        )
+        events.append(
+            SettlementEvent(
+                issue_time=decision_time,
+                valid_time=cast(pd.Timestamp, valid_times[0]),
+                version=self.config_version,
+                source=f"settlement:{self.market_mode.name}",
+                calendar=calendar,
+                unit="CNY",
+            )
+        )
         return TradingPipelineResult(
             position_state=position,
             forecasts=bundle,
@@ -331,4 +428,5 @@ class TradingOrchestrator:
             day_ahead_plan=day_ahead,
             intraday_plan=intraday,
             settlement_report=settlement,
+            events=tuple(events),
         )

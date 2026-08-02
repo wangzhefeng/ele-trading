@@ -38,7 +38,7 @@
   → walk-forward 回测与指标
 ```
 
-当前默认链路使用单结算。双结算已有独立结算规则实现和测试，但尚未接入头寸、运行、统一编排和回测。完整事实、成熟度与已知缺口见[当前实现基线](docs/电力市场交易当前实现基线.md)。
+当前默认链路使用单结算。市场模式经 `MarketMode` 协议在入口选择注入；双结算已具备协议装配与规则测试，尚无头寸、运行、编排和回测的主链用例。完整事实、成熟度与已知缺口见[当前实现基线](docs/电力市场交易当前实现基线.md)。
 
 ## 仓库结构
 
@@ -49,14 +49,14 @@ ele-trading/
 │   ├── data_provider/         # 市场、资产、气象数据与质量处理
 │   ├── forecasting/           # 统一预测接口与基线模型
 │   ├── scenario/              # 联合场景生成与缩减
-│   ├── optimization/          # BESS、MPC、Two-stage + CVaR
+│   ├── optimization/          # 共享 BESS 物理核、目标组件、统一求解出口、套利/MPC/Two-stage + CVaR
 │   ├── positions/             # 中长期和月度头寸
 │   ├── operations/            # 日前运行与日内滚动
-│   ├── markets/               # 单结算与双结算规则实现
+│   ├── markets/               # MarketMode 协议、共享配置子对象、单/双结算插件
 │   ├── demand_response/       # 独立 DR 经济性评估
-│   ├── trading/               # 活动交易编排与 demo fixtures
+│   ├── trading/               # 活动交易编排、事件链与 demo fixtures
 │   ├── backtest/              # walk-forward 回测与指标
-│   ├── user_side_dispatch/    # 归档用户侧/分布式/CVXPY 调度
+│   ├── user_side_dispatch/    # 用户侧/分布式/CVXPY 调度（独立领域能力）
 │   └── utils/                 # 时间、数据对齐、IO、数值和日志工具
 ├── src/investment_estimation/ # 平级、自包含的投资收益测算包
 ├── app/                       # 项目级入口
@@ -79,8 +79,8 @@ ele-trading/
 ### 场景与优化
 
 - 联合场景支持 LHS、Monte Carlo、相关性注入和 Wasserstein L1 后向缩减。
-- 活动优化包含 BESS 套利、MPC 和 Two-stage + CVaR。
-- 日前运行支持共享的部分 BESS 物理约束、可选 CVaR 和 DR 联合优化；日内支持冻结已执行前缀、滚动重优化与受控回退。
+- 活动优化包含 BESS 套利、MPC 和 Two-stage + CVaR，全部构建在统一共享 BESS 物理核之上，共用目标组件层、结果提取与 typed 求解出口。
+- 日前运行支持可选 CVaR 和 DR 联合优化；日内支持冻结已执行前缀、滚动重优化与受控回退。
 
 ### 市场与回测
 
@@ -111,15 +111,15 @@ uv run python app/trading/run_backtest.py
 uv run python -m pytest -q
 ```
 
-排除投资测算和归档用户侧后的活动验证命令及最近结果见[当前实现基线](docs/电力市场交易当前实现基线.md#8-验证快照)。2026-08-02 的快照为 `366 passed, 3 deselected, 3 warnings`；这是带日期的事实记录，不是永久测试数量。
+排除投资测算后的活动验证命令及最近结果见[当前实现基线](docs/电力市场交易当前实现基线.md#8-验证快照)。2026-08-02（v3 M0–M6 迁移后）的快照为 `470 passed, 4 skipped, 3 deselected`；这是带日期的事实记录，不是永久测试数量。
 
 ## 当前实现状态
 
-- 单结算样例主链已形成可运行闭环。
-- 预测时间契约、场景概率、BESS 运行计划和结算分项已有活动测试保护。
-- 市场规则目前主要在结算层插件化，其他策略层仍直接依赖默认单结算配置。
-- `MarketConfig`、BESS 物理核复用、日前/日内职责拆分、事件契约和需量预测归属由 v3 重新决策。
-- 归档用户侧模块默认不进入活动 API、常规入口和常规测试。
+- 单结算样例主链已形成可运行闭环，决策全程经事件链可追踪。
+- 预测时间契约、场景概率、BESS 运行计划、结算分项和事件链完整性已有活动测试保护。
+- 市场模式已完整插件化：主链只依赖 `MarketMode`/`SettlementEngine` 协议与共享配置子对象，模式选择在入口完成；双结算经同一协议可注入。
+- 配置为六子对象组合式 typed config + `schema_version`；BESS 物理核、目标组件、求解出口与结果提取已四层拆分。
+- 用户侧调度已恢复为独立领域能力；需量控制的经济规则待业务侧确认（见需量预测 v0 方案待确认问题）。
 
 ## 数据边界
 

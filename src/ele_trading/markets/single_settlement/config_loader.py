@@ -1,34 +1,41 @@
-"""Load the one-to-one active single-settlement market configuration."""
+"""Load the sectioned single-settlement market configuration (schema v1).
+
+v3 M2（D-003）：YAML 按 market/scenario/bess/dr/monthly/solver 六个区段
+装配到同名 typed config 子对象；字段级取值校验在各子对象
+``__post_init__`` 中完成；旧扁平格式经
+``scripts/migrate_market_config_v3.py`` 转换，不做双格式兼容。
+"""
 
 from __future__ import annotations
 
 from dataclasses import fields
-from math import isfinite
 from pathlib import Path
 from typing import Any
 
-from ele_trading.markets.single_settlement.contracts import MarketConfig
+from ele_trading.markets.sections import (
+    CURRENT_SCHEMA_VERSION,
+    BessSection,
+    DrSection,
+    MarketConfig,
+    MarketSection,
+    MonthlySection,
+    ScenarioSection,
+    SolverSection,
+)
 from ele_trading.utils.io import read_yaml
 
-
-def _flatten_sections(raw: dict[str, Any]) -> dict[str, Any]:
-    flat: dict[str, Any] = {}
-    for section_name, section in raw.items():
-        if not isinstance(section, dict):
-            raise ValueError(f"config section {section_name!r} must be a mapping")
-        for key, value in section.items():
-            if isinstance(value, dict):
-                raise ValueError(
-                    f"config field {section_name}.{key} must not be nested"
-                )
-            if key in flat:
-                raise ValueError(f"duplicate config field {key!r}")
-            flat[key] = value
-    return flat
+SECTION_TYPES = {
+    "market": MarketSection,
+    "scenario": ScenarioSection,
+    "bess": BessSection,
+    "dr": DrSection,
+    "monthly": MonthlySection,
+    "solver": SolverSection,
+}
 
 
 def load_market_config(path: str | Path) -> MarketConfig:
-    """Load YAML only when its leaves map exactly to ``MarketConfig``."""
+    """Load YAML only when its sections map exactly to the typed sections."""
     config_path = Path(path)
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
@@ -36,88 +43,43 @@ def load_market_config(path: str | Path) -> MarketConfig:
     if not isinstance(raw, dict):
         raise ValueError("market config must be a mapping")
 
-    flat = _flatten_sections(raw)
-    expected = {field.name for field in fields(MarketConfig)}
-    actual = set(flat)
-    if actual != expected:
-        missing = sorted(expected - actual)
-        unknown = sorted(actual - expected)
+    version = raw.get("schema_version")
+    if version != CURRENT_SCHEMA_VERSION:
         raise ValueError(
-            f"MarketConfig/YAML fields differ: missing={missing}, unknown={unknown}"
+            f"schema_version must be {CURRENT_SCHEMA_VERSION}; "
+            f"got {version!r} (legacy flat configs must be migrated with "
+            "scripts/migrate_market_config_v3.py)"
         )
 
-    config = MarketConfig(**flat)
-    _validate_config(config)
-    return config
+    section_names = set(raw) - {"schema_version"}
+    expected_names = set(SECTION_TYPES)
+    if section_names != expected_names:
+        missing = sorted(expected_names - section_names)
+        unknown = sorted(section_names - expected_names)
+        raise ValueError(
+            f"config sections differ: missing={missing}, unknown={unknown}"
+        )
 
+    sections: dict[str, Any] = {}
+    for name, section_type in SECTION_TYPES.items():
+        section_raw = raw[name]
+        if not isinstance(section_raw, dict):
+            raise ValueError(f"config section {name!r} must be a mapping")
+        expected_fields = {field.name for field in fields(section_type)}
+        actual_fields = set(section_raw)
+        if actual_fields != expected_fields:
+            missing = sorted(expected_fields - actual_fields)
+            unknown = sorted(actual_fields - expected_fields)
+            raise ValueError(
+                f"config section {name!r} fields differ: "
+                f"missing={missing}, unknown={unknown}"
+            )
+        sections[name] = section_type(**section_raw)
 
-def _finite_non_negative(name: str, value: object) -> None:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not isfinite(value)
-        or value < 0
-    ):
-        raise ValueError(f"{name} must be finite and non-negative")
-
-
-def _validate_config(config: MarketConfig) -> None:
-    if config.market_name != "single_settlement":
+    config = MarketConfig(schema_version=version, **sections)
+    # ---------------- 单结算模式身份校验（插件专属，不上移到共享词汇） ----------------
+    if config.market.market_name != "single_settlement":
         raise ValueError("market_name must be single_settlement")
-    if config.settlement_mode != "single_settlement":
+    if config.market.settlement_mode != "single_settlement":
         raise ValueError("settlement_mode must be single_settlement")
-    if config.dt != 0.25:
-        raise ValueError("dt must be 0.25 for 15-minute trading")
-    if (
-        config.settle_periods <= 0
-        or 96 % config.settle_periods != 0
-    ):
-        raise ValueError("settle_periods must be a positive divisor of 96")
-    if not (
-        0.0
-        < config.long_recovery_lower_ratio
-        < config.long_recovery_upper_ratio
-    ):
-        raise ValueError("invalid long-recovery ratio band")
-    _finite_non_negative(
-        "long_recovery_multiplier",
-        config.long_recovery_multiplier,
-    )
-    _finite_non_negative("pos_tol_ratio", config.pos_tol_ratio)
-
-    if config.scenario_method not in {"lhs", "mc"}:
-        raise ValueError("scenario_method must be lhs or mc")
-    if config.scenario_count <= 0:
-        raise ValueError("scenario_count must be positive")
-    if not 0.0 < config.scenario_cvar_alpha < 1.0:
-        raise ValueError("scenario_cvar_alpha must be within (0, 1)")
-    for name in (
-        "two_stage_scenario_deviation_cost_positive",
-        "two_stage_scenario_deviation_cost_negative",
-        "scenario_cvar_weight",
-        "operational_power_margin",
-        "throughput_max_ratio",
-        "deg_cost_per_mwh",
-        "dr_compensation_per_mwh",
-        "dr_penalty_per_mwh",
-        "dr_minimum_margin",
-        "dr_minimum_response_mwh",
-        "monthly_trade_unit_mwh",
-        "solver_time_limit_seconds",
-        "solver_mip_gap",
-    ):
-        _finite_non_negative(name, getattr(config, name))
-    if not 0.0 < config.operational_power_margin <= 1.0:
-        raise ValueError("operational_power_margin must be within (0, 1]")
-    if not 0 <= config.dr_window_start < config.dr_window_end <= 96:
-        raise ValueError("DR window must be within the 96-period day")
-    if config.dr_baseline_mode not in {"auto", "fixed"}:
-        raise ValueError("dr_baseline_mode must be auto or fixed")
-    if config.dr_baseline_mode == "fixed" and config.dr_baseline_mwh <= 0.0:
-        raise ValueError(
-            "dr_baseline_mwh must be positive when dr_baseline_mode is fixed"
-        )
-    if config.monthly_price_floor >= config.monthly_price_cap:
-        raise ValueError("monthly price floor must be below the cap")
-    if config.solver_name not in {"cbc", "glpk"}:
-        raise ValueError("solver_name must be cbc or glpk")
+    return config

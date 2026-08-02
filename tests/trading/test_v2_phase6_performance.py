@@ -6,6 +6,7 @@ Marked ``slow`` and skipped by default (see pyproject ``addopts``). Run explicit
 """
 
 from __future__ import annotations
+from ele_trading.markets.single_settlement.mode import SINGLE_SETTLEMENT_MODE
 
 import time
 from pathlib import Path
@@ -59,7 +60,7 @@ def _ninety_six_point_day():
 def test_deterministic_day_ahead_lp_under_5_seconds():
     """96-point deterministic LP must solve within the §10.6 budget (≤5s)."""
     config = load_market_config(MARKET_CONFIG_YAML)
-    config.scenario_cvar_weight = 0.0
+    config.scenario.scenario_cvar_weight = 0.0
     net_load, price, q_long, p_long = _ninety_six_point_day()
 
     start = time.perf_counter()
@@ -71,6 +72,7 @@ def test_deterministic_day_ahead_lp_under_5_seconds():
         q_long=q_long,
         p_long=p_long,
         p_ref=price,
+        settlement=SINGLE_SETTLEMENT_MODE.settlement,
     )
     elapsed = time.perf_counter() - start
 
@@ -81,7 +83,7 @@ def test_deterministic_day_ahead_lp_under_5_seconds():
 def test_single_intraday_rolling_under_10_seconds():
     """A single intraday rolling solve must finish within the §10.6 budget (≤10s)."""
     config = load_market_config(MARKET_CONFIG_YAML)
-    config.scenario_cvar_weight = 0.0
+    config.scenario.scenario_cvar_weight = 0.0
     net_load, price, q_long, p_long = _ninety_six_point_day()
     mid = len(net_load) // 2
 
@@ -93,6 +95,7 @@ def test_single_intraday_rolling_under_10_seconds():
         q_long=q_long,
         p_long=p_long,
         p_ref=price,
+        settlement=SINGLE_SETTLEMENT_MODE.settlement,
     )
     executed_prefix = day_ahead.resource_schedule.iloc[:mid]
 
@@ -108,6 +111,7 @@ def test_single_intraday_rolling_under_10_seconds():
         q_long=q_long[mid:],
         p_long=p_long[mid:],
         p_ref=price[mid:],
+        settlement=SINGLE_SETTLEMENT_MODE.settlement,
     )
     elapsed = time.perf_counter() - start
 
@@ -132,6 +136,7 @@ def test_thirty_day_walk_forward_under_10_minutes():
         forecast_provider=WalkForwardSeasonalNaiveProvider(frames),
         forecast_registry="seasonal-naive-walkforward-v1",
         scenario_builder=build_joint_scenarios,
+        market_mode=SINGLE_SETTLEMENT_MODE,
         config=config,
         bess=SAMPLE_BESS,
         config_version="perf-v1",

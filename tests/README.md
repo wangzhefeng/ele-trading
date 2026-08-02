@@ -55,15 +55,13 @@
 
 严格排除平级投资测算入口时，应按上述节点运行，而不是直接运行整个 `test_entry_scripts.py`。
 
-## 3. 归档用户侧测试
+## 3. 用户侧测试（独立领域能力，v3 M6 恢复）
 
-`tests/user_side_dispatch/` 覆盖归档的用户侧、分布式和 CVXPY 调度。pytest 配置通过 `norecursedirs = ["user_side_dispatch"]` 将其排除在常规收集之外，只能显式运行：
+`tests/user_side_dispatch/` 覆盖用户侧、分布式和 CVXPY 调度，已恢复进入常规收集。用户侧与市场主链互不依赖，其失败应与交易链结果分开解读。
 
 ```bash
 uv run python -m pytest -q tests/user_side_dispatch
 ```
-
-归档测试通过不表示相应能力已经恢复为活动 API。
 
 ## 4. 独立投资测算测试
 
@@ -91,7 +89,7 @@ uv run python -m pytest -q \
 uv run python -m pytest -q
 ```
 
-完整仓库测试会包含独立投资测算，但仍根据 pytest 配置排除归档用户侧目录。
+完整仓库测试会包含独立投资测算与已恢复的用户侧目录。
 
 ### 慢测试
 

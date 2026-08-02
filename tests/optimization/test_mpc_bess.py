@@ -55,3 +55,15 @@ def test_default_fraction_backward_compat():
     # obj 可能因 solver 等价解而接近但不一定相等；验证两结果都存在即可
     assert result_default['obj'] > 0
     assert result_explicit['obj'] > 0
+
+
+def test_mpc_window_matches_arbitrage_on_full_horizon():
+    """MPC 窗口覆盖全序列时，与共享核套利模型同模同解（v3 M1 物理核统一回归）。"""
+    from ele_trading.optimization.bess_arbitrage import solve_bess_arbitrage
+
+    mpc = solve_one_mpc_window(
+        SAMPLE_PRICES, soc0=5.0, horizon=len(SAMPLE_PRICES), dt=0.25,
+    )
+    arbitrage = solve_bess_arbitrage(SAMPLE_PRICES, soc0=5.0, dt=0.25)
+
+    assert mpc['obj'] == pytest.approx(arbitrage['objective'], rel=1e-6)

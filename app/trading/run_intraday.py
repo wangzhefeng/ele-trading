@@ -13,7 +13,7 @@ from ele_trading.forecasting.seasonal_naive_provider import (
     SeasonalNaiveTradingForecastProvider,
 )
 from ele_trading.scenario.joint_builder import build_joint_scenarios
-from ele_trading.markets.single_settlement.config_loader import load_market_config
+from ele_trading.markets.single_settlement.mode import SINGLE_SETTLEMENT_MODE
 from ele_trading.trading.orchestrator import TradingOrchestrator
 from ele_trading.trading.demo_fixtures import SampleTradingDataProvider
 
@@ -33,9 +33,9 @@ def main() -> None:
     day = days[-1]
     history_day = days[-2]
     decision_time = pd.Timestamp(day.date(), tz="Asia/Shanghai")
-    config = load_market_config(MARKET_CONFIG_YAML)
+    config = SINGLE_SETTLEMENT_MODE.load_config(MARKET_CONFIG_YAML)
     if args.scenario_count is not None:
-        config.scenario_count = args.scenario_count
+        config.scenario.scenario_count = args.scenario_count
     forecast_provider = SeasonalNaiveTradingForecastProvider(
         data_provider.frame_for_day(history_day),
         feature_as_of=decision_time - pd.Timedelta(minutes=15),
@@ -45,6 +45,7 @@ def main() -> None:
         forecast_provider=forecast_provider,
         forecast_registry="seasonal-naive-demo-v1",
         scenario_builder=build_joint_scenarios,
+        market_mode=SINGLE_SETTLEMENT_MODE,
         config=config,
         bess=SAMPLE_BESS,
         config_version=hashlib.sha256(

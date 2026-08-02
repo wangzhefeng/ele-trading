@@ -15,12 +15,10 @@ from ele_trading.domain.contracts import (
     IntradayPlan,
     OperationalPlan,
 )
-from ele_trading.markets.single_settlement.contracts import MarketConfig
+from ele_trading.markets.protocol import SettlementEngine
+from ele_trading.markets.sections import MarketConfig
 from ele_trading.operations.day_ahead_coupled import (
     solve_day_ahead_operational,
-)
-from ele_trading.markets.single_settlement.settlement import (
-    compute_contract_difference,
 )
 
 
@@ -54,6 +52,7 @@ def _clip_fallback(
     q_long: np.ndarray | None,
     p_long: np.ndarray | None,
     p_ref: np.ndarray | None,
+    settlement: SettlementEngine | None,
 ) -> OperationalPlan:
     p_charge: list[float] = []
     p_discharge: list[float] = []
@@ -69,7 +68,7 @@ def _clip_fallback(
         if previous_net < 0.0:
             max_by_soc = (
                 (float(bess["socmax"]) - soc)
-                / (float(bess["p_bceff"]) * config.dt)
+                / (float(bess["p_bceff"]) * config.market.dt)
             )
             charge = min(
                 -previous_net,
@@ -81,9 +80,9 @@ def _clip_fallback(
             max_by_soc = (
                 (soc - float(bess["socmin"]))
                 * float(bess["p_bdeff"])
-                / config.dt
+                / config.market.dt
             )
-            max_by_load = max(0.0, float(load_forecast[step]) / config.dt)
+            max_by_load = max(0.0, float(load_forecast[step]) / config.market.dt)
             charge = 0.0
             discharge = min(
                 previous_net,
@@ -93,8 +92,8 @@ def _clip_fallback(
             )
         next_soc = (
             soc
-            + float(bess["p_bceff"]) * charge * config.dt
-            - discharge * config.dt / float(bess["p_bdeff"])
+            + float(bess["p_bceff"]) * charge * config.market.dt
+            - discharge * config.market.dt / float(bess["p_bdeff"])
         )
         p_charge.append(charge)
         p_discharge.append(discharge)
@@ -119,7 +118,7 @@ def _clip_fallback(
         np.sum(
             (
                 load_forecast
-                - schedule["p_net"].to_numpy(dtype=float) * config.dt
+                - schedule["p_net"].to_numpy(dtype=float) * config.market.dt
             )
             * price_forecast
         )
@@ -130,18 +129,23 @@ def _clip_fallback(
                 schedule["p_charge"].to_numpy(dtype=float)
                 + schedule["p_discharge"].to_numpy(dtype=float)
             )
-            * config.dt
-            * config.deg_cost_per_mwh
+            * config.market.dt
+            * config.bess.deg_cost_per_mwh
         )
     )
     if q_long is None:
         contract_difference = 0.0
     else:
+        if settlement is None:
+            raise ValueError(
+                "settlement engine is required for contract difference "
+                "（v3 M4：市场规则由 MarketMode 注入）"
+            )
         assert p_long is not None
         assert p_ref is not None
         contract_difference = float(
             np.sum(
-                compute_contract_difference(
+                settlement.compute_contract_difference(
                     q_long,
                     p_long,
                     p_ref=p_ref,
@@ -198,6 +202,7 @@ def solve_intraday_rolling(
     executed_window_discharge_mwh: float = 0.0,
     intraday_start: int = 0,
     config_version: str = "runtime-config",
+    settlement: SettlementEngine | None = None,
     solver=None,
 ) -> IntradayPlan:
     """Freeze execution and optimize only the remaining physical schedule.
@@ -267,6 +272,7 @@ def solve_intraday_rolling(
             decision_time=decision_time,
             input_versions=input_versions,
             config_version=config_version,
+            settlement=settlement,
             solver=solver,
         )
         fallback_used = False
@@ -283,6 +289,7 @@ def solve_intraday_rolling(
             q_long=q_long,
             p_long=p_long,
             p_ref=p_ref,
+            settlement=settlement,
         )
         fallback_used = True
 

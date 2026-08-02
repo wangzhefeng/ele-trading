@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 
 from ele_trading.demand_response.contracts import DRDecision
-from ele_trading.markets.single_settlement.contracts import MarketConfig
+from ele_trading.markets.sections import MarketConfig
 
 
 def estimate_arbitrage_opportunity_cost(
@@ -58,48 +58,48 @@ def evaluate_dr_participation(
         or expected_shortfall_mwh < 0.0
     ):
         raise ValueError("expected_shortfall_mwh must be finite and non-negative")
-    window = (config.dr_window_start, config.dr_window_end)
+    window = (config.dr.dr_window_start, config.dr.dr_window_end)
     start, end = window
     if start < 0 or end > len(adjustable) or start >= end:
         raise ValueError("configured DR window must fit the supplied horizon")
 
     response_qty = float(
-        np.sum(adjustable[start:end]) * config.dt
+        np.sum(adjustable[start:end]) * config.market.dt
     )
     arbitrage_opportunity_cost = estimate_arbitrage_opportunity_cost(
         p_net_plan,
         realtime_price_forecast,
         window,
-        dt=config.dt,
+        dt=config.market.dt,
     )
     expected_compensation = (
-        response_qty * config.dr_compensation_per_mwh
+        response_qty * config.dr.dr_compensation_per_mwh
     )
     expected_penalty = (
-        expected_shortfall_mwh * config.dr_penalty_per_mwh
+        expected_shortfall_mwh * config.dr.dr_penalty_per_mwh
     )
-    degradation_cost = response_qty * config.deg_cost_per_mwh
+    degradation_cost = response_qty * config.bess.deg_cost_per_mwh
     net_margin = (
         expected_compensation
         - arbitrage_opportunity_cost
         - expected_penalty
         - degradation_cost
     )
-    meets_quantity = response_qty >= config.dr_minimum_response_mwh
+    meets_quantity = response_qty >= config.dr.dr_minimum_response_mwh
     participate = (
-        meets_quantity and net_margin > config.dr_minimum_margin
+        meets_quantity and net_margin > config.dr.dr_minimum_margin
     )
     fulfill_risk = "elevated" if expected_shortfall_mwh > 0.0 else "low"
     reject_reason = None
     if not meets_quantity:
         reject_reason = (
             f"response quantity {response_qty:.3f} MWh is below configured "
-            f"minimum {config.dr_minimum_response_mwh:.3f} MWh"
+            f"minimum {config.dr.dr_minimum_response_mwh:.3f} MWh"
         )
     elif not participate:
         reject_reason = (
             f"net margin {net_margin:.2f} does not exceed configured "
-            f"minimum {config.dr_minimum_margin:.2f}"
+            f"minimum {config.dr.dr_minimum_margin:.2f}"
         )
 
     return DRDecision(

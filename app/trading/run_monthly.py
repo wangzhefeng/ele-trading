@@ -23,7 +23,7 @@ def main() -> None:
     month_load = float(np.mean([df["Q_real_load"].sum() for df in calendar.values()]) * 30)
     alpha_long = 0.9
     q_target = month_load * alpha_long
-    pos_tol = q_target * config.pos_tol_ratio
+    pos_tol = q_target * config.market.pos_tol_ratio
     p_spot = float(np.mean([df["p_real"].mean() for df in calendar.values()]))
 
     logger.info("=== 集中竞价阶梯申报 ===")
@@ -40,7 +40,7 @@ def main() -> None:
     q_need = np.full(30, month_load * alpha_long / 30)
     q_held = q_need * np.linspace(0.7, 1.1, 30)  # demo：前半月欠持、后半月渐回补
     gap = q_held - q_need
-    result = rebalance_position_gap(gap, pos_tol=month_load * config.pos_tol_ratio / 30, config=config)
+    result = rebalance_position_gap(gap, pos_tol=month_load * config.market.pos_tol_ratio / 30, config=config)
     logger.info(f"调整 {result['num_adjustments']}/30 日, 净补购 {result['total_buy']:.0f} MWh, 净减持 {result['total_sell']:.0f} MWh")
     for advice in result["advice"][:5]:
         logger.info(f"  t={advice['period']}: {advice['action']} (gap={advice['gap']:.0f}) — {advice['reason']}")

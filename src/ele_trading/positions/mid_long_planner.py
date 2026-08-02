@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from ele_trading.markets.single_settlement.contracts import MarketConfig
+from ele_trading.markets.sections import MarketConfig
 from ele_trading.positions.contracts import PositionPlan
 
 

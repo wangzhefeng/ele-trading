@@ -3,14 +3,22 @@
 在电价序列上滚动执行：每一步用未来 horizon 窗口的价格预测求解一个
 有限时域套利子问题，只执行窗口第 1 时段的充放电决策，然后以新的
 SOC 为初值向前滚动。
+
+v3 M1（D-004）：SOC 动态、效率、功率与充放互斥约束统一复用
+``bess_model.add_bess_constraints`` 共享物理核，本模块只保留
+MPC 特有的终端 SOC 下界与窗口目标；``dt`` 口径与共享核一致
+（小时为单位的时段时长，15 分钟主链为 0.25）。
 """
 
 from __future__ import annotations
 
 import pandas as pd
-from pulp import LpBinary, LpMaximize, LpProblem, LpVariable, PULP_CBC_CMD, lpSum, value
+from pulp import LpMaximize, LpProblem
 
-from ele_trading.utils import check_pulp_status
+from .bess_model import BESSConfig, add_bess_constraints
+from .extraction import extract_bess_values
+from .objectives import arbitrage_net_revenue
+from .solver import SolveStatus, solve_pulp_model
 
 
 def solve_one_mpc_window(
@@ -24,58 +32,65 @@ def solve_one_mpc_window(
     eta_ch=0.95,
     eta_dis=0.95,
     deg_cost=0.01,
-    dt=1.0,
+    dt=0.25,
     terminal_soc_fraction: float = 0.0,
 ):
     """求解单个 MPC 预测窗口的储能套利子问题。
 
+    dt: 时段时长（小时），与共享核口径一致；15 分钟颗粒度为 0.25。
     terminal_soc_fraction: 窗口末端 SOC 下界 = soc_min + fraction*(soc_max-soc_min)。
     0.0 表示不加终端约束（默认，向后兼容）。
     """
     T = range(horizon)
     m = LpProblem('bess_mpc_window', LpMaximize)
 
-    # ---------------- 决策变量 ----------------
-    # 充放电功率（连续）与充放电状态（0/1 互斥）
-    p_ch = {t: LpVariable(f'p_ch_{t}', lowBound=0, upBound=p_ch_max) for t in T}
-    p_dis = {t: LpVariable(f'p_dis_{t}', lowBound=0, upBound=p_dis_max) for t in T}
-    soc = {t: LpVariable(f'soc_{t}', lowBound=soc_min, upBound=soc_max) for t in T}
-    u_ch = {t: LpVariable(f'u_ch_{t}', cat=LpBinary) for t in T}
-    u_dis = {t: LpVariable(f'u_dis_{t}', cat=LpBinary) for t in T}
-
-    # ---------------- 约束 ----------------
-    for t in T:
-        # 同一时段充电与放电互斥，且功率受对应状态变量约束
-        m += u_ch[t] + u_dis[t] <= 1
-        m += p_ch[t] <= p_ch_max * u_ch[t]
-        m += p_dis[t] <= p_dis_max * u_dis[t]
-
-        # 窗口内仍需保持 SOC 动态一致，且首时段以当前真实 SOC 为初值。
-        if t == 0:
-            m += soc[t] == soc0 + eta_ch * p_ch[t] * dt - (p_dis[t] * dt) / eta_dis
-        else:
-            m += soc[t] == soc[t - 1] + eta_ch * p_ch[t] * dt - (p_dis[t] * dt) / eta_dis
-
-    # 终端 SOC 下界约束：防止 MPC 在预测窗口末尾过度放电
-    if terminal_soc_fraction > 0.0:
-        terminal_lb = soc_min + terminal_soc_fraction * (soc_max - soc_min)
-        m += soc[horizon - 1] >= terminal_lb
-
-    # ---------------- 目标：窗口内套利收益 - 退化成本 ----------------
-    m += lpSum(
-        prices_window[t] * (p_dis[t] - p_ch[t]) * dt - deg_cost * (p_ch[t] + p_dis[t]) * dt
-        for t in T
+    # ---------------- 共享物理核：SOC 动态、效率、功率上限、充放互斥 ----------------
+    bess = add_bess_constraints(
+        m,
+        T,
+        BESSConfig(
+            soc0=soc0,
+            soc_min=soc_min,
+            soc_max=soc_max,
+            p_ch_max=p_ch_max,
+            p_dis_max=p_dis_max,
+            eta_ch=eta_ch,
+            eta_dis=eta_dis,
+            dt=dt,
+        ),
+        prefix="mpc",
     )
 
-    m.solve(PULP_CBC_CMD(msg=False))
-    check_pulp_status(m, "bess mpc window")
+    # ---------------- MPC 特有约束：窗口末端 SOC 下界 ----------------
+    # 防止 MPC 在预测窗口末尾过度放电
+    if terminal_soc_fraction > 0.0:
+        terminal_lb = soc_min + terminal_soc_fraction * (soc_max - soc_min)
+        m += (
+            bess.soc[horizon - 1] >= terminal_lb,
+            "mpc_terminal_soc_lower_bound",
+        )
 
+    # ---------------- 目标：窗口内套利收益 - 退化成本 ----------------
+    m += arbitrage_net_revenue(
+        bess,
+        T,
+        prices_window,
+        deg_cost_per_mwh=deg_cost,
+        dt=dt,
+    )
+
+    # 统一求解出口（v3 M3）：非最优显式失败，不返回伪造结果
+    result = solve_pulp_model(m)
+    if result.status is not SolveStatus.OPTIMAL:
+        raise RuntimeError(f"bess mpc window failed: {result.message}")
+
+    values = extract_bess_values(bess, T)
     return {
-        'p_ch': value(p_ch[0]),                # 只取第 1 时段决策用于执行
-        'p_dis': value(p_dis[0]),
-        'soc_next': value(soc[0]),             # 执行后的 SOC，作为下一窗口初值
-        'soc_terminal': value(soc[horizon - 1]),
-        'obj': value(m.objective),
+        'p_ch': values["p_charge"][0],           # 只取第 1 时段决策用于执行
+        'p_dis': values["p_discharge"][0],
+        'soc_next': values["soc"][0],            # 执行后的 SOC，作为下一窗口初值
+        'soc_terminal': values["soc"][horizon - 1],
+        'obj': result.objective_value,
     }
 
 
@@ -90,7 +105,7 @@ def run_bess_mpc(
     eta_ch=0.95,
     eta_dis=0.95,
     deg_cost=0.01,
-    dt=1.0,
+    dt=0.25,
     terminal_soc_fraction: float = 0.0,
 ) -> pd.DataFrame:
     """运行储能滚动优化，并输出逐步执行结果。

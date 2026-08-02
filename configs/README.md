@@ -10,18 +10,18 @@
 | `markets/single_settlement.yaml` | 单结算加载器和默认交易链 | 市场、场景、BESS、DR、月度与求解参数 |
 | `markets/dual_settlement.yaml` | 双结算加载器和结算规则测试 | 结算时段、偏差带和中长期回收参数 |
 
-当前市场 YAML 由相应 `config_loader` 加载，并对 typed config 执行未知字段、缺失字段和取值校验。单结算配置目前映射到一个跨多个领域的 `MarketConfig`；v3 将重新评估组合式配置和 `schema_version`，在决策落地前本文只记录当前行为。
+当前市场 YAML 由相应 `config_loader` 加载，并对 typed config 执行未知字段、缺失字段和取值校验。单结算配置为 schema v1 六区段组合式 typed config（market/scenario/bess/dr/monthly/solver + `schema_version`，v3 D-003）；旧扁平格式已由 `scripts/migrate_market_config_v3.py` 一次性迁移，不再被 loader 接受。
 
-## 归档配置
+## 用户侧配置（独立领域能力，v3 M6 恢复）
 
-`user_side_dispatch/` 下 4 个 YAML 只服务 `app/user_side_dispatch/` 归档入口：
+`user_side_dispatch/` 下 4 个 YAML 只服务 `app/user_side_dispatch/` 用户侧入口：
 
 - `user_side_bess_dispatch.yaml`
 - `user_side_pv_dispatch.yaml`
 - `user_side_pv_bess_dispatch.yaml`
 - `cvxp_bess_dispatch.yaml`
 
-活动代码不得把这些归档配置当作默认市场交易配置。
+用户侧为独立领域能力，这些配置不进入市场交易链。
 
 ## 平级包边界
 

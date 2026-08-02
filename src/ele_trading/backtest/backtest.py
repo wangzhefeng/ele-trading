@@ -8,11 +8,28 @@ from typing import Mapping
 import numpy as np
 import pandas as pd
 
+from ele_trading.domain.events import MeteringEvent, SettlementEvent
 from ele_trading.operations.day_ahead_coupled import (
     solve_day_ahead_operational,
 )
-from ele_trading.trading.orchestrator import TradingOrchestrator
-from ele_trading.markets.single_settlement.settlement import build_settlement_report
+from ele_trading.trading.orchestrator import (
+    TradingOrchestrator,
+    TradingPipelineResult,
+)
+
+
+def _require_complete_event_chain(result: TradingPipelineResult) -> None:
+    """事件链完整性断言（v3 M5）：每次回放必须有计量与结算事件。"""
+    event_types = {type(event) for event in result.events}
+    missing = [
+        event_type.__name__
+        for event_type in (MeteringEvent, SettlementEvent)
+        if event_type not in event_types
+    ]
+    if missing:
+        raise RuntimeError(
+            f"incomplete event chain (v3 M5): missing {missing}"
+        )
 
 
 def _clone_with_risk_weight(
@@ -24,9 +41,13 @@ def _clone_with_risk_weight(
         forecast_provider=orchestrator.forecast_provider,
         forecast_registry=orchestrator.forecast_registry,
         scenario_builder=orchestrator.scenario_builder,
+        market_mode=orchestrator.market_mode,
         config=replace(
             orchestrator.config,
-            scenario_cvar_weight=float(risk_weight),
+            scenario=replace(
+                orchestrator.config.scenario,
+                scenario_cvar_weight=float(risk_weight),
+            ),
         ),
         bess=orchestrator.bess,
         config_version=orchestrator.config_version,
@@ -45,7 +66,10 @@ def _oracle_cost(
     """Use future actuals only inside the explicitly labeled oracle."""
     config = replace(
         orchestrator.config,
-        scenario_cvar_weight=0.0,
+        scenario=replace(
+            orchestrator.config.scenario,
+            scenario_cvar_weight=0.0,
+        ),
     )
     plan = solve_day_ahead_operational(
         actual_load,
@@ -57,20 +81,21 @@ def _oracle_cost(
         p_ref=actual_price,
         input_versions={"oracle": "future-actual"},
         config_version=orchestrator.config_version,
+        settlement=orchestrator.market_mode.settlement,
         solver=orchestrator.solver,
     )
     schedule = plan.resource_schedule
     q_real = np.maximum(
         actual_load
-        - schedule["p_net"].to_numpy(dtype=float) * config.dt,
+        - schedule["p_net"].to_numpy(dtype=float) * config.market.dt,
         0.0,
     )
     degradation_cost = float(
         (schedule["p_charge"] + schedule["p_discharge"]).sum()
-        * config.dt
-        * config.deg_cost_per_mwh
+        * config.market.dt
+        * config.bess.deg_cost_per_mwh
     )
-    return build_settlement_report(
+    return orchestrator.market_mode.settlement.build_settlement_report(
         q_real=q_real,
         p_real=actual_price,
         q_long=position.q_long.to_numpy(dtype=float),
@@ -120,6 +145,7 @@ def run_walk_forward_backtest(
             actual_price=actual_price,
             intraday_start=intraday_start,
         )
+        _require_complete_event_chain(strategy_result)
         deterministic_result = deterministic.run(
             decision_time=decision_time,
             actual_load=actual_load,

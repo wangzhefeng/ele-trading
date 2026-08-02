@@ -35,9 +35,9 @@ class TestDRAllocator:
     def test_participate_when_compensation_high(self, config):
         """Should participate when DR compensation > opportunity cost."""
         adjustable = np.full(96, 5.0)  # 5 MW available
-        config.dr_compensation_per_mwh = 2000.0
-        config.dr_window_start = 40
-        config.dr_window_end = 60
+        config.dr.dr_compensation_per_mwh = 2000.0
+        config.dr.dr_window_start = 40
+        config.dr.dr_window_end = 60
         decision = evaluate_dr_participation(
             adjustable,
             config,
@@ -51,9 +51,9 @@ class TestDRAllocator:
     def test_reject_when_compensation_low(self, config):
         """Should reject when DR compensation < opportunity cost."""
         adjustable = np.full(96, 5.0)
-        config.dr_compensation_per_mwh = 10.0
-        config.dr_window_start = 40
-        config.dr_window_end = 60
+        config.dr.dr_compensation_per_mwh = 10.0
+        config.dr.dr_window_start = 40
+        config.dr.dr_window_end = 60
         p_net_plan = np.zeros(96)
         p_net_plan[40:60] = 3.0
         decision = evaluate_dr_participation(
@@ -77,16 +77,16 @@ class TestDRAllocator:
             p_b_plan,
             p_real_pre,
             (40, 60),
-            dt=config.dt,
+            dt=config.market.dt,
         )
         expected = 3.0 * 800.0 * 0.25 * 20
         assert cost == pytest.approx(expected)
 
         # 用实算机会成本做决策：补偿低于实算成本时拒绝
         adjustable = np.full(horizon, 3.0)
-        config.dr_compensation_per_mwh = 500.0
-        config.dr_window_start = 40
-        config.dr_window_end = 60
+        config.dr.dr_compensation_per_mwh = 500.0
+        config.dr.dr_window_start = 40
+        config.dr.dr_window_end = 60
         decision = evaluate_dr_participation(
             adjustable,
             config,

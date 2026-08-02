@@ -37,10 +37,10 @@ def build_demo_model(market_config: MarketConfig):
         eta_ch=0.95, eta_dis=0.95,
         deg_cost=0.01,
         kappa_pos=(
-            market_config.two_stage_scenario_deviation_cost_positive
+            market_config.scenario.two_stage_scenario_deviation_cost_positive
         ),
         kappa_neg=(
-            market_config.two_stage_scenario_deviation_cost_negative
+            market_config.scenario.two_stage_scenario_deviation_cost_negative
         ),
         dt=1.0,
         alpha=0.95, lam=0.1,
