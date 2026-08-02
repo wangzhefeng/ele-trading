@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
 
 import pandas as pd
 
@@ -16,6 +17,48 @@ def _require_non_empty(value: str, field_name: str) -> None:
     """校验字符串字段非空（含纯空白），为空则抛 ``ValueError``。"""
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must not be empty")
+
+
+def _require_timestamp(value: object, field_name: str) -> pd.Timestamp:
+    timestamp = pd.Timestamp(value)
+    if pd.isna(timestamp) or timestamp.tzinfo is None:
+        raise ValueError(f"{field_name} must be a timezone-aware timestamp")
+    return timestamp
+
+
+@dataclass(frozen=True, slots=True)
+class DataAvailabilityRecord:
+    """一项数据从业务发生到系统可消费的版本化时点证据。"""
+
+    source_id: str
+    event_time: pd.Timestamp
+    published_at: pd.Timestamp
+    available_at: pd.Timestamp
+    version: str
+    revision: int = 0
+    quality_flags: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.source_id, "source_id")
+        _require_non_empty(self.version, "version")
+        event_time = _require_timestamp(self.event_time, "event_time")
+        published_at = _require_timestamp(self.published_at, "published_at")
+        available_at = _require_timestamp(self.available_at, "available_at")
+        if available_at < published_at:
+            raise ValueError(
+                "available_at cannot be earlier than published_at"
+            )
+        if not isinstance(self.revision, int) or self.revision < 0:
+            raise ValueError("revision must be a non-negative integer")
+        object.__setattr__(self, "event_time", event_time)
+        object.__setattr__(self, "published_at", published_at)
+        object.__setattr__(self, "available_at", available_at)
+        object.__setattr__(self, "quality_flags", tuple(self.quality_flags))
+
+    def is_available_at(self, issue_time: pd.Timestamp) -> bool:
+        """返回该版本在给定 issue time 是否已可消费。"""
+        issue_time = _require_timestamp(issue_time, "issue_time")
+        return bool(self.available_at <= issue_time)
 
 
 @dataclass(slots=True)
@@ -34,6 +77,7 @@ class MarketDataSnapshot:
     frame: pd.DataFrame                          # 数据本体，必含 timestamp / is_observation 列
     version: str                                 # 数据版本标识（溯源用）
     quality_flags: tuple[str, ...] = ()          # 质量标记（如 "degraded"）
+    availability: tuple[DataAvailabilityRecord, ...] = ()
 
     def __post_init__(self) -> None:
         # --- 标识字段非空校验 ---
@@ -89,3 +133,72 @@ class MarketDataSnapshot:
 
         # 统一为 tuple，保证不可变
         self.quality_flags = tuple(self.quality_flags)
+        availability = tuple(self.availability)
+        if not all(
+            isinstance(item, DataAvailabilityRecord)
+            for item in availability
+        ):
+            raise ValueError(
+                "availability must contain DataAvailabilityRecord objects"
+            )
+        if any(item.available_at > self.as_of for item in availability):
+            raise ValueError(
+                "availability records cannot be newer than as_of"
+            )
+        self.availability = availability
+
+
+@dataclass(frozen=True, slots=True)
+class RuleSnapshot:
+    """带发布时间与生效窗口的正式市场规则快照。"""
+
+    market: str
+    rule_version: str
+    published_at: pd.Timestamp
+    effective_from: pd.Timestamp
+    effective_to: pd.Timestamp | None
+    parameters: Mapping[str, object]
+    source_document: str
+    confirmed: bool
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.market, "market")
+        _require_non_empty(self.rule_version, "rule_version")
+        _require_non_empty(self.source_document, "source_document")
+        published_at = _require_timestamp(self.published_at, "published_at")
+        effective_from = _require_timestamp(
+            self.effective_from,
+            "effective_from",
+        )
+        effective_to = None
+        if self.effective_to is not None:
+            effective_to = _require_timestamp(
+                self.effective_to,
+                "effective_to",
+            )
+            if effective_to <= effective_from:
+                raise ValueError(
+                    "effective_to must be later than effective_from"
+                )
+        if not isinstance(self.parameters, Mapping):
+            raise ValueError("parameters must be a mapping")
+        if not isinstance(self.confirmed, bool):
+            raise ValueError("confirmed must be a boolean")
+        object.__setattr__(self, "published_at", published_at)
+        object.__setattr__(self, "effective_from", effective_from)
+        object.__setattr__(self, "effective_to", effective_to)
+        object.__setattr__(self, "parameters", dict(self.parameters))
+
+    def is_known_at(self, decision_time: pd.Timestamp) -> bool:
+        decision_time = _require_timestamp(decision_time, "decision_time")
+        return bool(self.published_at <= decision_time)
+
+    def is_effective_at(self, delivery_time: pd.Timestamp) -> bool:
+        delivery_time = _require_timestamp(delivery_time, "delivery_time")
+        return bool(
+            self.effective_from <= delivery_time
+            and (
+                self.effective_to is None
+                or delivery_time < self.effective_to
+            )
+        )

@@ -24,10 +24,10 @@ from ele_trading.forecasting.contracts import (
     ForecastRequest,
     ForecastResult,
 )
+from ele_trading.forecasting.price_history import resolve_price_history
 
 # 支持的预测目标 → 历史 DataFrame 列
 _TARGET_COLUMNS = {
-    "price": "p_real",
     "load": "Q_real_load",
 }
 
@@ -120,9 +120,12 @@ class LightGBMTradingForecastProvider:
     #  训练
     # ------------------------------------------------------------ #
 
-    def _train(self, target: str, tau: float) -> LGBMRegressor:
-        column = _TARGET_COLUMNS[target]
-        history = self.history[column].to_numpy(dtype=float)
+    def _train(
+        self,
+        model_key: str,
+        history: np.ndarray,
+        tau: float,
+    ) -> LGBMRegressor:
         if len(history) < _MIN_HISTORY_STEPS:
             raise ValueError(
                 f"lightgbm training requires ≥ {_MIN_HISTORY_STEPS} steps "
@@ -145,10 +148,15 @@ class LightGBMTradingForecastProvider:
         model.fit(x, y)
         return model
 
-    def _model(self, target: str, tau: float) -> LGBMRegressor:
-        key = (target, tau)
+    def _model(
+        self,
+        model_key: str,
+        history: np.ndarray,
+        tau: float,
+    ) -> LGBMRegressor:
+        key = (model_key, tau)
         if key not in self._models:
-            self._models[key] = self._train(target, tau)
+            self._models[key] = self._train(model_key, history, tau)
         return self._models[key]
 
     # ------------------------------------------------------------ #
@@ -156,17 +164,28 @@ class LightGBMTradingForecastProvider:
     # ------------------------------------------------------------ #
 
     def forecast(self, request: ForecastRequest) -> ForecastResult:
-        if request.target not in _TARGET_COLUMNS:
+        if request.target not in {"price", *_TARGET_COLUMNS}:
             raise ValueError(
-                f"lightgbm provider supports {sorted(_TARGET_COLUMNS)}, "
+                "lightgbm provider supports ['load', 'price'], "
                 f"got {request.target!r}"
             )
         if self.feature_as_of > request.issue_time:
             raise ValueError(
                 "lightgbm history is newer than request issue_time"
             )
-        column = _TARGET_COLUMNS[request.target]
-        history = self.history[column].to_numpy(dtype=float)
+        price_role = None
+        if request.target == "price":
+            price_role, history_series = resolve_price_history(
+                self.history,
+                request,
+            )
+            model_key = f"price:{price_role.value}"
+            history = history_series.to_numpy(dtype=float)
+        else:
+            model_key = request.target
+            history = self.history[
+                _TARGET_COLUMNS[request.target]
+            ].to_numpy(dtype=float)
 
         index = pd.date_range(
             request.issue_time + pd.Timedelta(minutes=15),
@@ -186,7 +205,7 @@ class LightGBMTradingForecastProvider:
         extended = history.copy()
         predictions: dict[float, np.ndarray] = {}
         for tau in all_taus:
-            model = self._model(request.target, tau)
+            model = self._model(model_key, history, tau)
             x = np.column_stack(
                 [
                     _calendar_features(index),
@@ -222,5 +241,12 @@ class LightGBMTradingForecastProvider:
             ),
             model_version=_MODEL_VERSION,
             feature_as_of=self.feature_as_of,
-            quality_flags=("ml:lightgbm-quantile",),
+            quality_flags=(
+                "ml:lightgbm-quantile",
+                *(
+                    (f"price_role:{price_role.value}",)
+                    if price_role is not None
+                    else ()
+                ),
+            ),
         )

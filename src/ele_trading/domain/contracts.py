@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 import pandas as pd
 
@@ -56,6 +56,33 @@ class MarketForecastBundle:
     load_forecast: Any
     wind_forecast: Any
     pv_forecast: Any
+    price_forecasts: Mapping[str, Any] = field(default_factory=dict)
+    market_state_forecast: Any | None = None
+
+    def __post_init__(self) -> None:
+        issue_time = pd.Timestamp(self.issue_time)
+        if pd.isna(issue_time) or issue_time.tzinfo is None:
+            raise ValueError("issue_time must be a timezone-aware timestamp")
+        price_forecasts = dict(self.price_forecasts)
+        if not price_forecasts:
+            price_forecasts["real_time_settlement"] = self.price_forecast
+        if not any(
+            value is self.price_forecast
+            for value in price_forecasts.values()
+        ):
+            raise ValueError(
+                "price_forecast must be one of price_forecasts values"
+            )
+        self.issue_time = cast(pd.Timestamp, issue_time)
+        self.price_forecasts = price_forecasts
+
+    def get_price_forecast(self, price_role: str) -> Any:
+        try:
+            return self.price_forecasts[price_role]
+        except KeyError as exc:
+            raise KeyError(
+                f"price forecast role {price_role!r} is unavailable"
+            ) from exc
 
 
 @dataclass(slots=True)

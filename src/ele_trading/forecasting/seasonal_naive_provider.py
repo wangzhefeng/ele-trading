@@ -9,6 +9,7 @@ from ele_trading.forecasting.contracts import (
     ForecastRequest,
     ForecastResult,
 )
+from ele_trading.forecasting.price_history import resolve_price_history
 
 
 class SeasonalNaiveTradingForecastProvider:
@@ -30,16 +31,20 @@ class SeasonalNaiveTradingForecastProvider:
             raise ValueError(
                 "seasonal-naive history is newer than request issue_time"
             )
-        source_column = {
-            "price": "p_real",
-            "load": "Q_real_load",
-        }.get(request.target)
-        if source_column is None:
+        price_role = None
+        if request.target == "price":
+            price_role, history_series = resolve_price_history(
+                self.history,
+                request,
+            )
+            history_values = history_series.to_numpy(dtype=float)
+        elif request.target == "load":
+            history_values = self.history["Q_real_load"].to_numpy(dtype=float)
+        else:
+            history_values = None
+        if history_values is None:
             base = np.zeros(request.horizon, dtype=float)
         else:
-            history_values = self.history[source_column].to_numpy(
-                dtype=float
-            )
             repeats = int(np.ceil(request.horizon / len(history_values)))
             base = np.tile(history_values, repeats)[: request.horizon]
         index = pd.date_range(
@@ -49,8 +54,13 @@ class SeasonalNaiveTradingForecastProvider:
         )
         point = pd.Series(base, index=index)
         scale = 0.10 if request.target == "price" else 0.05
-        lower = np.maximum(base * (1.0 - scale), 0.0)
-        upper = base * (1.0 + scale)
+        if request.target == "price":
+            spread = np.maximum(np.abs(base) * scale, 1.0)
+            lower = base - spread
+            upper = base + spread
+        else:
+            lower = np.maximum(base * (1.0 - scale), 0.0)
+            upper = base * (1.0 + scale)
         quantile_values = {
             request.quantiles[0]: pd.Series(lower, index=index),
             request.quantiles[1]: pd.Series(upper, index=index),
@@ -66,5 +76,12 @@ class SeasonalNaiveTradingForecastProvider:
             ),
             model_version="seasonal-naive-demo-v1",
             feature_as_of=self.feature_as_of,
-            quality_flags=("demo:prior-day-observation",),
+            quality_flags=(
+                "demo:prior-day-observation",
+                *(
+                    (f"price_role:{price_role.value}",)
+                    if price_role is not None
+                    else ()
+                ),
+            ),
         )

@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from ele_trading.markets.protocol import SettlementEngine
+from ele_trading.markets.price_roles import PriceRole
 from ele_trading.markets.single_settlement import settlement as _settlement
 from ele_trading.markets.single_settlement.config_loader import (
     load_market_config,
@@ -65,6 +66,12 @@ class _SingleSettlementMode:
 
     name: str = "single_settlement"
     settlement: SettlementEngine = _SingleSettlementEngine()
+    price_roles: tuple[str, ...] = (
+        PriceRole.DAY_AHEAD_REFERENCE.value,
+        PriceRole.REAL_TIME_SETTLEMENT.value,
+    )
+    day_ahead_price_role: str = PriceRole.REAL_TIME_SETTLEMENT.value
+    intraday_price_role: str = PriceRole.REAL_TIME_SETTLEMENT.value
 
     def load_config(self, path: str | Path):
         return load_market_config(path)

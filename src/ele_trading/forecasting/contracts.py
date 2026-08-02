@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 from pandas.tseries.frequencies import to_offset
 
+from ele_trading.domain.price_roles import PriceRole, normalize_price_role
+
 
 def _require_non_empty(value: str, field_name: str) -> None:
     if not isinstance(value, str) or not value.strip():
@@ -161,6 +163,11 @@ class ForecastRequest:
         if not isinstance(self.data, Mapping):
             raise ValueError("data must be a mapping")
         self.data = dict(self.data)
+        if self.target == "price" and "price_role" in self.data:
+            raw_price_role = self.data["price_role"]
+            if not isinstance(raw_price_role, (PriceRole, str)):
+                raise ValueError("price_role must be a string")
+            self.data["price_role"] = normalize_price_role(raw_price_role).value
         _require_non_empty(self.model_name, "model_name")
         if self.model_version is not None:
             _require_non_empty(self.model_version, "model_version")

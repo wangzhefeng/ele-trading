@@ -18,6 +18,7 @@ from ele_trading.markets.dual_settlement.config_loader import (
 )
 from ele_trading.markets.dual_settlement.contracts import SettlementReport
 from ele_trading.markets.protocol import SettlementEngine
+from ele_trading.markets.price_roles import PriceRole
 
 
 class _DualSettlementEngine:
@@ -95,6 +96,13 @@ class _DualSettlementMode:
 
     name: str = "dual_settlement"
     settlement: SettlementEngine = _DualSettlementEngine()
+    price_roles: tuple[str, ...] = (
+        PriceRole.DAY_AHEAD_REFERENCE.value,
+        PriceRole.DAY_AHEAD_SETTLEMENT.value,
+        PriceRole.REAL_TIME_SETTLEMENT.value,
+    )
+    day_ahead_price_role: str = PriceRole.DAY_AHEAD_SETTLEMENT.value
+    intraday_price_role: str = PriceRole.REAL_TIME_SETTLEMENT.value
 
     def load_config(self, path: str | Path):
         return load_market_config(path)

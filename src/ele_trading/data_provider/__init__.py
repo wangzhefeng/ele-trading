@@ -18,7 +18,11 @@ from . import asset_data, market_data, quality, weather_data
 from .asset_data import BESSConfig, load_bess_config
 
 # --- 核心契约 ---
-from .contracts import MarketDataSnapshot
+from .contracts import (
+    DataAvailabilityRecord,
+    MarketDataSnapshot,
+    RuleSnapshot,
+)
 
 # --- 市场数据实现 ---
 from .market_data import (

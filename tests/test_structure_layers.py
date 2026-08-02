@@ -48,6 +48,17 @@ FORBIDDEN = {
     "operations": ("ele_trading.trading", "ele_trading.backtest"),
     "trading": ("ele_trading.backtest",),
     "backtest": (),
+    # v5 M7：市场数字孪生独立于交易/回测主链与具体市场插件
+    "market_simulation": (
+        "ele_trading.markets",
+        "ele_trading.positions",
+        "ele_trading.operations",
+        "ele_trading.backtest",
+        "ele_trading.trading",
+        "ele_trading.demand_response",
+        "ele_trading.forecasting",
+        "ele_trading.scenario",
+    ),
     # v3 M6：用户侧为独立领域能力，只依赖 utils，不得耦合市场主链
     "user_side_dispatch": (
         "ele_trading.markets",
@@ -117,6 +128,12 @@ def test_trading_does_not_import_backtest():
 def test_user_side_dispatch_stays_independent():
     """user_side_dispatch 为独立领域能力，不得 import 市场主链（v3 M6）。"""
     assert _violations("user_side_dispatch") == []
+
+
+def test_market_simulation_stays_independent():
+    """market_simulation 不得反向依赖交易、回测或具体市场插件（v5 M7）。"""
+    assert (SOURCE_ROOT / "market_simulation").is_dir()
+    assert _violations("market_simulation") == []
 
 
 # ---------------- v3 M4：主链不得 import 具体市场模式插件 ----------------

@@ -10,6 +10,7 @@ from ele_trading.forecasting.contracts import ForecastRequest
 from ele_trading.forecasting.lightgbm_provider import (
     LightGBMTradingForecastProvider,
 )
+from ele_trading.markets.price_roles import PriceRole
 
 TZ = "Asia/Shanghai"
 
@@ -137,3 +138,34 @@ def test_lightgbm_rejects_unsupported_target():
         provider.forecast(
             _request(_ISSUE_SATURDAY, target="wind_power")
         )
+
+
+def test_lightgbm_uses_distinct_history_for_price_roles():
+    history = _HISTORY.copy()
+    history["p_dayah"] = 100.0
+    provider = LightGBMTradingForecastProvider(
+        history,
+        feature_as_of=_FEATURE_AS_OF,
+        params={"n_estimators": 10},
+    )
+
+    def request(role: PriceRole) -> ForecastRequest:
+        return ForecastRequest(
+            target="price",
+            scope_type="market",
+            scope_id="single_settlement",
+            horizon=4,
+            frequency="15min",
+            issue_time=_ISSUE_SATURDAY,
+            quantiles=(0.1, 0.9),
+            data={"price_role": role.value},
+        )
+
+    day_ahead = provider.forecast(request(PriceRole.DAY_AHEAD_REFERENCE))
+    realtime = provider.forecast(request(PriceRole.REAL_TIME_SETTLEMENT))
+    spread = provider.forecast(request(PriceRole.SPREAD_DA_RT))
+
+    assert float(day_ahead.point.mean()) < float(realtime.point.mean())
+    assert float(spread.point.mean()) > 0.0
+    assert "price_role:day_ahead_reference" in day_ahead.quality_flags
+    assert "price_role:real_time_settlement" in realtime.quality_flags

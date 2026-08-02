@@ -7,6 +7,11 @@ import numpy as np
 import pandas as pd
 from pandas.tseries.frequencies import to_offset
 
+from ele_trading.domain.price_roles import (
+    legacy_price_scope,
+    normalize_price_role,
+)
+
 from .base import ForecastOutput
 from .contracts import (
     ForecastRequest,
@@ -184,7 +189,10 @@ class PriceForecastModel:
 
     _SCOPES = {
         "day_ahead_reference",
+        "day_ahead_settlement",
         "real_time_reference",
+        "real_time_settlement",
+        "spread_da_rt",
         "mid_long_term",
     }
 
@@ -204,16 +212,24 @@ class PriceForecastModel:
     def forecast(self, request: ForecastRequest) -> ForecastResult:
         if request.target != "price":
             raise ValueError("price model requires target 'price'")
-        market_scope = request.data.get("market_scope")
-        if market_scope not in self._SCOPES:
+        raw_scope = request.data.get(
+            "price_role",
+            request.data.get("market_scope"),
+        )
+        if raw_scope is None:
             raise ValueError(
-                "request data market_scope must be day_ahead_reference, "
-                "real_time_reference, or mid_long_term"
+                "request data must define price_role or market_scope"
             )
-        history = self.history_by_scope.get(str(market_scope))
+        price_role = normalize_price_role(str(raw_scope))
+        market_scope = price_role.value
+        if market_scope not in self._SCOPES:
+            raise ValueError(f"unsupported price role {market_scope!r}")
+        history = self.history_by_scope.get(market_scope)
+        if history is None:
+            history = self.history_by_scope.get(legacy_price_scope(price_role))
         if history is None:
             raise ValueError(
-                f"price history is missing for market_scope {market_scope!r}"
+                f"price history is missing for price_role {market_scope!r}"
             )
         eligible = _prepare_history_series(
             history,
@@ -224,7 +240,11 @@ class PriceForecastModel:
 
         frequency_kind = self._frequency_kind(request.frequency)
         valid_times = _valid_time_index(request)
-        flags = [f"baseline:{self.method}", f"price_scope:{market_scope}"]
+        flags = [
+            f"baseline:{self.method}",
+            f"price_role:{market_scope}",
+            f"price_scope:{legacy_price_scope(price_role)}",
+        ]
         if self.method == "seasonal_naive":
             point_values: list[float] = []
             for valid_time in valid_times:

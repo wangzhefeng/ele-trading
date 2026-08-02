@@ -13,6 +13,8 @@ from typing import Mapping
 
 import numpy as np
 from pulp import LpAffineExpression, LpProblem, LpVariable, lpSum
+from scipy.optimize import minimize_scalar
+from scipy.special import logsumexp
 
 @dataclass(frozen=True, slots=True)
 class CVaRAuxiliaries:
@@ -21,6 +23,21 @@ class CVaRAuxiliaries:
     var: LpVariable                       # VaR 阈值变量（自由变量）
     excess: dict[str, LpVariable]         # 各场景超额损失变量（>= 0）
     expression: LpAffineExpression        # CVaR 线性表达式，可直接加入目标
+
+
+@dataclass(frozen=True, slots=True)
+class WorstCaseAuxiliaries:
+    """最坏场景损失的 epigraph 线性化。"""
+
+    expression: LpVariable
+
+
+@dataclass(frozen=True, slots=True)
+class ChanceConstraintAuxiliaries:
+    """离散场景机会约束引入的违约指示变量。"""
+
+    violated: dict[str, LpVariable]
+    probability_expression: LpAffineExpression
 
 
 def _validate_probabilities(
@@ -164,3 +181,178 @@ def weighted_var_cvar(
         for scenario_id in numeric_losses
     ) / (1.0 - alpha)
     return float(var), float(cvar)
+
+
+def weighted_worst_case(losses: Mapping[str, float]) -> float:
+    """返回有限离散损失的最坏值。"""
+    if not losses:
+        raise ValueError("losses must not be empty")
+    values = np.asarray([float(loss) for loss in losses.values()], dtype=float)
+    if not np.isfinite(values).all():
+        raise ValueError("losses must be finite")
+    return float(values.max())
+
+
+def weighted_top_tail_mean(
+    losses: Mapping[str, float],
+    probabilities: Mapping[str, float],
+    *,
+    tail_mass: float,
+) -> float:
+    """计算概率质量恰为 ``tail_mass`` 的最坏上尾均值。"""
+    if not np.isfinite(tail_mass) or not 0.0 < tail_mass <= 1.0:
+        raise ValueError("tail_mass must be within (0, 1]")
+    probabilities = _validate_probabilities(losses, probabilities)
+    numeric_losses = {
+        scenario_id: float(loss) for scenario_id, loss in losses.items()
+    }
+    if any(not np.isfinite(loss) for loss in numeric_losses.values()):
+        raise ValueError("losses must be finite")
+    remaining = float(tail_mass)
+    weighted_sum = 0.0
+    for scenario_id in sorted(
+        numeric_losses,
+        key=lambda item: numeric_losses[item],
+        reverse=True,
+    ):
+        consumed = min(remaining, probabilities[scenario_id])
+        weighted_sum += consumed * numeric_losses[scenario_id]
+        remaining -= consumed
+        if remaining <= 1e-12:
+            break
+    return float(weighted_sum / tail_mass)
+
+
+def entropic_value_at_risk(
+    losses: Mapping[str, float],
+    probabilities: Mapping[str, float],
+    *,
+    alpha: float,
+) -> float:
+    """通过一维凸外层最小化评估离散上尾 EVaR。
+
+    该函数只做数值评估；若要把 EVaR 放入优化目标，需要指数锥求解器
+    或经验证的外层近似，不能直接塞入当前 PuLP/CBC 线性模型。
+    """
+    if not np.isfinite(alpha) or not 0.0 < alpha < 1.0:
+        raise ValueError("alpha must be within (0, 1)")
+    probabilities = _validate_probabilities(losses, probabilities)
+    values = np.asarray([float(losses[item]) for item in losses], dtype=float)
+    if not np.isfinite(values).all():
+        raise ValueError("losses must be finite")
+    log_probabilities = np.log(
+        np.asarray([probabilities[item] for item in losses], dtype=float)
+    )
+    log_tail_probability = np.log(1.0 - alpha)
+
+    def objective(log_theta: float) -> float:
+        theta = float(np.exp(log_theta))
+        return float(
+            (
+                logsumexp(log_probabilities + theta * values)
+                - log_tail_probability
+            )
+            / theta
+        )
+
+    result = minimize_scalar(
+        objective,
+        bounds=(-12.0, 8.0),
+        method="bounded",
+        options={"xatol": 1e-10},
+    )
+    if not result.success or not np.isfinite(result.fun):
+        raise RuntimeError("EVaR outer minimization failed")
+    return float(min(result.fun, values.max()))
+
+
+def chance_violation_probability(
+    violations: Mapping[str, float],
+    probabilities: Mapping[str, float],
+    *,
+    tolerance: float = 0.0,
+) -> float:
+    """返回 ``violation > tolerance`` 的离散概率质量。"""
+    if not np.isfinite(tolerance):
+        raise ValueError("tolerance must be finite")
+    probabilities = _validate_probabilities(violations, probabilities)
+    numeric = {
+        scenario_id: float(value)
+        for scenario_id, value in violations.items()
+    }
+    if any(not np.isfinite(value) for value in numeric.values()):
+        raise ValueError("violations must be finite")
+    return float(
+        sum(
+            probabilities[scenario_id]
+            for scenario_id, value in numeric.items()
+            if value > tolerance
+        )
+    )
+
+
+def add_worst_case_auxiliary(
+    model: LpProblem,
+    losses: Mapping[str, object],
+    *,
+    prefix: str = "worst_case",
+) -> WorstCaseAuxiliaries:
+    """加入 ``worst >= loss_s`` epigraph 约束。"""
+    if not isinstance(model, LpProblem):
+        raise ValueError("model must be a PuLP LpProblem")
+    if not losses:
+        raise ValueError("losses must not be empty")
+    worst = LpVariable(f"{prefix}_loss", lowBound=None, upBound=None)
+    for position, loss in enumerate(losses.values()):
+        model += worst >= loss, f"{prefix}_bound_{position}"
+    return WorstCaseAuxiliaries(expression=worst)
+
+
+def add_chance_constraint(
+    model: LpProblem,
+    violations: Mapping[str, object],
+    probabilities: Mapping[str, float],
+    *,
+    max_violation_probability: float,
+    big_m: float,
+    prefix: str = "chance",
+) -> ChanceConstraintAuxiliaries:
+    """用场景二元变量加入离散机会约束。
+
+    调用方必须从物理边界推导 ``big_m``；该函数拒绝无限或非正值，
+    但无法替调用方证明 M 的紧致性。
+    """
+    if not isinstance(model, LpProblem):
+        raise ValueError("model must be a PuLP LpProblem")
+    if (
+        not np.isfinite(max_violation_probability)
+        or not 0.0 <= max_violation_probability <= 1.0
+    ):
+        raise ValueError("max_violation_probability must be within [0, 1]")
+    if not np.isfinite(big_m) or big_m <= 0.0:
+        raise ValueError("big_m must be finite and positive")
+    probabilities = _validate_probabilities(violations, probabilities)
+    violated = {
+        scenario_id: LpVariable(
+            f"{prefix}_violated_{position}",
+            cat="Binary",
+        )
+        for position, scenario_id in enumerate(violations)
+    }
+    for position, (scenario_id, expression) in enumerate(violations.items()):
+        model += (
+            expression <= float(big_m) * violated[scenario_id],
+            f"{prefix}_link_{position}",
+        )
+    probability_expression = lpSum(
+        probabilities[scenario_id] * violated[scenario_id]
+        for scenario_id in violations
+    )
+    model += (
+        probability_expression <= float(max_violation_probability),
+        f"{prefix}_probability",
+    )
+    return ChanceConstraintAuxiliaries(
+        violated=violated,
+        probability_expression=probability_expression,
+    )

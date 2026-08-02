@@ -65,3 +65,12 @@ class MarketMode(Protocol):
     def load_config(self, path: str | Path) -> Any:
         """加载并校验本模式的组合式配置对象。"""
         ...
+
+
+@runtime_checkable
+class PriceRoleCapability(Protocol):
+    """市场模式可选的价格语义能力，不扩大基础 MarketMode 协议。"""
+
+    price_roles: tuple[str, ...]
+    day_ahead_price_role: str
+    intraday_price_role: str

@@ -24,6 +24,8 @@ class ReductionDiagnostics:
     critical_peak_scenario_id: str
     critical_ramp_scenario_id: str
     critical_events_retained: bool
+    forced_scenario_ids: tuple[str, ...] = ()
+    forced_scenarios_retained: bool = True
 
 
 def _joint_vectors(scenario_set: ScenarioSet) -> np.ndarray:
@@ -177,6 +179,7 @@ def _reduce_scenario_set(
     max_mean_drift: float | None,
     max_quantile_drift: float | None,
     preserve_critical_events: bool,
+    forced_scenario_ids: tuple[str, ...],
 ) -> tuple[ScenarioSet, ReductionDiagnostics]:
     if not isinstance(top_k, int) or top_k <= 0:
         raise ValueError("top_k must be a positive integer")
@@ -210,14 +213,29 @@ def _reduce_scenario_set(
         dtype=float,
     )
     peak_index, ramp_index = _critical_event_indices(scenario_set)
+    if len(forced_scenario_ids) != len(set(forced_scenario_ids)):
+        raise ValueError("forced_scenario_ids must be unique")
+    id_to_index = {
+        item.scenario_id: index
+        for index, item in enumerate(scenario_set.scenarios)
+    }
+    unknown_forced_ids = set(forced_scenario_ids) - set(id_to_index)
+    if unknown_forced_ids:
+        raise ValueError(
+            "forced_scenario_ids contains unknown scenario IDs: "
+            + ", ".join(sorted(unknown_forced_ids))
+        )
+    forced_indices = {id_to_index[item] for item in forced_scenario_ids}
     protected = (
         {peak_index, ramp_index}
         if preserve_critical_events
         else set()
     )
+    protected.update(forced_indices)
     if len(protected) > target_count:
         raise ValueError(
-            "top_k is too small to retain distinct critical peak/ramp events"
+            "top_k is too small to retain critical peak/ramp "
+            "and other protected scenarios"
         )
 
     active = list(range(count))
@@ -323,6 +341,8 @@ def _reduce_scenario_set(
         critical_events_retained=(
             peak_id in retained_ids and ramp_id in retained_ids
         ),
+        forced_scenario_ids=forced_scenario_ids,
+        forced_scenarios_retained=set(forced_scenario_ids).issubset(retained_ids),
     )
     if (
         max_mean_drift is not None
@@ -366,6 +386,7 @@ def reduce_scenarios(
     max_mean_drift: float | None = None,
     max_quantile_drift: float | None = None,
     preserve_critical_events: bool = True,
+    forced_scenario_ids: tuple[str, ...] = (),
     return_diagnostics: bool = False,
 ):
     """Reduce joint scenarios by backward Wasserstein L1 selection.
@@ -380,6 +401,7 @@ def reduce_scenarios(
         max_mean_drift=max_mean_drift,
         max_quantile_drift=max_quantile_drift,
         preserve_critical_events=preserve_critical_events,
+        forced_scenario_ids=tuple(forced_scenario_ids),
     )
     if return_diagnostics:
         return reduced, diagnostics

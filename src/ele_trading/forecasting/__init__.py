@@ -14,6 +14,12 @@ from .metrics import (
     pinball_loss,
     root_mean_squared_error,
 )
+from .market_state import (
+    LogisticMarketStateProvider,
+    MarketState,
+    MarketStateFeatureSnapshot,
+    MarketStateForecast,
+)
 from .price_forecast import (
     ARIMAForecastModel,
     ARIMAForecaster,
@@ -103,6 +109,10 @@ __all__ = [
     'pinball_loss',
     'interval_coverage',
     'direction_accuracy',
+    'MarketState',
+    'MarketStateFeatureSnapshot',
+    'MarketStateForecast',
+    'LogisticMarketStateProvider',
     # weather feature engineering
     'DEFAULT_SCORE_WEIGHTS',
     'build_regression_factor',

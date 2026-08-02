@@ -65,6 +65,19 @@
 - **配置**：`configs/markets/single_settlement.yaml`（schema v1 六区段）；旧扁平格式经 `scripts/migrate_market_config_v3.py` 一次性迁移，loader 不再接受。
 - **回测基线产物**：`results/trading/backtest/v2_baseline/`（与 v2 基线逐项一致）。
 
+### v5 全量扩展（V5-0~V5-7，D-014~D-016）
+
+v5 设计（`docs/策略算法框架详细设计-v5.md`）在 v3/v4 之上建立预测—场景—仿真—决策—结算全闭环。工程实现全量就位，生产默认切换受真实数据 HARD 门约束（D-016）：
+
+- **价格角色** `domain/price_roles.py` + `markets/price_roles.py`（兼容导出）：日前/实时/中长期/回收价格角色词汇固化。
+- **概率预测** `forecasting/market_state.py`（市场状态 logistic provider）+ `price_history.py`（按角色解析训练序列）。
+- **状态条件场景** `scenario/state_conditioned.py`：t-Copula 联合场景 + 有证据的极端模板。
+- **多资源优化** `operations/multi_resource.py`（BESS 群+可调负荷+新能源限电+电网购电）+ `execution_bias.py`（执行偏差学习）。
+- **退化与风险** `optimization/degradation.py` Level 2 温度退化 + `risk.py` 风险度量菜单。
+- **结算对账** `markets/single_settlement/reconciliation.py`。
+- **回测经济验收** `backtest/counterexamples.py`（HARD 反例框架）+ `acceptance.py`（统一经济验收与影子评估）。
+- **市场数字孪生** `market_simulation/`（v5 D-014 新增顶层包）：`grid/`（DC 网络+SCED+SCUC+后定价+N-1）、`behavior`（报价推断+ABM）、`learning`（MARL 环境+policy guard）。只依赖 domain + optimization.solver，结构守卫强制不依赖 trading/backtest/具体市场插件。
+
 ### v4 P0（Phase A 算法增强，可选启用，默认行为不变）
 
 v4 设计（`docs/策略算法框架详细设计-v4.md`）在 v3 架构边界内增强各层算法能力，D-008~D-013 默认值保持不变。P0 已落地六项（全部可选，不改变默认链路）：
@@ -75,16 +88,14 @@ v4 设计（`docs/策略算法框架详细设计-v4.md`）在 v3 架构边界内
 - **头寸** `positions/mid_long_optimizer.py`：CVaR 约束优化头寸（覆盖/预算/换手惩罚/年度总量），默认仍走启发式。
 - **回测** `backtest/data_protocol.py`：真实数据切分契约（train/validation/test + 无前瞻 vintage 校验）；`backtest/metrics` 增价格捕获率/偏差占比/分位校准误差。
 
-## 4. 测试基线（2026-08-02 实测，v4 P0 落地后）
+## 4. 测试基线（2026-08-02 实测，v5 全量扩展后）
 
 ```bash
 uv run python -m pytest -q
-# → 612 passed, 4 skipped, 5 deselected（全量，含投资测算+用户侧；5 deselected 含 v4 Phase A 新增 2 项 slow）
+# → 699 passed, 4 skipped, 5 deselected（全量，含 v5 market_simulation 与 operations）
 ```
 
-active-only 节点命令（排除投资测算）最新结果为 507 passed，见 `docs/电力市场交易当前实现基线.md` §8。
-
-v4 P0 新增测试：`tests/forecasting/test_lightgbm_provider.py`、`tests/scenario/test_diagnostics.py`、`tests/optimization/test_degradation.py`、`tests/positions/test_mid_long_optimizer.py`、`tests/backtest/test_data_protocol.py`、`tests/backtest/test_v4_phase_a_acceptance.py`（Phase A 六项验收，含 walk-forward pinball loss 对比）。性能基准（`-m slow`）显式运行通过。
+v5 新增测试：`tests/market_simulation/`（SCED/SCUC + ABM + MARL）、`tests/operations/`（多资源+执行偏差）、`tests/backtest/test_counterexamples.py` + `test_v5_acceptance.py`、`tests/forecasting/test_v5_{market_state,price_roles}.py`、`tests/scenario/test_v5_state_conditioned.py`、`tests/optimization/test_v5_{level2_degradation,risk_measures}.py`、`tests/markets/test_v5_reconciliation.py`、`tests/data_provider/test_v5_foundation_contracts.py`、`tests/trading/test_v5_forecast_vintages.py`。
 
 ## 5. 硬约束
 
@@ -117,6 +128,7 @@ v4 P0 新增测试：`tests/forecasting/test_lightgbm_provider.py`、`tests/scen
 | `README.md` | 项目总览、系统闭环、设计原则、仓库结构、核心模块、Two-stage+CVaR 模型、v2 重构进度、快速开始 |
 | `docs/策略算法框架详细设计-v3.md` | 当前在研设计（D-001~D-007 决策已生效；`-v2.md`/`-v1.md`/`-v0.md` 为历史溯源） |
 | `docs/电力市场交易当前实现基线.md` | 当前实现事实快照（成熟度、模块职责、契约、入口、缺口、验证） |
+| `docs/策略算法框架详细设计-v5.md` | v5 全量算法扩展（D-014~D-016，SCED/SCUC/ABM/MARL 进入正式实施序列） |
 | `docs/策略算法框架详细设计-v4.md` | v4 算法增强设计（D-008~D-013，P0 已实施，P1/P2 待真实数据） |
 | `app/README.md` | 入口脚本清单与运行约定（活动 10 个：optimization 3 + trading 7；归档 user_side_dispatch 4 个） |
 | `configs/README.md` | YAML 配置清单与对应入口 |

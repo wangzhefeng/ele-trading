@@ -64,7 +64,7 @@ class _StaticForecastProvider:
             periods=request.horizon,
             freq=request.frequency,
         )
-        point = pd.Series(values, index=index)
+        point = pd.Series(values[: request.horizon], index=index)
         return ForecastResult(
             request=request,
             point=point,
@@ -97,15 +97,33 @@ def _run_pipeline():
 
 
 def test_event_chain_complete_and_ordered():
-    """事件链按 Award → Forecast×4 → Dispatch×2 → Metering → Settlement 排列。"""
+    """事件链按日前预测/调度、日内新 vintage/调度、实际结算排列。"""
     result = _run_pipeline()
     event_types = [type(event) for event in result.events]
     assert event_types == (
         [AwardEvent]
+        + [ForecastEvent] * 5
+        + [DispatchEvent]
         + [ForecastEvent] * 4
-        + [DispatchEvent] * 2
+        + [DispatchEvent]
         + [MeteringEvent, SettlementEvent]
     )
+    assert [event.source for event in result.events] == [
+        "position",
+        "price:day_ahead_reference",
+        "price",
+        "load",
+        "wind_power",
+        "pv_power",
+        "dispatch:day_ahead",
+        "price:real_time_settlement:intraday",
+        "load:intraday",
+        "wind_power:intraday",
+        "pv_power:intraday",
+        "dispatch:intraday",
+        "metering",
+        "settlement:single_settlement",
+    ]
 
 
 def test_event_sources_and_versions_traceable():
@@ -124,22 +142,43 @@ def test_event_sources_and_versions_traceable():
 
 
 def test_input_versions_derived_from_event_chain():
-    """DecisionTrace.input_versions 必须由事件链派生且与求解器收到的一致。"""
+    """每个 DecisionTrace 只由该决策时刻已经发生的事件派生。"""
     result = _run_pipeline()
-    derived = derive_input_versions(
-        result.events,
+    day_ahead_derived = derive_input_versions(
+        result.events[:6],
         extra={"forecast_registry": "registry-v1"},
     )
-    trace = result.day_ahead_plan.decision_trace
-    assert trace is not None
-    assert trace.input_versions == derived
-    assert trace.input_versions["position"] == "position-v1"
-    assert trace.input_versions["price"] == "price-v1"
+    day_ahead_trace = result.day_ahead_plan.decision_trace
+    assert day_ahead_trace is not None
+    assert day_ahead_trace.input_versions == day_ahead_derived
+    assert day_ahead_trace.input_versions["position"] == "position-v1"
+    assert day_ahead_trace.input_versions["price"] == "price-v1"
+
+    intraday_derived = derive_input_versions(
+        result.events[:11],
+        extra={"forecast_registry": "registry-v1"},
+    )
+    intraday_trace = result.intraday_plan.schedule.decision_trace
+    assert intraday_trace is not None
+    assert intraday_trace.input_versions == intraday_derived
+    assert (
+        intraday_trace.input_versions[
+            "price:real_time_settlement:intraday"
+        ]
+        == "price-v1"
+    )
 
 
 def test_forecast_events_respect_decision_time():
-    """预测事件签发时刻不得晚于决策时刻（无前瞻，不变量 1）。"""
+    """每个预测必须先于有效时段，并使用对应的日前或日内决策时刻。"""
     result = _run_pipeline()
+    intraday_decision_time = DECISION_TIME + pd.Timedelta(minutes=30)
     for event in result.events:
         if isinstance(event, ForecastEvent):
-            assert event.issue_time <= DECISION_TIME
+            assert event.issue_time < event.valid_time
+            expected_issue_time = (
+                intraday_decision_time
+                if event.source.endswith(":intraday")
+                else DECISION_TIME
+            )
+            assert event.issue_time == expected_issue_time

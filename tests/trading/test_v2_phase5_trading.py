@@ -670,7 +670,7 @@ def test_orchestrator_runs_injected_single_settlement_chain_with_trace():
                 periods=request.horizon,
                 freq=request.frequency,
             )
-            point = pd.Series(values, index=index)
+            point = pd.Series(values[: request.horizon], index=index)
             return ForecastResult(
                 request=request,
                 point=point,
@@ -721,8 +721,14 @@ def test_orchestrator_runs_injected_single_settlement_chain_with_trace():
         intraday_start=2,
     )
 
-    assert events[:6] == [
+    assert events == [
         "position",
+        "forecast:price",
+        "forecast:price",
+        "forecast:load",
+        "forecast:wind_power",
+        "forecast:pv_power",
+        "scenario",
         "forecast:price",
         "forecast:load",
         "forecast:wind_power",
@@ -776,7 +782,7 @@ def test_walk_forward_backtest_keeps_actuals_out_of_production_forecasts():
                 periods=request.horizon,
                 freq=request.frequency,
             )
-            point = pd.Series(values, index=index)
+            point = pd.Series(values[: request.horizon], index=index)
             spread = 20.0 if request.target == "price" else 0.1
             return ForecastResult(
                 request=request,
@@ -840,12 +846,21 @@ def test_walk_forward_backtest_keeps_actuals_out_of_production_forecasts():
         "risk_aware_cost",
         "oracle_cost",
     }.issubset(report.columns)
-    assert all(request.data == {} for request in forecast_requests)
+    assert all("rule_version" in request.data for request in forecast_requests)
     assert all(
-        request.issue_time <= decision_time
+        not any(key in {"actual", "actuals", "realized"} for key in request.data)
         for request in forecast_requests
     )
-    assert len(forecast_requests) == 12
+    assert all(
+        "price_role" in request.data
+        for request in forecast_requests
+        if request.target == "price"
+    )
+    assert all(
+        request.issue_time <= decision_time + pd.Timedelta(minutes=30)
+        for request in forecast_requests
+    )
+    assert len(forecast_requests) == 27
 
 
 def test_active_tree_has_no_dual_settlement_symbols_or_todo_imports():

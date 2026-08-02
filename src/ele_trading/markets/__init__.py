@@ -12,14 +12,47 @@ SettlementEngine 协议（v3 M4 / D-002）。
 - ``dual_settlement``：双结算（偏差带考核）模式（量价结算 C/差价结算 C2 +
   日前偏差考核 + 中长期回收），规则研究参考蒙西 v1.3 双结算设计；
   当前为带测试的规则引擎库，未接入主链编排。
+
+包级导入采用 PEP 562 惰性加载：``import ele_trading.markets.price_roles``
+等子模块不会连带加载两个结算插件，保证底层包（scenario/forecasting）
+可以引用价格角色词汇而不触达市场插件层。
 """
 
-from . import dual_settlement, single_settlement
-from .protocol import MarketMode, SettlementEngine
+from typing import Any
 
 __all__ = [
     "MarketMode",
+    "PriceRoleCapability",
+    "PriceRole",
     "SettlementEngine",
+    "normalize_price_role",
     "dual_settlement",
     "single_settlement",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    if name in ("MarketMode", "PriceRoleCapability", "SettlementEngine"):
+        from .protocol import MarketMode, PriceRoleCapability, SettlementEngine
+
+        return {
+            "MarketMode": MarketMode,
+            "PriceRoleCapability": PriceRoleCapability,
+            "SettlementEngine": SettlementEngine,
+        }[name]
+    if name in ("PriceRole", "normalize_price_role"):
+        from ele_trading.domain.price_roles import PriceRole, normalize_price_role
+
+        return {
+            "PriceRole": PriceRole,
+            "normalize_price_role": normalize_price_role,
+        }[name]
+    if name == "dual_settlement":
+        from . import dual_settlement
+
+        return dual_settlement
+    if name == "single_settlement":
+        from . import single_settlement
+
+        return single_settlement
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
