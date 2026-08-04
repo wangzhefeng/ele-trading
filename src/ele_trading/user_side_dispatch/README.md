@@ -7,7 +7,7 @@
 | 维度 | 活动市场交易 | 本归档包 |
 |---|---|---|
 | 业务场景 | 市场交易与聚合运行 | 工商业用户侧节能 |
-| 价格机制 | 预测价格、场景和市场结算 | 固定分时目录电价 |
+| 价格机制 | 预测价格、场景和市场结算 | 目录电价或市场化落地价（`landed_price` 双模式合成） |
 | 主要经济项 | 现货、合同、风险与履约 | 电度费、需量费、售电和弃电 |
 | 核心契约 | `ScenarioSet`、`OperationalPlan` | `UserSide*DispatchInput` |
 | 算法 | 套利、MPC、Two-stage、日前/日内 | 规则、PuLP、CVXPY、分布式 |
@@ -18,6 +18,7 @@
 ```text
 user_side_dispatch/
 ├── interfaces.py
+├── landed_price.py
 ├── adapters/
 │   ├── dispatch_adapters.py
 │   ├── distributed_dispatch_adapters.py
@@ -34,6 +35,15 @@ user_side_dispatch/
 ```
 
 PV、Wind 和组合可再生场景通过 adapter 映射到统一 renewable 内核。CVXPY 和分布式导出使用延迟加载；运行相关入口需要安装 `archived-user-side` extra。
+
+## 落地电价合成（landed_price）
+
+`landed_price.py` 把调度算法消费的 `buy_price` 从外生给定序列变为可审计的合成结果，对应两条政策时间线：1656 号文（2026-03-01 起市场用户不再执行政府分时电价）和 1077 号文（2026-08-01 起第四监管周期两部制输配电价）。支持两种模式：
+
+- `catalogue`：目录电价（政府定价销售电价，已含全部构成）直接透传；
+- `market`：中长期价 × 覆盖率 + 现货价 × (1 - 覆盖率) + 输配电价电量部分 + 政府性基金及附加；`price_type` 由交易电价秩次启发式打标。
+
+输配电价与基金费率按生效日版本化（`TariffSchedule`），YAML 加载示例见 `configs/user_side_dispatch/tariff_schedule_demo.yaml`。两部制容量部分不参与逐时段合成，由 `LandedPrice.demand_charge_rate` 提供给调度输入的需量电费字段。
 
 ## 活动隔离
 

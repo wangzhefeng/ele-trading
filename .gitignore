@@ -174,7 +174,6 @@ __marimo__/
 # custom
 .agents/
 .claude/
-.superpowers/
 .hermes/
 .uv_cache/
 .venv/

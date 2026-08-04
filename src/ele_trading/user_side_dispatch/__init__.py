@@ -13,6 +13,14 @@ possible without the optional dependency.
 from importlib import import_module
 
 from .interfaces import *  # noqa: F401,F403
+from .landed_price import (
+    LandedPrice,
+    PriceMode,
+    TariffSchedule,
+    TariffVersion,
+    build_landed_price,
+    load_tariff_schedule,
+)
 from .adapters.dispatch_adapters import (
     run_user_side_pv_dispatch,
     run_user_side_pv_bess_dispatch,

@@ -1,0 +1,11 @@
+# 版本化输配电价与政府性基金费率示例（两部制，第四监管周期演示值，非真实省份费率）。
+# landed_price.load_tariff_schedule 加载；resolve 按 as_of 取当日生效的最新版本。
+versions:
+  - effective_from: "2026-01-01"
+    energy_rate: 0.1520        # 输配电价电量部分（元/kWh）
+    demand_charge_rate: 38.0   # 两部制容量部分，按最大需量（元/kW·月）
+    surcharge_rate: 0.029      # 政府性基金及附加（元/kWh）
+  - effective_from: "2026-08-01"   # 1077 号文第四监管周期生效
+    energy_rate: 0.1467
+    demand_charge_rate: 40.0
+    surcharge_rate: 0.029
