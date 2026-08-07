@@ -1,6 +1,6 @@
 # optimization — 活动优化内核
 
-本模块承接价格或 `ScenarioSet` 输入，提供活动 BESS 套利、MPC 和 Two-stage + CVaR 基线。当前活动模型使用 PuLP/CBC；用户侧、分布式和 CVXPY 实现位于平级归档包 `user_side_dispatch`，本目录不存在 `todo/`。
+本模块承接价格或 `ScenarioSet` 输入，提供活动 BESS 套利、MPC 和 Two-stage + CVaR 基线。当前活动模型使用 PuLP/CBC；用户侧、分布式和 CVXPY 实现位于平级独立活动领域 `user_side_dispatch`，本目录不转出其 API。
 
 ## 当前文件
 
@@ -33,8 +33,8 @@
 
 `build_two_stage_cvar_model()` 是为现有示例保留的 compatibility adapter，不是未来扩展入口。
 
-## 归档边界
+## 独立领域边界
 
-归档实现、样例和接口位于 `src/ele_trading/user_side_dispatch/`，对应入口和配置位于 `app/user_side_dispatch/` 与 `configs/user_side_dispatch/`。活动 optimization 不转出归档 API。
+用户侧实现、样例和接口位于 `src/ele_trading/user_side_dispatch/`，对应入口和配置位于 `app/user_side_dispatch/` 与 `configs/user_side_dispatch/`。它与市场交易主链隔离，活动 optimization 不转出其 API。
 
-共享物理核、目标策略、求解器 adapter 和结果提取的目标边界由 [v3 设计](../../../docs/策略算法框架详细设计-v3.md#74-通用物理与求解内核)决定。
+共享物理核、目标策略、求解器 adapter 和结果提取的已批准边界见 [v3](../../../docs/策略算法框架详细设计-v3.md)；温度退化、扩展风险度量和未接线的多资源优化路线见 [v5 §8、§11](../../../docs/策略算法框架详细设计-v5.md#11-多资源优化头寸与结算)。

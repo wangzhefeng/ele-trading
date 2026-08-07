@@ -177,8 +177,11 @@ __marimo__/
 .hermes/
 .uv_cache/
 .venv/
+.workbuddy/
 data/
 dataset/
 logs/
 results/
 .DS_Store
+docs/电力市场交易-模拟/
+docs/电力市场交易资料/

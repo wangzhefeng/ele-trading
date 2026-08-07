@@ -61,10 +61,10 @@ uv sync --extra archived-user-side
 
 ## 验证
 
-活动入口测试由 `tests/test_entry_scripts.py` 覆盖。当前 active-only 入口清单和最近验证结果见 [tests/README.md](../tests/README.md) 与[当前实现基线](../docs/电力市场交易当前实现基线.md#8-验证快照)。
+活动入口测试由 `tests/test_entry_scripts.py` 覆盖。当前入口边界见 [tests/README.md](../tests/README.md)，验证快照和下一开发路线见 [v5 §3、§15](../docs/策略算法框架详细设计-v5.md#15-验证与性能预算)。
 
 ```bash
 uv run python -m pytest -q tests/test_entry_scripts.py
 ```
 
-该命令还会收集平级包入口用例；需要严格排除投资测算时，应使用当前实现基线记录的 active-only 节点列表。
+该命令还会收集平级包入口用例；需要严格排除投资测算时，应按当前任务选择活动节点，并以 v5 §15 的验证口径记录结果。

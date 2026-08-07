@@ -24,15 +24,16 @@
 | `domain/` | 市场无关领域契约 + `Forecast→…→Settlement` 事件契约骨架（最底层） |
 | `markets/single_settlement/` | 单结算模式市场规则插件（`MarketConfig`/配置加载校验/结算引擎；规则研究参考蒙西市场规则） |
 | `positions/` | 中长期/月度头寸决策（覆盖结构、阶梯申报、缺口再平衡） |
-| `operations/` | 日前运行计划（联合场景 CVaR + DR 两阶段）与日内滚动控制 |
+| `operations/` | 日前运行、日内滚动、DR 联合优化、多资源 LP 与执行偏差估计 |
 | `trading/` | 参与方交易编排（`TradingOrchestrator`）+ demo fixtures（`demo_fixtures.py`） |
 | `markets/dual_settlement/` | 双结算（偏差带考核）规则插件：C/C2/Cpen_dayah/Cpen_long 唯一权威实现（2026-08-01 自 v1 归档激活，未接主链） |
-| `backtest/` | walk-forward 回测（四基准无前瞻）+ 交易/BESS 指标与退化核算 |
+| `backtest/` | walk-forward 回测、交易/BESS 指标、反例与统一经济验收框架 |
 | `demand_response/` | DR 参与决策（品种层机会成本评估，独立事后工具） |
 | `data_provider/` | 配置、样例数据、负荷、气象、时序质量处理 |
-| `forecasting/` | 价格/负荷/风光功率预测、`ForecastProvider` 接口、天气特征工程 |
-| `scenario/` | 价格场景采样（LHS/MC）与缩减（Kantorovich/Wasserstein） |
-| `optimization/` | 通用优化内核：活动储能套利、MPC、Two-stage+CVaR、共享 BESS 物理核 |
+| `forecasting/` | 价格角色、价格/负荷/风光功率预测、`ForecastProvider`、市场状态与天气特征工程 |
+| `scenario/` | 联合场景、状态条件 Student-t Copula、极端模板、缩减与诊断 |
+| `market_simulation/` | 独立市场仿真核：DC 网架、SCED/SCUC、报价/ABM、MARL；不依赖交易主链 |
+| `optimization/` | 通用优化内核：活动储能套利、MPC、Two-stage+CVaR、共享 BESS 物理核、退化与风险度量 |
 | `user_side_dispatch/` | 用户侧/分布式/CVXPY 调度（v3 D-001/M6 恢复为独立领域能力，只依赖 utils，与市场主链互不依赖） |
 | `utils/` | IO、日志、时间、数据对齐工具 |
 
@@ -51,12 +52,12 @@
 
 交易/调度通用内核 → `optimization/`；领域契约 → `domain/`；市场规则插件 → `markets/<模式>/`；头寸 → `positions/`；运行 → `operations/`；回测 → `backtest/`；编排 → `trading/`；投资收益测算（IRR/容量/结算/资源仿真）→ `investment_estimation/`。`src/ele_trading/capacity_planning/` **已删除**，不在 `ele_trading` 下重建容量规划/收益测算模块。活动代码不得出现地区名命名（如 mengxi）。
 
-## 3. 当前主线状态（v3 迁移 M0–M6 落地后）
+## 3. 当前主线状态（v5 实施中）
 
-依据 `docs/策略算法框架详细设计-v3.md`（v3 为当前在研设计，D-001~D-007 决策已生效；`-v2.md`/`-v1.md`/`-v0.md` 为历史溯源）。当前实现事实见 `docs/电力市场交易当前实现基线.md`。v3 迁移 M0–M6 已落地，活动链路按分层包 + 市场模式协议组织：
+[策略算法框架详细设计 v5](docs/策略算法框架详细设计-v5.md) 是当前唯一在研设计、事实快照和下一开发路线；v3 的 D-001～D-007 是仍生效的已批准架构决策，v0～v2 与 v4 仅作历史溯源。v3 迁移 M0–M6 已落地，活动链路按分层包 + 市场模式协议组织：
 
 - **领域契约** `domain/`：共享交易契约（`PositionState`/`MarketForecastBundle`/`OperationalPlan`/`IntradayPlan`/`DRCommitment`/`DecisionTrace`）+ 事件链（`TradingEvent` 全链 + `MarketCalendar` + `derive_input_versions`，编排与回测均输出事件链）。
-- **市场模式协议** `markets/protocol.py`：`MarketMode`（配置/结算/头寸/运行/编排/回测注入点）+ `SettlementEngine`；`markets/sections.py` 六子对象组合式 typed config（market/scenario/bess/dr/monthly/solver）+ `schema_version`。单结算与双结算均为完整插件（各含 contracts/loader/settlement/mode），主链只依赖协议、不 import 具体模式（结构守卫 `test_main_chain_imports_no_concrete_market_mode` 强制）。
+- **市场模式协议** `markets/protocol.py`：`MarketMode` 提供配置、结算与价格角色 capability，`SettlementEngine` 注入结算语义；`markets/sections.py` 为六子对象组合式 typed config（market/scenario/bess/dr/monthly/solver）+ `schema_version`。主链不 import 具体模式（结构守卫强制），但头寸、运行和报价策略尚未成为完整可替换 capability，Bid→Award 闭环属于 v5 V5-8。
 - **优化内核** `optimization/`：四层拆分（D-004/D-005）——共享 BESS 物理核（`bess_model`）、目标组件层（`objectives.py`）、统一结果提取（`extraction.py`）、typed 求解出口（`solver.py` `solve_pulp_model`）。MPC 已迁移共享核（D-004），`dt` 统一 0.25。
 - **头寸/运行/编排/回测**：`positions/`、`operations/`（DR 联合优化在 `day_ahead_coupled.py`，履约结算经 `SettlementEngine` 注入）、`trading/orchestrator.py`（固定四类预测 + 场景 + 日前 + 日内 + 结算，构建并输出事件链）、`backtest/`（四基准回测 + 指标 + 事件链完整性断言）。
 - **场景** `scenario/`：canonical 唯一化（D-007）——`Scenario`/`ScenarioSet`/`build_joint_scenarios`/`reduce_scenarios`；legacy `PriceScenario`/`generate_price_scenarios`/`normalize_weights` 已删除。
@@ -67,7 +68,7 @@
 
 ### v5 全量扩展（V5-0~V5-7，D-014~D-016）
 
-v5 设计（`docs/策略算法框架详细设计-v5.md`）在 v3/v4 之上建立预测—场景—仿真—决策—结算全闭环。工程实现全量就位，生产默认切换受真实数据 HARD 门约束（D-016）：
+v5 在 v3/v4 之上建立预测—场景—仿真—决策—结算闭环。V5-0～V5-7 均已有算法核和专项测试，但未满足真实数据、主链接线、校准、影子运行与生产默认晋级条件；下一步以 v5 V5-8～V5-11 为准：
 
 - **价格角色** `domain/price_roles.py` + `markets/price_roles.py`（兼容导出）：日前/实时/中长期/回收价格角色词汇固化。
 - **概率预测** `forecasting/market_state.py`（市场状态 logistic provider）+ `price_history.py`（按角色解析训练序列）。
@@ -88,12 +89,14 @@ v4 设计（`docs/策略算法框架详细设计-v4.md`）在 v3 架构边界内
 - **头寸** `positions/mid_long_optimizer.py`：CVaR 约束优化头寸（覆盖/预算/换手惩罚/年度总量），默认仍走启发式。
 - **回测** `backtest/data_protocol.py`：真实数据切分契约（train/validation/test + 无前瞻 vintage 校验）；`backtest/metrics` 增价格捕获率/偏差占比/分位校准误差。
 
-## 4. 测试基线（2026-08-02 实测，v5 全量扩展后）
+## 4. 测试快照（2026-08-08）
 
 ```bash
-uv run python -m pytest -q
-# → 699 passed, 4 skipped, 5 deselected（全量，含 v5 market_simulation 与 operations）
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run pytest -q -W error::RuntimeWarning
+# → 711 passed, 4 skipped, 5 deselected, 11 warnings
 ```
+
+该结果仅证明代码、接口和标准算例回归；生产晋级仍受 v5 §15 的真实数据、经济、影子与回滚门约束。
 
 v5 新增测试：`tests/market_simulation/`（SCED/SCUC + ABM + MARL）、`tests/operations/`（多资源+执行偏差）、`tests/backtest/test_counterexamples.py` + `test_v5_acceptance.py`、`tests/forecasting/test_v5_{market_state,price_roles}.py`、`tests/scenario/test_v5_state_conditioned.py`、`tests/optimization/test_v5_{level2_degradation,risk_measures}.py`、`tests/markets/test_v5_reconciliation.py`、`tests/data_provider/test_v5_foundation_contracts.py`、`tests/trading/test_v5_forecast_vintages.py`。
 
@@ -126,11 +129,10 @@ v5 新增测试：`tests/market_simulation/`（SCED/SCUC + ABM + MARL）、`test
 |------|------|
 | `AGENTS.md` | 项目 agent 规则唯一权威（仅项目特有硬约束；通用编码准则在各 agent 全局配置） |
 | `README.md` | 项目总览、系统闭环、设计原则、仓库结构、核心模块、Two-stage+CVaR 模型、v2 重构进度、快速开始 |
-| `docs/策略算法框架详细设计-v3.md` | 当前在研设计（D-001~D-007 决策已生效；`-v2.md`/`-v1.md`/`-v0.md` 为历史溯源） |
-| `docs/电力市场交易当前实现基线.md` | 当前实现事实快照（成熟度、模块职责、契约、入口、缺口、验证） |
-| `docs/策略算法框架详细设计-v5.md` | v5 全量算法扩展（D-014~D-016，SCED/SCUC/ABM/MARL 进入正式实施序列） |
-| `docs/策略算法框架详细设计-v4.md` | v4 算法增强设计（D-008~D-013，P0 已实施，P1/P2 待真实数据） |
-| `app/README.md` | 入口脚本清单与运行约定（活动 10 个：optimization 3 + trading 7；归档 user_side_dispatch 4 个） |
+| `docs/策略算法框架详细设计-v5.md` | 当前代码事实、未完成闭环、验收门和下一开发路线 |
+| `docs/策略算法框架详细设计-v3.md` | 已批准架构决策（D-001～D-007） |
+| `docs/策略算法框架详细设计-v0.md`～`-v4.md` | 历史需求、迁移和算法增强溯源；v4 P1/P2 的未完成项已转入 v5 |
+| `app/README.md` | 入口脚本清单与运行约定（活动 14 个：optimization 3 + trading 7 + user_side_dispatch 4） |
 | `configs/README.md` | YAML 配置清单与对应入口 |
 | `tests/README.md` | 测试清单与冒烟边界 |
 | `src/ele_trading/{domain,markets,positions,operations,trading,backtest,demand_response,data_provider,forecasting,scenario,optimization}/README.md` | 各子包说明 |

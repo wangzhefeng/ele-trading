@@ -1,17 +1,17 @@
-# user_side_dispatch — 归档用户侧风光储调度
+# user_side_dispatch — 独立用户侧风光储调度
 
 ## 当前状态
 
-本包封存工商业用户侧风光储调度能力，与活动市场交易主链平级、零活动代码依赖。它不属于当前活动 API、常规入口或常规 pytest 收集范围。
+本包是活动的独立领域能力，与电力市场交易主链平级并保持零业务依赖；它只依赖 `utils`，由结构守卫验证。它拥有独立的入口、配置和测试，但不进入 `trading`、`markets`、`operations` 或 `backtest` 主链。
 
-| 维度 | 活动市场交易 | 本归档包 |
+| 维度 | 市场交易 | 用户侧调度 |
 |---|---|---|
-| 业务场景 | 市场交易与聚合运行 | 工商业用户侧节能 |
+| 业务场景 | 市场交易与聚合运行 | 工商业用户侧节能与风光储调度 |
 | 价格机制 | 预测价格、场景和市场结算 | 目录电价或市场化落地价（`landed_price` 双模式合成） |
 | 主要经济项 | 现货、合同、风险与履约 | 电度费、需量费、售电和弃电 |
 | 核心契约 | `ScenarioSet`、`OperationalPlan` | `UserSide*DispatchInput` |
 | 算法 | 套利、MPC、Two-stage、日前/日内 | 规则、PuLP、CVXPY、分布式 |
-| 状态 | 活动 | 归档 |
+| 状态 | 活动主链 | 活动独立领域 |
 
 ## 当前结构
 
@@ -20,45 +20,27 @@ user_side_dispatch/
 ├── interfaces.py
 ├── landed_price.py
 ├── adapters/
-│   ├── dispatch_adapters.py
-│   ├── distributed_dispatch_adapters.py
-│   └── distributed_dispatch_adapters_shared.py
 ├── algorithms/
-│   ├── user_side_renewable_dispatch_class.py
-│   ├── user_side_renewable_bess_dispatch_class.py
-│   ├── user_side_bess_dispatch_pulp.py
-│   ├── user_side_bess_dispatch_cvxpy.py
-│   ├── user_side_bess_distributed_dispatch_class.py
-│   └── user_side_renewable_bess_distributed_dispatch_class.py
 ├── *_sample.py
 └── __init__.py
 ```
 
-PV、Wind 和组合可再生场景通过 adapter 映射到统一 renewable 内核。CVXPY 和分布式导出使用延迟加载；运行相关入口需要安装 `archived-user-side` extra。
+PV、Wind 和组合可再生场景通过 adapter 映射到统一 renewable 内核。CVXPY 和分布式导出使用延迟加载；相关入口依赖 `archived-user-side` extra。
 
 ## 落地电价合成（landed_price）
 
-`landed_price.py` 把调度算法消费的 `buy_price` 从外生给定序列变为可审计的合成结果，对应两条政策时间线：1656 号文（2026-03-01 起市场用户不再执行政府分时电价）和 1077 号文（2026-08-01 起第四监管周期两部制输配电价）。支持两种模式：
+`landed_price.py` 将 `buy_price` 从外生序列变为可审计合成结果，对应 1656 号文与 1077 号文两条政策时间线：
 
-- `catalogue`：目录电价（政府定价销售电价，已含全部构成）直接透传；
+- `catalogue`：目录电价直接透传；
 - `market`：中长期价 × 覆盖率 + 现货价 × (1 - 覆盖率) + 输配电价电量部分 + 政府性基金及附加；`price_type` 由交易电价秩次启发式打标。
 
-输配电价与基金费率按生效日版本化（`TariffSchedule`），YAML 加载示例见 `configs/user_side_dispatch/tariff_schedule_demo.yaml`。两部制容量部分不参与逐时段合成，由 `LandedPrice.demand_charge_rate` 提供给调度输入的需量电费字段。
+输配电价与基金费率按生效日通过 `TariffSchedule` 版本化；示例见 `configs/user_side_dispatch/tariff_schedule_demo.yaml`。两部制容量部分不参与逐时段合成，由 `LandedPrice.demand_charge_rate` 提供给调度输入。
 
-## 活动隔离
+## 隔离边界与成熟度
 
-- 活动 `data_provider` 和 `optimization` 不转出本包 API；
-- `app/user_side_dispatch/` 与 `configs/user_side_dispatch/` 只服务归档入口；
-- `tests/user_side_dispatch/` 只能显式运行；
-- 本包不包含投资收益测算代码。
+- 市场交易主链不转出本包 API；本包也不依赖市场模式、市场结算或回测；
+- `app/user_side_dispatch/`、`configs/user_side_dispatch/` 和 `tests/user_side_dispatch/` 是活动独立领域的正式入口、配置和回归范围；
+- 本包不包含投资收益测算代码；
+- 需量结算口径、合同需量等业务规则仍待确认；当前不是生产已验证能力。
 
-## 恢复或删除条件
-
-本轮不决定恢复或删除。若未来恢复为活动能力，必须同时具备：
-
-1. 明确的业务 owner 和范围；
-2. 与活动领域契约衔接的正式接口；
-3. 活动 app/config 入口；
-4. 纳入活动测试与回测的验收标准。
-
-若未来删除，必须同时处理源码、入口、配置、测试和文档。最终方向记录在 [v3 决策表](../../../docs/策略算法框架详细设计-v3.md#6-待重新决策的现有实现)。
+领域隔离由 v3 D-001 规定；市场交易的当前开发路线见 [v5](../../../docs/策略算法框架详细设计-v5.md)，不将用户侧能力重新并入市场主链。

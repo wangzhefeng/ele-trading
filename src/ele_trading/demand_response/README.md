@@ -14,7 +14,7 @@
 1. `estimate_arbitrage_opportunity_cost()` 根据 DR 窗口内原计划放电、实时价预测和 `dt` 估算放弃套利的价值。
 2. `evaluate_dr_participation()` 计算响应量、补偿、机会成本、违约罚金、退化成本和净裕度，再按最小响应量与最小裕度做二值判定。
 
-经济参数当前来自 `markets.single_settlement.MarketConfig`，因此独立 allocator 仍与默认单结算配置耦合。
+经济参数来自共享 `MarketConfig`；独立 allocator 仍是透明启发式，不代表已校准的市场 DR 产品策略。
 
 ## 与主链 DR 的区别
 
@@ -23,4 +23,4 @@
 - 日内履约：`operations/intraday_rolling.py`；
 - 事后补偿与罚金：`markets/single_settlement/settlement.compute_dr_settlement()`。
 
-v3 需要决定 DR 产品契约、机会成本、联合优化和结算是否共享统一策略接口，见[市场策略设计](../../../docs/策略算法框架详细设计-v3.md#75-市场策略)。
+DR 产品 capability、多资源联合优化、正式账单对账和主链接线的当前路线见 [v5 §11、V5-9](../../../docs/策略算法框架详细设计-v5.md#144-v5-9运行主链接线与失败透明)。

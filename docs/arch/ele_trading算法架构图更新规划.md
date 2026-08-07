@@ -2,7 +2,7 @@
 
 > 文档定位：本文是 `docs/arch/ele_trading算法架构.tldraw` 与
 > `docs/arch/蒙西电力交易算法业务架构.tldraw` 的唯一统一修改规划，不是当前实现说明书。
-> 当前事实以 `src/ele_trading/`、`docs/电力市场交易当前实现基线.md` 和结构守卫测试为准；
+> 当前事实以 `src/ele_trading/`、`docs/策略算法框架详细设计-v5.md` §3/§14/§15 和结构守卫测试为准；
 > 业务约束以根目录 `AGENTS.md` 与 `docs/策略算法框架详细设计-v5.md` 为准。
 
 ## 1. 目标与范围
