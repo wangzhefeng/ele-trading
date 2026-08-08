@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 
-from ele_trading.trading.v5_synthetic_runner import SyntheticV5RunResult
+from ele_trading.trading.synthetic.runner import SyntheticRunResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +22,7 @@ class SyntheticRunEvidence:
 
 def summarize_synthetic_run(
     directory: str | Path,
-    result: SyntheticV5RunResult,
+    result: SyntheticRunResult,
 ) -> SyntheticRunEvidence:
     """从 runner 真实输出派生审计摘要，拒绝非 synthetic manifest。"""
     manifest = json.loads(

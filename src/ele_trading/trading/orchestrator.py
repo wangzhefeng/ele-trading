@@ -14,11 +14,13 @@ from ele_trading.forecasting.contracts import (
 )
 from ele_trading.forecasting.provider import assert_no_future_info
 from ele_trading.scenario.contracts import ScenarioSet
+from ele_trading.scenario.diagnostics import diagnose_scenario_set
 from ele_trading.domain.contracts import (
     AwardFulfillment,
     AwardedCommitment,
     BidSubmission,
     BillingStatement,
+    ContractType,
     IntradayPlan,
     MarketAwardReceipt,
     MarketForecastBundle,
@@ -63,6 +65,16 @@ from ele_trading.operations.multi_resource_intraday import (
     MultiResourceIntradayPlan,
     solve_multi_resource_intraday,
 )
+from ele_trading.operations.resource_runtime import (
+    ResourceActual,
+    ResourceOperationalPlan,
+)
+from ele_trading.trading.scenario_admission import (
+    ScenarioAdmissionDecision,
+    ScenarioAdmissionPolicy,
+    ScenarioAdmissionRejected,
+    ScenarioEvidenceTier,
+)
 
 
 @dataclass(slots=True)
@@ -80,9 +92,11 @@ class TradingPipelineResult:
     intraday_forecasts: MarketForecastBundle | None = None
     intraday_scenarios: ScenarioSet | None = None
     multi_resource_result: MultiResourceResult | None = None
+    resource_operational_plan: ResourceOperationalPlan | None = None
     multi_resource_intraday_plan: MultiResourceIntradayPlan | None = None
     award_fulfillments: tuple[AwardFulfillment, ...] = ()
     resource_execution_deviations: tuple[ResourceExecutionDeviation, ...] = ()
+    scenario_admissions: tuple[ScenarioAdmissionDecision, ...] = ()
 
 
 def _dispatch_model_tag(plan: OperationalPlan) -> str:
@@ -120,6 +134,7 @@ class TradingOrchestrator:
         execution_bias_estimator: ExecutionBiasEstimator | None = None,
         multi_resource_portfolio: MultiResourcePortfolio | None = None,
         bid_candidate_builder: Any | None = None,
+        scenario_admission_policy: ScenarioAdmissionPolicy | None = None,
     ) -> None:
         self.data_provider = data_provider
         self.forecast_provider = forecast_provider
@@ -135,6 +150,13 @@ class TradingOrchestrator:
         self.execution_bias_estimator = execution_bias_estimator
         self.multi_resource_portfolio = multi_resource_portfolio
         self.bid_candidate_builder = bid_candidate_builder
+        self.scenario_admission_policy = (
+            scenario_admission_policy
+            if scenario_admission_policy is not None
+            else ScenarioAdmissionPolicy(
+                evidence_tier=ScenarioEvidenceTier.RESEARCH,
+            )
+        )
 
     def _forecast_bundle(
         self,
@@ -332,6 +354,79 @@ class TradingOrchestrator:
             raise ValueError("scenario builder must return ScenarioSet")
         return scenario_set
 
+    @staticmethod
+    def _scenario_reference(
+        bundle: MarketForecastBundle,
+        scenario_set: ScenarioSet,
+    ) -> dict[str, pd.Series]:
+        """从当前 forecast vintage 构造场景诊断的中心参考。"""
+        references = {
+            "price": bundle.price_forecast.point,
+            "load": bundle.load_forecast.point,
+            "wind_power": bundle.wind_forecast.point,
+            "pv_power": bundle.pv_forecast.point,
+        }
+        day_ahead_price = bundle.price_forecasts.get(
+            PriceRole.DAY_AHEAD_SETTLEMENT.value
+        ) or bundle.price_forecasts.get(PriceRole.DAY_AHEAD_REFERENCE.value)
+        if day_ahead_price is not None:
+            references["day_ahead_price"] = day_ahead_price.point
+        real_time_price = bundle.price_forecasts.get(
+            PriceRole.REAL_TIME_SETTLEMENT.value
+        )
+        if real_time_price is not None:
+            references["real_time_price"] = real_time_price.point
+        missing = set(scenario_set.units) - set(references)
+        if missing:
+            raise ValueError(
+                "scenario targets have no forecast reference: "
+                f"{sorted(missing)!r}"
+            )
+        return {
+            target: references[target]
+            for target in scenario_set.units
+        }
+
+    def _admit_scenarios(
+        self,
+        *,
+        stage: str,
+        bundle: MarketForecastBundle,
+        scenario_set: ScenarioSet,
+    ) -> ScenarioAdmissionDecision:
+        """诊断并强制执行当前证据层级的场景准入规则。"""
+        diagnostics = diagnose_scenario_set(
+            scenario_set,
+            reference=self._scenario_reference(bundle, scenario_set),
+        )
+        decision = self.scenario_admission_policy.evaluate(diagnostics).for_stage(
+            stage
+        )
+        if not decision.admitted:
+            raise ScenarioAdmissionRejected(decision)
+        return decision
+
+    @staticmethod
+    def _record_scenario_admission(
+        plan: OperationalPlan,
+        decision: ScenarioAdmissionDecision,
+    ) -> None:
+        """将准入状态写入决策 trace，供重放和晋级门审计。"""
+        trace = plan.decision_trace
+        if trace is None:
+            return
+        assert decision.stage is not None
+        prefix = f"scenario_admission.{decision.stage}"
+        trace.diagnostics = {
+            **trace.diagnostics,
+            f"{prefix}.status": decision.status.value,
+            f"{prefix}.evidence_tier": decision.evidence_tier.value,
+            f"{prefix}.failed_checks": ",".join(decision.failed_checks),
+            f"{prefix}.degraded_checks": ",".join(
+                decision.degraded_checks
+            ),
+        }
+
     def run(
         self,
         *,
@@ -346,6 +441,7 @@ class TradingOrchestrator:
         resource_metering: ResourceMetering | None = None,
         resource_meterings: tuple[ResourceMetering, ...] = (),
         multi_resource_actual_soc_mwh: Mapping[str, float] | None = None,
+        multi_resource_actuals: Mapping[str, ResourceActual] | None = None,
         billing_statement: BillingStatement | None = None,
     ) -> TradingPipelineResult:
         """Execute the active chain; actuals enter only after all decisions."""
@@ -388,6 +484,11 @@ class TradingOrchestrator:
             decision_time,
             valid_times,
         )
+        if position.contract_type is not ContractType.FINANCIAL_DIFFERENCE:
+            raise ValueError(
+                f"{position.contract_type.value} requires a confirmed "
+                "MarketProfile commitment projection and settlement policy"
+            )
         mode_price_roles = tuple(
             getattr(
                 self.market_mode,
@@ -416,6 +517,11 @@ class TradingOrchestrator:
             primary_price_role=day_ahead_price_role,
         )
         scenarios = self._build_scenarios(bundle, seed_offset=0)
+        day_ahead_admission = self._admit_scenarios(
+            stage="day_ahead",
+            bundle=bundle,
+            scenario_set=scenarios,
+        )
         # ---- 事件链（v3 M5）：每个决策 vintage 独立派生 input_versions ----
         calendar = MarketCalendar(
             market=self.config.market.market_name,
@@ -480,6 +586,10 @@ class TradingOrchestrator:
             config_version=self.config_version,
             settlement=self.market_mode.settlement,
             solver=self.solver,
+        )
+        self._record_scenario_admission(
+            provisional_day_ahead,
+            day_ahead_admission,
         )
 
         # ---- V5-8：候选报价 → capability 验证 → Bid；Award 仅来自市场回执 ----
@@ -629,6 +739,7 @@ class TradingOrchestrator:
         else:
             day_ahead = provisional_day_ahead
         multi_resource_result = None
+        resource_operational_plan = None
         resource_execution_deviations: tuple[ResourceExecutionDeviation, ...] = ()
         if self.multi_resource_portfolio is not None:
             multi_resource_result = solve_multi_resource(
@@ -640,6 +751,15 @@ class TradingOrchestrator:
                 dt=self.config.market.dt,
                 solver=self.solver,
             )
+            if multi_resource_result.grid_import_mwh is not None:
+                resource_operational_plan = (
+                    ResourceOperationalPlan.from_multi_resource_result(
+                        result=multi_resource_result,
+                        valid_times=valid_times,
+                        dt_hours=self.config.market.dt,
+                        plan_version=f"multi-resource-plan:{self.config_version}",
+                    )
+                )
             trace = day_ahead.decision_trace
             if trace is not None:
                 trace.diagnostics = {
@@ -736,6 +856,11 @@ class TradingOrchestrator:
             intraday_forecasts,
             seed_offset=1,
         )
+        intraday_admission = self._admit_scenarios(
+            stage="intraday",
+            bundle=intraday_forecasts,
+            scenario_set=intraday_scenarios,
+        )
         self._append_forecast_events(
             events,
             bundle=intraday_forecasts,
@@ -805,11 +930,18 @@ class TradingOrchestrator:
             constraint_tightening=constraint_tightening,
             awarded_commitment=intraday_awarded_commitment,
         )
+        self._record_scenario_admission(
+            intraday.schedule,
+            intraday_admission,
+        )
         multi_resource_intraday_plan = None
-        if multi_resource_actual_soc_mwh is not None:
+        if (
+            multi_resource_actual_soc_mwh is not None
+            or multi_resource_actuals is not None
+        ):
             if self.multi_resource_portfolio is None or multi_resource_result is None:
                 raise ValueError(
-                    "multi_resource_actual_soc_mwh requires a multi_resource_portfolio"
+                    "multi-resource actuals require a multi_resource_portfolio"
                 )
             remaining_dr_units: list[DemandResponseUnit] = []
             for unit in self.multi_resource_portfolio.dr_units:
@@ -833,9 +965,14 @@ class TradingOrchestrator:
                 previous_result=multi_resource_result,
                 executed_count=intraday_start,
                 actual_soc_mwh=multi_resource_actual_soc_mwh,
+                actuals=multi_resource_actuals,
                 dt=self.config.market.dt,
                 solver=self.solver,
             )
+            if multi_resource_actuals is not None and resource_operational_plan is not None:
+                resource_operational_plan = resource_operational_plan.with_actuals(
+                    multi_resource_actuals
+                )
             trace = day_ahead.decision_trace
             if trace is not None:
                 trace.diagnostics = {
@@ -975,7 +1112,9 @@ class TradingOrchestrator:
             intraday_forecasts=intraday_forecasts,
             intraday_scenarios=intraday_scenarios,
             multi_resource_result=multi_resource_result,
+            resource_operational_plan=resource_operational_plan,
             multi_resource_intraday_plan=multi_resource_intraday_plan,
             award_fulfillments=award_fulfillments,
             resource_execution_deviations=resource_execution_deviations,
+            scenario_admissions=(day_ahead_admission, intraday_admission),
         )

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from ele_trading.trading.v5_simulation_fixtures import write_v5_simulation_fixtures
-from ele_trading.trading.v5_synthetic_market import (
+from ele_trading.trading.synthetic.fixtures import write_synthetic_fixtures
+from ele_trading.trading.synthetic.market import (
     SyntheticBidLedger,
     SyntheticBidStatus,
     load_synthetic_billing_statement,
@@ -46,7 +46,7 @@ def test_synthetic_bid_ledger_rejects_award_after_cancellation():
 
 
 def test_synthetic_market_assets_replay_through_simulation_only_ledger(tmp_path):
-    fixture_dir = write_v5_simulation_fixtures(tmp_path, days=1, seed=42)
+    fixture_dir = write_synthetic_fixtures(tmp_path, days=1, seed=42)
 
     ledger = replay_synthetic_market_assets(fixture_dir)
 
@@ -55,7 +55,7 @@ def test_synthetic_market_assets_replay_through_simulation_only_ledger(tmp_path)
 
 
 def test_synthetic_billing_statement_is_permanently_unconfirmed(tmp_path):
-    fixture_dir = write_v5_simulation_fixtures(tmp_path, days=1, seed=42)
+    fixture_dir = write_synthetic_fixtures(tmp_path, days=1, seed=42)
 
     statement = load_synthetic_billing_statement(fixture_dir)
 

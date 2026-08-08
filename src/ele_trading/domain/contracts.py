@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from math import isfinite
 from typing import Any, Mapping, cast
 
@@ -37,6 +38,14 @@ def _require_finite_float(value: Any, field_name: str) -> float:
     if not isfinite(result):
         raise ValueError(f"{field_name} must be finite")
     return result
+
+
+class ContractType(StrEnum):
+    """中长期合同的显式物理/金融语义。"""
+
+    FINANCIAL_DIFFERENCE = "financial_difference"
+    PHYSICAL_DELIVERY = "physical_delivery"
+    HYBRID = "hybrid"
 
 
 @dataclass(frozen=True, slots=True)
@@ -505,6 +514,11 @@ class PositionState:
     budget_remaining: float = 0.0
     risk_exposure: float = 0.0
     source_version: str = "unknown"
+    contract_type: ContractType = ContractType.FINANCIAL_DIFFERENCE
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.contract_type, ContractType):
+            raise ValueError("contract_type must be a ContractType")
 
 
 @dataclass(slots=True)

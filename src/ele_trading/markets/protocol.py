@@ -14,6 +14,7 @@ from typing import Any, Protocol, runtime_checkable
 import numpy as np
 
 from ele_trading.domain.contracts import BidSubmission
+from ele_trading.markets.profile import MarketProfile
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +88,7 @@ class MarketMode(Protocol):
 
     name: str
     settlement: SettlementEngine
+    market_profile: MarketProfile
 
     def load_config(self, path: str | Path) -> Any:
         """加载并校验本模式的组合式配置对象。"""

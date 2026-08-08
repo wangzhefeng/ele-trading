@@ -171,6 +171,7 @@ def solve_multi_resource(
     dt: float,
     scenario_prices: Mapping[str, np.ndarray] | None = None,
     scenario_probabilities: Mapping[str, float] | None = None,
+    dr_initial_net_down_mwh: Mapping[str, float] | None = None,
     cvar_weight: float = 0.0,
     cvar_alpha: float = 0.95,
     solver=None,
@@ -297,10 +298,14 @@ def solve_multi_resource(
             )
             for step in window_steps
         }
-        # 窗口内能量中性：回补能量 = 削减能量
+        # 全窗口能量中性：剩余回补 - 剩余削减 = 已执行净削减。
+        initial_net_down = float((dr_initial_net_down_mwh or {}).get(unit.name, 0.0))
+        if not np.isfinite(initial_net_down):
+            raise ValueError("dr_initial_net_down_mwh must contain finite values")
         model += (
-            lpSum(shift_up[unit.name][step] for step in window_steps)
-            == lpSum(shift_down[unit.name][step] for step in window_steps),
+            lpSum(shift_up[unit.name][step] * dt for step in window_steps)
+            - lpSum(shift_down[unit.name][step] * dt for step in window_steps)
+            == initial_net_down,
             f"dr_neutral_{_var_tag(unit.name)}",
         )
 

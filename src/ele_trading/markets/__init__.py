@@ -22,6 +22,7 @@ from typing import Any
 
 __all__ = [
     "MarketMode",
+    "MarketProfile",
     "PriceRoleCapability",
     "PriceRole",
     "SettlementEngine",
@@ -32,6 +33,10 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
+    if name == "MarketProfile":
+        from .profile import MarketProfile
+
+        return MarketProfile
     if name in ("MarketMode", "PriceRoleCapability", "SettlementEngine"):
         from .protocol import MarketMode, PriceRoleCapability, SettlementEngine
 

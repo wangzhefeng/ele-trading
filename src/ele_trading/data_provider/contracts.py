@@ -61,6 +61,67 @@ class DataAvailabilityRecord:
         return bool(self.available_at <= issue_time)
 
 
+@dataclass(frozen=True, slots=True)
+class EvidenceCatalogEntry:
+    """可审计外部证据的 owner、许可、保留与版本化可用性元数据。"""
+
+    catalog_id: str
+    artifact_type: str
+    owner: str
+    permission: str
+    retention_policy: str
+    availability: DataAvailabilityRecord
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "catalog_id",
+            "artifact_type",
+            "owner",
+            "permission",
+            "retention_policy",
+        ):
+            _require_non_empty(getattr(self, field_name), field_name)
+        if not isinstance(self.availability, DataAvailabilityRecord):
+            raise ValueError("availability must be a DataAvailabilityRecord")
+
+
+@dataclass(frozen=True, slots=True)
+class DataCatalog:
+    """外部数据、规则、网架、计量与账单的证据目录，不持有数据本体。"""
+
+    entries: Mapping[str, EvidenceCatalogEntry]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.entries, Mapping) or not self.entries:
+            raise ValueError("entries must be a non-empty mapping")
+        entries = dict(self.entries)
+        for catalog_id, entry in entries.items():
+            _require_non_empty(catalog_id, "catalog entry ID")
+            if not isinstance(entry, EvidenceCatalogEntry):
+                raise ValueError("entries must contain EvidenceCatalogEntry objects")
+            if entry.catalog_id != catalog_id:
+                raise ValueError("catalog entry key must match catalog_id")
+        object.__setattr__(self, "entries", entries)
+
+    def require_available(
+        self,
+        catalog_id: str,
+        *,
+        as_of: pd.Timestamp,
+    ) -> EvidenceCatalogEntry:
+        """只返回在本时点已授权、可消费的外部证据。"""
+        _require_non_empty(catalog_id, "catalog_id")
+        try:
+            entry = self.entries[catalog_id]
+        except KeyError as exc:
+            raise ValueError("catalog entry is not registered") from exc
+        if entry.permission != "authorized":
+            raise ValueError("catalog entry permission is not authorized")
+        if not entry.availability.is_available_at(as_of):
+            raise ValueError("catalog entry is not available at as_of")
+        return entry
+
+
 @dataclass(slots=True)
 class MarketDataSnapshot:
     """某一截止时刻可见的版本化市场数据快照。

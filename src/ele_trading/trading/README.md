@@ -8,6 +8,8 @@
 |---|---|
 | `orchestrator.py` | 注入 data provider、forecast provider、场景 builder、`MarketMode`、配置和求解器，运行完整链 |
 | `demo_fixtures.py` | 30 天 96 点 `SampleTradingDataProvider`、无前瞻 `WalkForwardSeasonalNaiveProvider` 和 fixture 生成器 |
+| `scenario_admission.py` | 将场景诊断映射为研究、synthetic、真实候选、影子和生产层级的准入决定 |
+| `synthetic/` | 隔离的 deterministic fixture、市场状态回放、模拟账单、runner、治理 dry-run 和工程检查；不具备正式/生产资格 |
 
 ## 当前流向
 
@@ -25,6 +27,6 @@ MarketMode + SettlementEngine → SettlementReport
 - 日内以新的 `decision_time` 重新构造预测、状态和场景 vintage，不能复用日前切片；
 - 配置和结算由 `MarketMode`/`SettlementEngine` 注入，默认入口使用单结算；
 - Position、Forecast、Dispatch、Metering 和 Settlement 已形成事件链；候选 Bid 由注入 builder 构造、经市场模式 capability 验证后产生 BidEvent，AwardEvent 仅由 `MarketAwardReceipt` 构造（未知 bid 显式失败）；真实市场产品与回执适配待 V5-10；
-- 执行偏差收紧可选应用于日内重优化并写入 trace；多资源可选返回独立资源级日前计划，尚未进入资源级日内、计量或结算；提供 `BillingStatement` 时结算后自动对账（`confirmed=False` 永不通过）；统一经济验收要求 `InvariantEvidence`，尚无真实账单与影子运行证据。
+- 执行偏差收紧可选应用于日内重优化并写入 trace；多资源可返回资源级日前 `ResourceOperationalPlan`，并在提供版本化实际量或逐资源实际 SOC 时生成独立日内后缀与 SOC-safe fallback。该资源级路径尚未成为正式结算唯一来源；提供 `BillingStatement` 时结算后自动对账（`confirmed=False` 永不通过）；统一经济验收要求 `InvariantEvidence`，尚无真实账单与影子运行证据。
 
 当前的报价—成交—履约闭环及运行主链接线由 [v6 V5-8、V5-9](../../../docs/策略算法框架详细设计-v6.md) 跟踪。样例数据仅用于接口和回归验证，生产数据必须经数据/provider 边界注入。

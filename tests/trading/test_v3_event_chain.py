@@ -23,6 +23,7 @@ from ele_trading.operations.multi_resource import (
     BESSUnit,
     MultiResourcePortfolio,
 )
+from ele_trading.operations.resource_runtime import ResourceActual
 from ele_trading.scenario.joint_builder import build_joint_scenarios
 from ele_trading.trading.orchestrator import TradingOrchestrator
 
@@ -85,6 +86,7 @@ def _run_pipeline(
     multi_resource_portfolio: MultiResourcePortfolio | None = None,
     resource_meterings: tuple[ResourceMetering, ...] = (),
     multi_resource_actual_soc_mwh: dict[str, float] | None = None,
+    multi_resource_actuals: dict[str, ResourceActual] | None = None,
 ):
     config = SINGLE_SETTLEMENT_MODE.load_config(CONFIG_YAML)
     config.scenario.scenario_count = 2
@@ -106,6 +108,7 @@ def _run_pipeline(
         intraday_start=2,
         resource_meterings=resource_meterings,
         multi_resource_actual_soc_mwh=multi_resource_actual_soc_mwh,
+        multi_resource_actuals=multi_resource_actuals,
     )
 
 
@@ -218,6 +221,8 @@ def test_configured_multi_resource_portfolio_returns_separate_resource_plan():
     resource_plan = result.multi_resource_result
     assert resource_plan is not None
     assert resource_plan.solve_result.status.value == "optimal"
+    assert result.resource_operational_plan is not None
+    assert set(result.resource_operational_plan.schedules) == {"bess-a"}
     assert "bess-a" in resource_plan.resource_schedules
     trace = result.day_ahead_plan.decision_trace
     assert trace is not None
@@ -298,3 +303,37 @@ def test_multi_resource_actual_soc_creates_separate_intraday_resource_plan():
     assert result.multi_resource_intraday_plan.initial_soc_mwh == {"bess-a": 1.5}
     assert result.multi_resource_intraday_plan.fallback_used is False
     assert result.intraday_plan.schedule.resource_schedule.shape[0] == 2
+
+
+def test_multi_resource_runtime_plan_retains_consumed_versioned_actuals():
+    portfolio = MultiResourcePortfolio(
+        bess_units=(
+            BESSUnit(
+                name="bess-a",
+                soc0=3.0,
+                soc_min=1.0,
+                soc_max=5.0,
+                p_charge_max=2.0,
+                p_discharge_max=2.0,
+                eta_charge=0.95,
+                eta_discharge=0.95,
+            ),
+        ),
+    )
+    actual_time = DECISION_TIME + pd.Timedelta(minutes=30)
+    actual = ResourceActual(
+        resource_id="bess-a",
+        observed_at=actual_time,
+        interval_values={"soc_mwh": pd.Series([1.5], index=pd.DatetimeIndex([actual_time]))},
+        quality_flag="approved",
+        source_version="meter-v1",
+        revision="r1",
+    )
+
+    result = _run_pipeline(
+        multi_resource_portfolio=portfolio,
+        multi_resource_actuals={"bess-a": actual},
+    )
+
+    assert result.resource_operational_plan is not None
+    assert result.resource_operational_plan.actuals == {"bess-a": actual}

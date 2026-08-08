@@ -18,6 +18,7 @@ from ele_trading.markets.protocol import (
     SettlementEngine,
 )
 from ele_trading.markets.price_roles import PriceRole
+from ele_trading.markets.profile import MarketPhase, MarketProfile
 from ele_trading.markets.single_settlement import settlement as _settlement
 from ele_trading.markets.single_settlement.config_loader import (
     load_market_config,
@@ -74,7 +75,20 @@ class _PlanOnlyBidSubmissionCapability:
 
     can_submit: bool = False
 
+    def __init__(self, market_profile: MarketProfile) -> None:
+        self.market_profile = market_profile
+
     def validate_submission(self, bid: BidSubmission) -> BidSubmissionDecision:
+        try:
+            self.market_profile.require_formal_phase(MarketPhase.BID)
+        except ValueError as exc:
+            return BidSubmissionDecision(
+                accepted=False,
+                reason=(
+                    "single_settlement supports operational planning only; "
+                    f"{exc}"
+                ),
+            )
         return BidSubmissionDecision(
             accepted=False,
             reason="single_settlement supports operational planning only",
@@ -86,8 +100,11 @@ class _SingleSettlementMode:
 
     name: str = "single_settlement"
     settlement: SettlementEngine = _SingleSettlementEngine()
+    market_profile: MarketProfile = MarketProfile.plan_only_profile(
+        market_id=name
+    )
     bid_submission_capability: BidSubmissionCapability = (
-        _PlanOnlyBidSubmissionCapability()
+        _PlanOnlyBidSubmissionCapability(market_profile)
     )
     price_roles: tuple[str, ...] = (
         PriceRole.DAY_AHEAD_REFERENCE.value,

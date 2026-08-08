@@ -50,3 +50,4 @@ def test_single_settlement_explicitly_reports_plan_only_submission_mode():
     assert capability.can_submit is False
     assert decision.accepted is False
     assert decision.reason
+    assert "plan-only" in decision.reason

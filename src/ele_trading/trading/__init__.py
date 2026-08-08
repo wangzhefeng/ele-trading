@@ -13,9 +13,15 @@ from ele_trading.trading.demo_fixtures import (
     WalkForwardSeasonalNaiveProvider,
 )
 from ele_trading.trading.orchestrator import TradingOrchestrator
+from ele_trading.trading.scenario_admission import (
+    ScenarioAdmissionPolicy,
+    ScenarioEvidenceTier,
+)
 
 __all__ = [
     "SampleTradingDataProvider",
+    "ScenarioAdmissionPolicy",
+    "ScenarioEvidenceTier",
     "TradingOrchestrator",
     "WalkForwardSeasonalNaiveProvider",
 ]

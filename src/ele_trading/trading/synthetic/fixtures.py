@@ -137,7 +137,7 @@ def _build_timeseries(index: pd.DatetimeIndex, seed: int) -> tuple[pd.DataFrame,
     )
 
 
-def write_v5_simulation_fixtures(
+def write_synthetic_fixtures(
     root_directory: str | Path,
     *,
     days: int = 30,
@@ -334,6 +334,6 @@ def write_v5_simulation_fixtures(
 
 
 if __name__ == "__main__":
-    data_root = Path(__file__).resolve().parents[3] / "data" / "trading"
-    written = write_v5_simulation_fixtures(data_root)
-    print(f"wrote V5 synthetic fixtures under {written}")
+    data_root = Path(__file__).resolve().parents[4] / "data" / "trading"
+    written = write_synthetic_fixtures(data_root)
+    print(f"wrote synthetic fixtures under {written}")

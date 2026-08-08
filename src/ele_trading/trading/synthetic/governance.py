@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ele_trading.trading.v5_synthetic_runner import SyntheticV5RunResult
+from ele_trading.trading.synthetic.runner import SyntheticRunResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,7 +41,7 @@ def _load_synthetic_governance(directory: Path, name: str) -> dict[str, object]:
 
 def evaluate_synthetic_governance(
     directory: str | Path,
-    result: SyntheticV5RunResult,
+    result: SyntheticRunResult,
 ) -> SyntheticGovernanceReport:
     """消费 runner 产物，计算 drift 并执行无副作用的 rollback dry-run。"""
     root = Path(directory)

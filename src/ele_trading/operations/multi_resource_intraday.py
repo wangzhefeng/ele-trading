@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from dataclasses import replace
 from typing import Mapping
 
@@ -15,6 +15,7 @@ from ele_trading.operations.multi_resource import (
     RenewableUnit,
     solve_multi_resource,
 )
+from ele_trading.operations.resource_runtime import ResourceActual
 from ele_trading.optimization.solver import SolverResult, SolveStatus
 
 
@@ -28,6 +29,11 @@ class MultiResourceIntradayPlan:
     solve_result: SolverResult
     fallback_used: bool
     fallback_reason: str | None = None
+    grid_import_mwh: np.ndarray | None = None
+    dr_schedules: Mapping[str, Mapping[str, list[float]]] = field(default_factory=dict)
+    renewable_schedules: Mapping[str, Mapping[str, list[float]]] = field(
+        default_factory=dict
+    )
 
 
 def _frozen_prefix(
@@ -113,8 +119,9 @@ def solve_multi_resource_intraday(
     bess_units: tuple[BESSUnit, ...],
     previous_result: MultiResourceResult,
     executed_count: int,
-    actual_soc_mwh: Mapping[str, float],
     dt: float,
+    actual_soc_mwh: Mapping[str, float] | None = None,
+    actuals: Mapping[str, ResourceActual] | None = None,
     dr_units: tuple[DemandResponseUnit, ...] = (),
     renewable_units: tuple[RenewableUnit, ...] = (),
     solver=None,
@@ -131,9 +138,67 @@ def solve_multi_resource_intraday(
     if not np.isfinite(dt) or dt <= 0.0:
         raise ValueError("dt must be positive")
     names = {unit.name for unit in bess_units}
-    if set(actual_soc_mwh) != names:
-        raise ValueError("actual_soc_mwh must cover exactly the BESS units")
-    initial_soc = {name: float(value) for name, value in actual_soc_mwh.items()}
+    if (actual_soc_mwh is None) == (actuals is None):
+        raise ValueError("provide exactly one of actual_soc_mwh or actuals")
+    if actuals is not None:
+        renewable_names = {unit.name for unit in renewable_units}
+        dr_names = {unit.name for unit in dr_units}
+        unknown_names = set(actuals) - names - renewable_names - dr_names
+        if unknown_names:
+            raise ValueError("actuals contain resources outside the portfolio")
+        if not names.issubset(actuals):
+            raise ValueError("actuals must cover every BESS unit")
+
+        initial_soc: dict[str, float] = {}
+        for name, actual in actuals.items():
+            if not isinstance(actual, ResourceActual) or actual.resource_id != name:
+                raise ValueError("actuals must contain matching ResourceActual entries")
+            if actual.quality_flag != "approved":
+                raise ValueError("actual resource quality must be approved")
+        for name in names:
+            actual = actuals[name]
+            try:
+                soc_values = actual.interval_values["soc_mwh"]
+            except KeyError as exc:
+                raise ValueError("actual BESS entries require soc_mwh") from exc
+            initial_soc[name] = float(soc_values.iloc[-1])
+        dr_initial_net_down_mwh: dict[str, float] = {}
+        for unit in dr_units:
+            actual = actuals.get(unit.name)
+            if actual is None:
+                dr_initial_net_down_mwh[unit.name] = 0.0
+                continue
+            try:
+                shift_down = actual.interval_values["shift_down_mwh"]
+                shift_up = actual.interval_values["shift_up_mwh"]
+            except KeyError as exc:
+                raise ValueError(
+                    "actual DR entries require shift_down_mwh and shift_up_mwh"
+                ) from exc
+            dr_initial_net_down_mwh[unit.name] = float(shift_down.sum() - shift_up.sum())
+        adjusted_renewables: list[RenewableUnit] = []
+        for unit in renewable_units:
+            actual = actuals.get(unit.name)
+            if actual is None:
+                adjusted_renewables.append(unit)
+                continue
+            try:
+                available_values = actual.interval_values["available_mw"]
+            except KeyError as exc:
+                raise ValueError("actual renewable entries require available_mw") from exc
+            if len(available_values) != 1:
+                raise ValueError("actual renewable available_mw must be a current scalar")
+            available_cap = float(available_values.iloc[-1])
+            adjusted_renewables.append(
+                replace(unit, available_mw=np.minimum(unit.available_mw, available_cap))
+            )
+        renewable_units = tuple(adjusted_renewables)
+    else:
+        assert actual_soc_mwh is not None
+        if set(actual_soc_mwh) != names:
+            raise ValueError("actual_soc_mwh must cover exactly the BESS units")
+        initial_soc = {name: float(value) for name, value in actual_soc_mwh.items()}
+        dr_initial_net_down_mwh = {}
     adjusted_units: list[BESSUnit] = []
     for unit in bess_units:
         soc = initial_soc[unit.name]
@@ -151,6 +216,7 @@ def solve_multi_resource_intraday(
         bess_units=tuple(adjusted_units),
         dr_units=dr_units,
         renewable_units=renewable_units,
+        dr_initial_net_down_mwh=dr_initial_net_down_mwh,
         dt=dt,
         solver=solver,
     )
@@ -161,6 +227,9 @@ def solve_multi_resource_intraday(
             initial_soc_mwh=initial_soc,
             solve_result=result.solve_result,
             fallback_used=False,
+            grid_import_mwh=result.grid_import_mwh,
+            dr_schedules=result.dr_schedules,
+            renewable_schedules=result.renewable_schedules,
         )
     return MultiResourceIntradayPlan(
         executed_prefix=prefix,

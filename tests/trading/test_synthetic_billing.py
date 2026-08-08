@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from ele_trading.trading.v5_simulation_fixtures import write_v5_simulation_fixtures
-from ele_trading.trading.v5_synthetic_billing import (
+from ele_trading.trading.synthetic.fixtures import write_synthetic_fixtures
+from ele_trading.trading.synthetic.billing import (
     calculate_synthetic_billing,
     reconcile_synthetic_billing,
 )
 
 
 def test_synthetic_billing_is_computed_from_rule_award_and_metering(tmp_path):
-    fixture_dir = write_v5_simulation_fixtures(tmp_path, days=1, seed=42)
+    fixture_dir = write_synthetic_fixtures(tmp_path, days=1, seed=42)
 
     statement = calculate_synthetic_billing(fixture_dir)
 
@@ -25,7 +25,7 @@ def test_synthetic_billing_is_computed_from_rule_award_and_metering(tmp_path):
 
 
 def test_synthetic_billing_reconciliation_cannot_pass_formal_acceptance(tmp_path):
-    fixture_dir = write_v5_simulation_fixtures(tmp_path, days=1, seed=42)
+    fixture_dir = write_synthetic_fixtures(tmp_path, days=1, seed=42)
 
     report = reconcile_synthetic_billing(fixture_dir)
 

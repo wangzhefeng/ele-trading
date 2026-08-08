@@ -6,11 +6,11 @@ import json
 
 import pandas as pd
 
-from ele_trading.trading.v5_simulation_fixtures import write_v5_simulation_fixtures
+from ele_trading.trading.synthetic.fixtures import write_synthetic_fixtures
 
 
-def test_v5_simulation_fixtures_are_isolated_and_explicitly_non_production(tmp_path):
-    output_dir = write_v5_simulation_fixtures(tmp_path, days=2, seed=17)
+def test_synthetic_fixtures_are_isolated_and_explicitly_non_production(tmp_path):
+    output_dir = write_synthetic_fixtures(tmp_path, days=2, seed=17)
 
     manifest = json.loads((output_dir / "manifest.yaml").read_text())
     assert output_dir == tmp_path / "v5_simulation"
@@ -56,9 +56,9 @@ def test_v5_simulation_fixtures_are_isolated_and_explicitly_non_production(tmp_p
     assert set(status_events["quality_flag"]) == {"synthetic"}
 
 
-def test_v5_simulation_fixture_generation_is_deterministic(tmp_path):
-    first = write_v5_simulation_fixtures(tmp_path / "first", days=1, seed=23)
-    second = write_v5_simulation_fixtures(tmp_path / "second", days=1, seed=23)
+def test_synthetic_fixture_generation_is_deterministic(tmp_path):
+    first = write_synthetic_fixtures(tmp_path / "first", days=1, seed=23)
+    second = write_synthetic_fixtures(tmp_path / "second", days=1, seed=23)
 
     first_metering = (first / "metering" / "resource_metering.csv").read_bytes()
     second_metering = (second / "metering" / "resource_metering.csv").read_bytes()

@@ -6,17 +6,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ele_trading.markets.shared import ReconciliationReport
-from ele_trading.trading.v5_synthetic_billing import reconcile_synthetic_billing
-from ele_trading.trading.v5_synthetic_evidence import (
+from ele_trading.trading.synthetic.billing import reconcile_synthetic_billing
+from ele_trading.trading.synthetic.evidence import (
     SyntheticRunEvidence,
     summarize_synthetic_run,
 )
-from ele_trading.trading.v5_synthetic_governance import (
+from ele_trading.trading.synthetic.governance import (
     SyntheticGovernanceReport,
     evaluate_synthetic_governance,
 )
-from ele_trading.trading.v5_synthetic_runner import run_synthetic_v5
-from ele_trading.trading.v5_synthetic_market import SyntheticBidStatus
+from ele_trading.trading.synthetic.runner import run_synthetic
+from ele_trading.trading.synthetic.market import SyntheticBidStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +34,7 @@ class SyntheticAcceptanceReport:
 def evaluate_synthetic_run(directory: str | Path) -> SyntheticAcceptanceReport:
     """运行并汇总 synthetic-only 市场、计量、账单和治理检查。"""
     root = Path(directory)
-    result = run_synthetic_v5(root)
+    result = run_synthetic(root)
     billing = reconcile_synthetic_billing(root)
     governance = evaluate_synthetic_governance(root, result)
     evidence = summarize_synthetic_run(root, result)

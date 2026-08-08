@@ -7,8 +7,22 @@
 
 from .day_ahead_coupled import solve_day_ahead_operational
 from .intraday_rolling import solve_intraday_rolling
+from .resource_runtime import (
+    CommitmentAllocation,
+    PortfolioSettlementInput,
+    ResourceActual,
+    ResourceOperationalPlan,
+    ResourceSchedule,
+    RuntimeFallback,
+)
 
 __all__ = [
     "solve_day_ahead_operational",
     "solve_intraday_rolling",
+    "CommitmentAllocation",
+    "PortfolioSettlementInput",
+    "ResourceActual",
+    "ResourceOperationalPlan",
+    "ResourceSchedule",
+    "RuntimeFallback",
 ]

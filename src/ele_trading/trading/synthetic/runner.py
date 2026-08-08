@@ -17,7 +17,7 @@ from ele_trading.domain.contracts import (
     ResourceExecutionDeviation,
     ResourceMetering,
 )
-from ele_trading.trading.v5_synthetic_market import (
+from ele_trading.trading.synthetic.market import (
     SyntheticBidLedger,
     load_synthetic_billing_statement,
     replay_synthetic_market_assets,
@@ -25,7 +25,7 @@ from ele_trading.trading.v5_synthetic_market import (
 
 
 @dataclass(frozen=True, slots=True)
-class SyntheticV5RunResult:
+class SyntheticRunResult:
     """Synthetic runner 产物；两个 eligibility 字段永久为 False。"""
 
     ledger: SyntheticBidLedger
@@ -67,7 +67,7 @@ def _resource_metering(frame: pd.DataFrame, resource_id: str) -> ResourceMeterin
     )
 
 
-def run_synthetic_v5(directory: str | Path) -> SyntheticV5RunResult:
+def run_synthetic(directory: str | Path) -> SyntheticRunResult:
     """运行 simulation-only 的计划—计量—市场回放检查。"""
     root = Path(directory)
     _read_manifest(root)
@@ -95,7 +95,7 @@ def run_synthetic_v5(directory: str | Path) -> SyntheticV5RunResult:
             )
         )
 
-    return SyntheticV5RunResult(
+    return SyntheticRunResult(
         ledger=replay_synthetic_market_assets(root),
         resource_execution_deviations=tuple(deviations),
         billing_statement=load_synthetic_billing_statement(root),
