@@ -23,4 +23,4 @@
 - 日内履约：`operations/intraday_rolling.py`；
 - 事后补偿与罚金：`markets/single_settlement/settlement.compute_dr_settlement()`。
 
-DR 产品 capability、多资源联合优化、正式账单对账和主链接线的当前路线见 [v5 §11、V5-9](../../../docs/策略算法框架详细设计-v5.md#144-v5-9运行主链接线与失败透明)。
+DR 产品 capability、多资源联合优化、正式账单对账和主链接线的当前路线见 [v6 §5、§6、§9（V5-3/V5-9）](../../../docs/策略算法框架详细设计-v6.md)。

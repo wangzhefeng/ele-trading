@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Mapping
 
 import numpy as np
@@ -9,6 +10,7 @@ import pandas as pd
 
 from ele_trading.scenario.contracts import ScenarioSet
 from ele_trading.domain.contracts import (
+    AwardedCommitment,
     DecisionTrace,
     DRCommitment,
     IntradayAdjustment,
@@ -209,6 +211,7 @@ def solve_intraday_rolling(
     settlement: SettlementEngine | None = None,
     solver=None,
     constraint_tightening: ConstraintTightening | None = None,
+    awarded_commitment: AwardedCommitment | None = None,
 ) -> IntradayPlan:
     """Freeze execution and optimize only the remaining physical schedule.
 
@@ -243,6 +246,19 @@ def solve_intraday_rolling(
         bess_current["socmin"],
         bess_current["socini"],
     )
+    remaining_awarded_commitment = None
+    if awarded_commitment is not None:
+        remaining_required = awarded_commitment.required_energy_mwh.iloc[
+            intraday_start:
+        ].copy()
+        if len(remaining_required) != len(load):
+            raise ValueError(
+                "awarded commitment must cover the full previous plan horizon"
+            )
+        remaining_awarded_commitment = replace(
+            awarded_commitment,
+            required_energy_mwh=remaining_required,
+        )
 
     # ---- 计算日内履约下限 ----
     dr_min_discharge: float | None = None
@@ -286,6 +302,7 @@ def solve_intraday_rolling(
             input_versions=input_versions,
             config_version=config_version,
             settlement=settlement,
+            awarded_commitment=remaining_awarded_commitment,
             solver=solver,
         )
         fallback_used = False

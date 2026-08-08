@@ -1,6 +1,8 @@
 """domain — 市场无关的领域契约层（全项目最底层）。"""
 
 from .contracts import (
+    AwardFulfillment,
+    AwardedCommitment,
     BidSubmission,
     BillingStatement,
     DecisionTrace,
@@ -9,8 +11,12 @@ from .contracts import (
     IntradayPlan,
     MarketAwardReceipt,
     MarketForecastBundle,
+    MatchedAward,
     OperationalPlan,
+    ResourceExecutionDeviation,
     PositionState,
+    ResourceMetering,
+    match_award_receipt,
 )
 from .events import (
     AwardEvent,
@@ -27,6 +33,8 @@ from .events import (
 
 __all__ = [
     "AwardEvent",
+    "AwardFulfillment",
+    "AwardedCommitment",
     "BidEvent",
     "BidSubmission",
     "BillingStatement",
@@ -39,11 +47,15 @@ __all__ = [
     "MarketAwardReceipt",
     "MarketCalendar",
     "MarketForecastBundle",
+    "MatchedAward",
     "MeteringEvent",
     "OperationalPlan",
     "PositionEvent",
     "PositionState",
+    "ResourceExecutionDeviation",
+    "ResourceMetering",
     "SettlementEvent",
     "TradingEvent",
     "derive_input_versions",
+    "match_award_receipt",
 ]

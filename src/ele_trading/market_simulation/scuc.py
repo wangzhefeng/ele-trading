@@ -18,7 +18,7 @@ from typing import Mapping, Sequence
 import numpy as np
 from pulp import LpMinimize, LpProblem, LpVariable, lpSum, value
 
-from ele_trading.optimization.solver import solve_pulp_model
+from ele_trading.optimization.solver import SolveStatus, solve_pulp_model
 
 from .grid.contracts import GridSnapshot
 from .sced import DEFAULT_VOLL, SCEDResult, solve_sced_multiperiod
@@ -191,7 +191,12 @@ def solve_scuc(
     shed_cost = voll * lpSum(shed[bus_id][t] for bus_id in buses for t in steps)
     model += energy_cost + startup_cost + no_load_cost + shed_cost
 
-    solve_pulp_model(model, solver=solver)
+    solve_result = solve_pulp_model(model, solver=solver)
+    if solve_result.status not in {SolveStatus.OPTIMAL, SolveStatus.FEASIBLE}:
+        raise RuntimeError(
+            "scuc solve failed: "
+            f"{solve_result.status.value}: {solve_result.message}"
+        )
 
     return SCUCResult(
         commitment={

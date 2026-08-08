@@ -25,6 +25,7 @@ from ele_trading.optimization.solver import (
 )
 from ele_trading.scenario.contracts import ScenarioSet
 from ele_trading.domain.contracts import (
+    AwardedCommitment,
     DecisionTrace,
     DRCommitment,
     OperationalPlan,
@@ -96,6 +97,32 @@ def _constraint_trace(
     return {name: periods for name, periods in trace.items() if periods}
 
 
+def _add_awarded_sell_energy_floor(
+    model: LpProblem,
+    variables: Any,
+    steps: tuple[int, ...],
+    commitment: AwardedCommitment,
+    *,
+    dt: float,
+) -> None:
+    """把已售能源按时段写入 BESS 最小放电硬约束。"""
+    if commitment.product != "energy":
+        raise ValueError("only energy awarded commitments are supported")
+    if commitment.direction != "sell":
+        raise ValueError("only sell awarded commitments are supported")
+    required = commitment.required_energy_mwh.to_numpy(dtype=float)
+    if required.shape != (len(steps),) or not np.isfinite(required).all():
+        raise ValueError("awarded commitment must align with the planning horizon")
+    if (required < 0.0).any():
+        raise ValueError("awarded commitment energy must be non-negative")
+    for step, required_mwh in zip(steps, required, strict=True):
+        if required_mwh > 0.0:
+            model += (
+                variables.p_discharge[step] * dt >= float(required_mwh),
+                f"award_sell_energy_floor_{step}",
+            )
+
+
 # ------------------------------------------------------------------ #
 #  模型构建（共享：Pass A / Pass B 用同一组约束和基础目标函数）
 # ------------------------------------------------------------------ #
@@ -126,6 +153,7 @@ def _build_model(
     *,
     contract_value: float,
     scenario_set: ScenarioSet | None,
+    awarded_commitment: AwardedCommitment | None = None,
 ) -> _ModelBundle:
     """构建 BESS 物理约束 + 能量/退化/差价成本目标函数（不含 DR 项）。"""
     horizon = len(load)
@@ -165,6 +193,14 @@ def _build_model(
         },
         prefix="operational",
     )
+    if awarded_commitment is not None:
+        _add_awarded_sell_energy_floor(
+            bundle.model,
+            bundle.variables,
+            steps,
+            awarded_commitment,
+            dt=config.market.dt,
+        )
     bundle.energy_cost = net_load_energy_cost(
         bundle.variables,
         steps,
@@ -361,6 +397,7 @@ def solve_day_ahead_operational(
     input_versions: Mapping[str, str] | None = None,
     config_version: str = "runtime-config",
     settlement: SettlementEngine | None = None,
+    awarded_commitment: AwardedCommitment | None = None,
     solver=None,
 ) -> OperationalPlan:
     """Minimize next-day real-time energy and degradation costs.
@@ -438,6 +475,7 @@ def solve_day_ahead_operational(
             load, price, bess, config,
             contract_value=contract_value,
             scenario_set=scenario_set,
+            awarded_commitment=awarded_commitment,
         )
         # 日内履约下限约束（Phase 3）：在无 DR 激励但需满足硬约束时
         if dr_min_window_discharge_mwh is not None:
@@ -480,6 +518,7 @@ def solve_day_ahead_operational(
         load, price, bess, config,
         contract_value=contract_value,
         scenario_set=scenario_set,
+        awarded_commitment=awarded_commitment,
     )
     if dr_min_window_discharge_mwh is not None:
         floor_window = dr_min_window or dr_window
@@ -515,6 +554,7 @@ def solve_day_ahead_operational(
         load, price, bess, config,
         contract_value=contract_value,
         scenario_set=scenario_set,
+        awarded_commitment=awarded_commitment,
     )
     if dr_min_window_discharge_mwh is not None:
         floor_window = dr_min_window or dr_window

@@ -286,3 +286,26 @@ def test_sced_rejects_invalid_inputs():
         solve_sced(grid, {"b2": -1.0})
     with pytest.raises(ValueError, match="unknown generators"):
         solve_sced(grid, {"b2": 5.0}, fixed_commitment={"gx": True})
+
+
+def test_sced_and_scuc_propagate_solver_failure_instead_of_zero_results():
+    """求解器进程失败不能被抽取为全零出清结果。"""
+    grid = _grid(
+        [_two_bus_line()],
+        [
+            Generator(
+                generator_id="g1",
+                bus_id="b1",
+                p_min_mw=0.0,
+                p_max_mw=10.0,
+                ramp_up_mw=0.0,
+                ramp_down_mw=0.0,
+                marginal_cost=100.0,
+            ),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="sced solve failed: error"):
+        solve_sced(grid, {"b2": 5.0}, solver=object())
+    with pytest.raises(RuntimeError, match="scuc solve failed: error"):
+        solve_scuc(grid, {"b1": [0.0], "b2": [5.0]}, solver=object())

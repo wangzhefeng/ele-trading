@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from math import isfinite
 from typing import Any, Mapping, cast
 
+import numpy as np
 import pandas as pd
 
 
@@ -148,6 +149,301 @@ class MarketAwardReceipt:
         object.__setattr__(self, "delivery_end", delivery_end)
         object.__setattr__(self, "cleared_quantity_mwh", cleared_quantity)
         object.__setattr__(self, "cleared_price_cny_per_mwh", cleared_price)
+
+
+@dataclass(frozen=True, slots=True)
+class MatchedAward:
+    """已验证的报价—回执配对，供运行承诺构造使用。"""
+
+    bid: BidSubmission
+    receipt: MarketAwardReceipt
+
+
+def match_award_receipt(
+    *,
+    receipt: MarketAwardReceipt,
+    bid: BidSubmission,
+    already_awarded_mwh: float = 0.0,
+) -> MatchedAward:
+    """校验市场回执与本周期报价的标识、交割区间和累计成交量一致。"""
+    if receipt.bid_id != bid.bid_id:
+        raise ValueError("award receipt bid_id must match bid")
+    if (
+        receipt.delivery_start < bid.delivery_start
+        or receipt.delivery_end > bid.delivery_end
+    ):
+        raise ValueError("award receipt delivery window must be within bid window")
+    already_awarded = _require_finite_float(
+        already_awarded_mwh,
+        "already_awarded_mwh",
+    )
+    if already_awarded < 0.0:
+        raise ValueError("already_awarded_mwh must be non-negative")
+    if already_awarded + receipt.cleared_quantity_mwh > bid.quantity_mwh:
+        raise ValueError("award receipt quantity exceeds bid quantity")
+    return MatchedAward(bid=bid, receipt=receipt)
+
+
+@dataclass(frozen=True, slots=True)
+class AwardedCommitment:
+    """已成交的能源履约承诺，按调度网格分配为时段能量义务。"""
+
+    award_id: str
+    bid_id: str | None
+    external_award_reference: str | None
+    market: str
+    product: str
+    direction: str
+    required_energy_mwh: pd.Series
+    source_version: str
+    award_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.award_id, "award_id")
+        _require_non_empty(self.market, "market")
+        _require_non_empty(self.product, "product")
+        _require_non_empty(self.direction, "direction")
+        _require_non_empty(self.source_version, "source_version")
+        if not isinstance(self.required_energy_mwh, pd.Series):
+            raise ValueError("required_energy_mwh must be a pandas Series")
+        if not isinstance(self.required_energy_mwh.index, pd.DatetimeIndex):
+            raise ValueError("required_energy_mwh index must be a DatetimeIndex")
+        if not np.isfinite(self.required_energy_mwh.to_numpy(dtype=float)).all():
+            raise ValueError("required_energy_mwh must be finite")
+        award_ids = self.award_ids or (self.award_id,)
+        if not all(isinstance(item, str) and item.strip() for item in award_ids):
+            raise ValueError("award_ids must contain non-empty IDs")
+        object.__setattr__(self, "award_ids", award_ids)
+
+    @classmethod
+    def from_matched_award(
+        cls,
+        matched_award: MatchedAward,
+        *,
+        valid_times: pd.DatetimeIndex,
+        dt_hours: float,
+    ) -> "AwardedCommitment":
+        """将完整对齐的回执能量均分到其覆盖的调度时段。"""
+        if not isinstance(matched_award, MatchedAward):
+            raise ValueError("matched_award must be a MatchedAward")
+        if not isinstance(valid_times, pd.DatetimeIndex) or not len(valid_times):
+            raise ValueError("valid_times must be a non-empty DatetimeIndex")
+        if valid_times.tz is None:
+            raise ValueError("valid_times must be timezone-aware")
+        dt = _require_finite_float(dt_hours, "dt_hours")
+        if dt <= 0.0:
+            raise ValueError("dt_hours must be positive")
+        bid = matched_award.bid
+        receipt = matched_award.receipt
+        if bid.direction not in {"sell", "buy"}:
+            raise ValueError("awarded commitment direction must be buy or sell")
+        period_end = valid_times + pd.Timedelta(hours=dt)
+        covered = (valid_times >= receipt.delivery_start) & (
+            period_end <= receipt.delivery_end
+        )
+        if not covered.any():
+            raise ValueError("award receipt delivery window does not cover a schedule period")
+        covered_duration = float(covered.sum()) * dt
+        receipt_duration = (
+            receipt.delivery_end - receipt.delivery_start
+        ).total_seconds() / 3600.0
+        if not np.isclose(covered_duration, receipt_duration):
+            raise ValueError("award receipt delivery window must align with schedule periods")
+        required = pd.Series(0.0, index=valid_times, name="required_energy_mwh")
+        required.loc[covered] = receipt.cleared_quantity_mwh / int(covered.sum())
+        return cls(
+            award_id=receipt.award_id,
+            bid_id=receipt.bid_id,
+            external_award_reference=receipt.external_award_reference,
+            market=bid.market,
+            product=bid.product,
+            direction=bid.direction,
+            required_energy_mwh=required,
+            source_version=receipt.source_version,
+            award_ids=(receipt.award_id,),
+        )
+
+    @classmethod
+    def aggregate(
+        cls,
+        commitments: tuple["AwardedCommitment", ...],
+    ) -> "AwardedCommitment":
+        """聚合同一 Bid 的网格对齐部分成交，保留原始 Award ID。"""
+        if not commitments:
+            raise ValueError("at least one awarded commitment is required")
+        first = commitments[0]
+        for commitment in commitments[1:]:
+            if (
+                commitment.bid_id != first.bid_id
+                or commitment.external_award_reference
+                != first.external_award_reference
+                or commitment.market != first.market
+                or commitment.product != first.product
+                or commitment.direction != first.direction
+                or commitment.source_version != first.source_version
+            ):
+                raise ValueError("awarded commitments must have matching provenance")
+            if not commitment.required_energy_mwh.index.equals(
+                first.required_energy_mwh.index
+            ):
+                raise ValueError("awarded commitments must share a schedule index")
+        if len(commitments) == 1:
+            return first
+        award_ids = tuple(
+            award_id for commitment in commitments for award_id in commitment.award_ids
+        )
+        required = sum(
+            (commitment.required_energy_mwh for commitment in commitments),
+            start=pd.Series(0.0, index=first.required_energy_mwh.index),
+        )
+        return cls(
+            award_id=f"aggregate:{'|'.join(award_ids)}",
+            bid_id=first.bid_id,
+            external_award_reference=first.external_award_reference,
+            market=first.market,
+            product=first.product,
+            direction=first.direction,
+            required_energy_mwh=required,
+            source_version=first.source_version,
+            award_ids=award_ids,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceMetering:
+    """资源级实测放电电量；不得以优化计划替代计量输入。"""
+
+    resource_id: str
+    observed_at: pd.Timestamp
+    interval_discharge_mwh: pd.Series
+    source_version: str
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.resource_id, "resource_id")
+        _require_non_empty(self.source_version, "source_version")
+        observed_at = _require_aware_timestamp(self.observed_at, "observed_at")
+        if not isinstance(self.interval_discharge_mwh, pd.Series):
+            raise ValueError("interval_discharge_mwh must be a pandas Series")
+        if not isinstance(self.interval_discharge_mwh.index, pd.DatetimeIndex):
+            raise ValueError("interval_discharge_mwh index must be a DatetimeIndex")
+        if self.interval_discharge_mwh.index.tz is None:
+            raise ValueError("interval_discharge_mwh index must be timezone-aware")
+        values = self.interval_discharge_mwh.to_numpy(dtype=float)
+        if not len(values) or not np.isfinite(values).all() or (values < 0.0).any():
+            raise ValueError(
+                "interval_discharge_mwh must contain finite non-negative values"
+            )
+        if not self.interval_discharge_mwh.index.is_unique:
+            raise ValueError("interval_discharge_mwh index must be unique")
+        object.__setattr__(self, "observed_at", observed_at)
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceExecutionDeviation:
+    """资源级计划放电与外部实测的可追溯偏差。"""
+
+    resource_id: str
+    planned_discharge_mwh: float
+    actual_discharge_mwh: float
+    shortfall_mwh: float
+    plan_version: str
+    metering_version: str
+
+    @classmethod
+    def from_planned_discharge(
+        cls,
+        *,
+        resource_id: str,
+        planned_interval_discharge_mwh: pd.Series,
+        metering: ResourceMetering,
+        plan_version: str,
+    ) -> "ResourceExecutionDeviation":
+        _require_non_empty(resource_id, "resource_id")
+        _require_non_empty(plan_version, "plan_version")
+        if resource_id != metering.resource_id:
+            raise ValueError("resource_id must match resource metering")
+        if not isinstance(planned_interval_discharge_mwh, pd.Series):
+            raise ValueError("planned_interval_discharge_mwh must be a pandas Series")
+        if not isinstance(planned_interval_discharge_mwh.index, pd.DatetimeIndex):
+            raise ValueError(
+                "planned_interval_discharge_mwh index must be a DatetimeIndex"
+            )
+        if planned_interval_discharge_mwh.index.tz is None:
+            raise ValueError(
+                "planned_interval_discharge_mwh index must be timezone-aware"
+            )
+        planned_values = planned_interval_discharge_mwh.to_numpy(dtype=float)
+        if (
+            not len(planned_values)
+            or not np.isfinite(planned_values).all()
+            or (planned_values < 0.0).any()
+            or not planned_interval_discharge_mwh.index.is_unique
+        ):
+            raise ValueError(
+                "planned_interval_discharge_mwh must be unique finite non-negative"
+            )
+        if not planned_interval_discharge_mwh.index.isin(
+            metering.interval_discharge_mwh.index
+        ).all():
+            raise ValueError("resource metering must cover every planned interval")
+        planned = float(planned_interval_discharge_mwh.sum())
+        actual = float(
+            metering.interval_discharge_mwh.reindex(
+                planned_interval_discharge_mwh.index
+            ).sum()
+        )
+        return cls(
+            resource_id=resource_id,
+            planned_discharge_mwh=planned,
+            actual_discharge_mwh=actual,
+            shortfall_mwh=max(0.0, planned - actual),
+            plan_version=plan_version,
+            metering_version=metering.source_version,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AwardFulfillment:
+    """以资源级实测计算的已成交能源履约与短缺，不含市场罚则。"""
+
+    award_ids: tuple[str, ...]
+    resource_id: str
+    committed_mwh: float
+    delivered_mwh: float
+    shortfall_mwh: float
+    metering_version: str
+
+    @classmethod
+    def from_commitment(
+        cls,
+        *,
+        commitment: AwardedCommitment,
+        metering: ResourceMetering,
+    ) -> "AwardFulfillment":
+        if commitment.product != "energy" or commitment.direction != "sell":
+            raise ValueError(
+                "award fulfillment currently supports only sell energy commitments"
+            )
+        required = cast(
+            pd.Series,
+            commitment.required_energy_mwh.iloc[
+                np.flatnonzero(
+                    commitment.required_energy_mwh.to_numpy(dtype=float) > 0.0
+                )
+            ],
+        )
+        if not required.index.isin(metering.interval_discharge_mwh.index).all():
+            raise ValueError("resource metering must cover every award interval")
+        committed = float(required.sum())
+        delivered = float(metering.interval_discharge_mwh.reindex(required.index).sum())
+        return cls(
+            award_ids=commitment.award_ids,
+            resource_id=metering.resource_id,
+            committed_mwh=committed,
+            delivered_mwh=delivered,
+            shortfall_mwh=max(0.0, committed - delivered),
+            metering_version=metering.source_version,
+        )
 
 
 @dataclass(frozen=True, slots=True)

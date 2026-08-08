@@ -32,7 +32,7 @@ from pulp import (
     value,
 )
 
-from ele_trading.optimization.solver import solve_pulp_model
+from ele_trading.optimization.solver import SolveStatus, solve_pulp_model
 
 from .grid.contracts import GridSnapshot
 
@@ -228,7 +228,12 @@ def solve_sced(
     reserve_penalty = voll * reserve_shortfall
     model += energy_cost + shed_cost + curtail_cost + reserve_penalty
 
-    solve_pulp_model(model, solver=solver)
+    solve_result = solve_pulp_model(model, solver=solver)
+    if solve_result.status not in {SolveStatus.OPTIMAL, SolveStatus.FEASIBLE}:
+        raise RuntimeError(
+            "sced solve failed: "
+            f"{solve_result.status.value}: {solve_result.message}"
+        )
 
     # ---------------- 结果抽取 ----------------
     lmp: dict[str, float] = {}

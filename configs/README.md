@@ -44,4 +44,4 @@ uv run python app/trading/run_pipeline.py
 uv run python -m pytest -q tests/test_yaml_config_loading.py tests/trading tests/markets
 ```
 
-已批准的配置边界见 [v3](../docs/策略算法框架详细设计-v3.md)，当前配置缺口、报价 capability 和后续 schema 影响见 [v5 §13、§14](../docs/策略算法框架详细设计-v5.md#13-公共契约与配置影响)。
+已批准的配置边界见 [v3](../docs/策略算法框架详细设计-v3.md)，当前配置缺口、报价 capability 和后续 schema 影响见 [v6 §13、§14](../docs/策略算法框架详细设计-v6.md)。

@@ -52,12 +52,12 @@
 
 交易/调度通用内核 → `optimization/`；领域契约 → `domain/`；市场规则插件 → `markets/<模式>/`；头寸 → `positions/`；运行 → `operations/`；回测 → `backtest/`；编排 → `trading/`；投资收益测算（IRR/容量/结算/资源仿真）→ `investment_estimation/`。`src/ele_trading/capacity_planning/` **已删除**，不在 `ele_trading` 下重建容量规划/收益测算模块。活动代码不得出现地区名命名（如 mengxi）。
 
-## 3. 当前主线状态（v5 实施中）
+## 3. 当前主线状态（v6 实施中）
 
-[策略算法框架详细设计 v5](docs/策略算法框架详细设计-v5.md) 是当前唯一在研设计、事实快照和下一开发路线；v3 的 D-001～D-007 是仍生效的已批准架构决策，v0～v2 与 v4 仅作历史溯源。v3 迁移 M0–M6 已落地，活动链路按分层包 + 市场模式协议组织：
+[策略算法框架详细设计 v6](docs/策略算法框架详细设计-v6.md) 是当前唯一在研设计、事实快照和下一开发路线；v3 的 D-001～D-007 是仍生效的已批准架构决策，v0～v2、v4 与 v5 仅作历史溯源。v3 迁移 M0–M6 已落地，活动链路按分层包 + 市场模式协议组织：
 
 - **领域契约** `domain/`：共享交易契约（`PositionState`/`MarketForecastBundle`/`OperationalPlan`/`IntradayPlan`/`DRCommitment`/`DecisionTrace`）+ 事件链（`TradingEvent` 全链 + `MarketCalendar` + `derive_input_versions`，编排与回测均输出事件链）。
-- **市场模式协议** `markets/protocol.py`：`MarketMode` 提供配置、结算与价格角色 capability，`SettlementEngine` 注入结算语义；`markets/sections.py` 为六子对象组合式 typed config（market/scenario/bess/dr/monthly/solver）+ `schema_version`。主链不 import 具体模式（结构守卫强制），但头寸、运行和报价策略尚未成为完整可替换 capability，Bid→Award 闭环属于 v5 V5-8。
+- **市场模式协议** `markets/protocol.py`：`MarketMode` 提供配置、结算与价格角色 capability，`SettlementEngine` 注入结算语义；`markets/sections.py` 为六子对象组合式 typed config（market/scenario/bess/dr/monthly/solver）+ `schema_version`。主链不 import 具体模式（结构守卫强制），但头寸、运行和报价策略尚未成为完整可替换 capability；规则驱动 Bid→Award→资源履约→结算闭环由 v6 V6-2 承接。
 - **优化内核** `optimization/`：四层拆分（D-004/D-005）——共享 BESS 物理核（`bess_model`）、目标组件层（`objectives.py`）、统一结果提取（`extraction.py`）、typed 求解出口（`solver.py` `solve_pulp_model`）。MPC 已迁移共享核（D-004），`dt` 统一 0.25。
 - **头寸/运行/编排/回测**：`positions/`、`operations/`（DR 联合优化在 `day_ahead_coupled.py`，履约结算经 `SettlementEngine` 注入）、`trading/orchestrator.py`（固定四类预测 + 场景 + 日前 + 日内 + 结算，构建并输出事件链）、`backtest/`（四基准回测 + 指标 + 事件链完整性断言）。
 - **场景** `scenario/`：canonical 唯一化（D-007）——`Scenario`/`ScenarioSet`/`build_joint_scenarios`/`reduce_scenarios`；legacy `PriceScenario`/`generate_price_scenarios`/`normalize_weights` 已删除。
@@ -66,9 +66,9 @@
 - **配置**：`configs/markets/single_settlement.yaml`（schema v1 六区段）；旧扁平格式经 `scripts/migrate_market_config_v3.py` 一次性迁移，loader 不再接受。
 - **回测基线产物**：`results/trading/backtest/v2_baseline/`（与 v2 基线逐项一致）。
 
-### v5 全量扩展（V5-0~V5-7，D-014~D-016）
+### v5 实现增量（已关闭；V5-0～V5-11 由 v6 §9 继承）
 
-v5 在 v3/v4 之上建立预测—场景—仿真—决策—结算闭环。V5-0～V5-7 均已有算法核和专项测试，但未满足真实数据、主链接线、校准、影子运行与生产默认晋级条件；下一步以 v5 V5-8～V5-11 为准：
+v5 在 v3/v4 之上建立预测—场景—仿真—决策—结算的实现增量。V5-0～V5-11 的未退出项均由 v6 §9 继承；当前实施顺序、证据门和生产晋级条件以 v6 为准：
 
 - **价格角色** `domain/price_roles.py` + `markets/price_roles.py`（兼容导出）：日前/实时/中长期/回收价格角色词汇固化。
 - **概率预测** `forecasting/market_state.py`（市场状态 logistic provider）+ `price_history.py`（按角色解析训练序列）。
@@ -93,10 +93,10 @@ v4 设计（`docs/策略算法框架详细设计-v4.md`）在 v3 架构边界内
 
 ```bash
 env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run pytest -q -W error::RuntimeWarning
-# → 711 passed, 4 skipped, 5 deselected, 11 warnings
+# → 789 passed, 4 skipped, 5 deselected, 11 warnings
 ```
 
-该结果仅证明代码、接口和标准算例回归；生产晋级仍受 v5 §15 的真实数据、经济、影子与回滚门约束。
+该结果仅证明代码、接口和标准算例回归；生产晋级仍受 v6 §8、§9 的真实数据、经济、影子与回滚门约束。
 
 v5 新增测试：`tests/market_simulation/`（SCED/SCUC + ABM + MARL）、`tests/operations/`（多资源+执行偏差）、`tests/backtest/test_counterexamples.py` + `test_v5_acceptance.py`、`tests/forecasting/test_v5_{market_state,price_roles}.py`、`tests/scenario/test_v5_state_conditioned.py`、`tests/optimization/test_v5_{level2_degradation,risk_measures}.py`、`tests/markets/test_v5_reconciliation.py`、`tests/data_provider/test_v5_foundation_contracts.py`、`tests/trading/test_v5_forecast_vintages.py`。
 
@@ -129,9 +129,9 @@ v5 新增测试：`tests/market_simulation/`（SCED/SCUC + ABM + MARL）、`test
 |------|------|
 | `AGENTS.md` | 项目 agent 规则唯一权威（仅项目特有硬约束；通用编码准则在各 agent 全局配置） |
 | `README.md` | 项目总览、系统闭环、设计原则、仓库结构、核心模块、Two-stage+CVaR 模型、v2 重构进度、快速开始 |
-| `docs/策略算法框架详细设计-v5.md` | 当前代码事实、未完成闭环、验收门和下一开发路线 |
+| `docs/策略算法框架详细设计-v6.md` | 当前代码事实、算法审计、未退出项、验收门和下一开发路线 |
 | `docs/策略算法框架详细设计-v3.md` | 已批准架构决策（D-001～D-007） |
-| `docs/策略算法框架详细设计-v0.md`～`-v4.md` | 历史需求、迁移和算法增强溯源；v4 P1/P2 的未完成项已转入 v5 |
+| `docs/策略算法框架详细设计-v0.md`～`-v5.md` | 历史需求、迁移和算法增强溯源；未退出项已转入 v6 |
 | `app/README.md` | 入口脚本清单与运行约定（活动 14 个：optimization 3 + trading 7 + user_side_dispatch 4） |
 | `configs/README.md` | YAML 配置清单与对应入口 |
 | `tests/README.md` | 测试清单与冒烟边界 |

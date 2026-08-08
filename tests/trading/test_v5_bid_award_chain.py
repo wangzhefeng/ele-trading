@@ -17,6 +17,7 @@ from ele_trading.domain.contracts import (
     BidSubmission,
     MarketAwardReceipt,
     PositionState,
+    ResourceMetering,
 )
 from ele_trading.domain.events import (
     AwardEvent,
@@ -98,7 +99,7 @@ def _build_candidate(
     return BidSubmission(
         bid_id="bid-20260701-001",
         market="mengxi",
-        product="day_ahead_energy",
+        product="energy",
         direction="sell",
         issue_time=decision_time,
         delivery_start=valid_times[0],
@@ -141,6 +142,8 @@ def _run(
     mode=None,
     bid_candidate_builder=None,
     award_receipts=(),
+    dispatch_decision_time=None,
+    resource_metering=None,
 ):
     config = SINGLE_SETTLEMENT_MODE.load_config(CONFIG_YAML)
     config.scenario.scenario_count = 2
@@ -161,6 +164,8 @@ def _run(
         actual_price=np.array([210.0, 240.0, 490.0, 610.0]),
         intraday_start=2,
         award_receipts=award_receipts,
+        dispatch_decision_time=dispatch_decision_time,
+        resource_metering=resource_metering,
     )
 
 
@@ -171,7 +176,7 @@ def _receipt(**overrides) -> MarketAwardReceipt:
         "external_award_reference": None,
         "receipt_time": DECISION_TIME + pd.Timedelta(minutes=5),
         "delivery_start": DECISION_TIME + pd.Timedelta(minutes=15),
-        "delivery_end": DECISION_TIME + pd.Timedelta(hours=1),
+        "delivery_end": DECISION_TIME + pd.Timedelta(minutes=45),
         "cleared_quantity_mwh": 0.5,
         "cleared_price_cny_per_mwh": 412.5,
         "source_version": "clearing-v1",
@@ -198,13 +203,14 @@ def test_accepted_bid_and_matching_receipt_form_ordered_chain():
         mode=_AcceptingMode(),
         bid_candidate_builder=_build_candidate,
         award_receipts=(_receipt(),),
+        dispatch_decision_time=DECISION_TIME + pd.Timedelta(minutes=10),
     )
 
     event_types = [type(event) for event in result.events]
     assert event_types == (
         [PositionEvent]
         + [ForecastEvent] * 5
-        + [DispatchEvent, BidEvent, AwardEvent]
+        + [BidEvent, AwardEvent, DispatchEvent]
         + [ForecastEvent] * 4
         + [DispatchEvent, MeteringEvent, SettlementEvent]
     )
@@ -254,3 +260,100 @@ def test_external_receipt_uses_external_reference_without_bid():
     assert award_event.external_award_reference == "mlt-contract-2026-07#01"
     assert award_event.bid_id is None
     assert not any(isinstance(event, BidEvent) for event in result.events)
+
+
+def test_award_available_before_dispatch_changes_day_ahead_schedule():
+    """报价后、履约计划前抵达的回执必须约束日前调度。"""
+    dispatch_time = DECISION_TIME + pd.Timedelta(minutes=10)
+    plain = _run(
+        mode=_AcceptingMode(),
+        bid_candidate_builder=_build_candidate,
+        dispatch_decision_time=dispatch_time,
+    )
+    awarded = _run(
+        mode=_AcceptingMode(),
+        bid_candidate_builder=_build_candidate,
+        award_receipts=(_receipt(),),
+        dispatch_decision_time=dispatch_time,
+    )
+
+    plain_delivery_mwh = float(
+        plain.day_ahead_plan.resource_schedule["p_discharge"].iloc[:2].sum() * 0.25
+    )
+    awarded_delivery_mwh = float(
+        awarded.day_ahead_plan.resource_schedule["p_discharge"].iloc[:2].sum() * 0.25
+    )
+    assert awarded_delivery_mwh >= 0.5 - 1e-9
+    assert awarded_delivery_mwh > plain_delivery_mwh + 1e-9
+
+
+def test_late_award_constrains_only_the_unexecuted_intraday_window():
+    """调度后、日内决策前收到的成交只约束后续未执行时段。"""
+    late_receipt = _receipt(
+        receipt_time=DECISION_TIME + pd.Timedelta(minutes=5),
+        delivery_start=DECISION_TIME + pd.Timedelta(minutes=45),
+        delivery_end=DECISION_TIME + pd.Timedelta(minutes=75),
+    )
+    result = _run(
+        mode=_AcceptingMode(),
+        bid_candidate_builder=_build_candidate,
+        award_receipts=(late_receipt,),
+    )
+
+    delivered = float(
+        result.intraday_plan.schedule.resource_schedule["p_discharge"].sum() * 0.25
+    )
+    assert delivered >= 0.5 - 1e-9
+    assert result.intraday_plan.executed_prefix.index.equals(pd.RangeIndex(2))
+
+
+def test_multiple_partial_awards_for_one_bid_are_aggregated_before_dispatch():
+    """同一 Bid 的多个部分成交共同形成日前履约下限。"""
+    result = _run(
+        mode=_AcceptingMode(),
+        bid_candidate_builder=_build_candidate,
+        award_receipts=(
+            _receipt(
+                award_id="award-001",
+                delivery_start=DECISION_TIME + pd.Timedelta(minutes=15),
+                delivery_end=DECISION_TIME + pd.Timedelta(minutes=30),
+                cleared_quantity_mwh=0.25,
+            ),
+            _receipt(
+                award_id="award-002",
+                delivery_start=DECISION_TIME + pd.Timedelta(minutes=30),
+                delivery_end=DECISION_TIME + pd.Timedelta(minutes=45),
+                cleared_quantity_mwh=0.25,
+            ),
+        ),
+        dispatch_decision_time=DECISION_TIME + pd.Timedelta(minutes=10),
+    )
+
+    delivered = float(
+        result.day_ahead_plan.resource_schedule.iloc[:2]["p_discharge"].sum() * 0.25
+    )
+    assert delivered >= 0.5 - 1e-9
+
+
+def test_award_fulfillment_uses_external_resource_metering_not_plan():
+    """结算前的 Award 履约必须引用外部实测，并暴露短缺量。"""
+    index = pd.date_range(
+        DECISION_TIME + pd.Timedelta(minutes=15),
+        periods=2,
+        freq="15min",
+    )
+    result = _run(
+        mode=_AcceptingMode(),
+        bid_candidate_builder=_build_candidate,
+        award_receipts=(_receipt(),),
+        dispatch_decision_time=DECISION_TIME + pd.Timedelta(minutes=10),
+        resource_metering=ResourceMetering(
+            resource_id="bess-001",
+            observed_at=DECISION_TIME + pd.Timedelta(hours=1),
+            interval_discharge_mwh=pd.Series([0.25, 0.10], index=index),
+            source_version="meter-v1",
+        ),
+    )
+
+    assert len(result.award_fulfillments) == 1
+    assert result.award_fulfillments[0].shortfall_mwh == pytest.approx(0.15)
