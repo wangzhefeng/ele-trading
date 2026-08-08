@@ -14,6 +14,8 @@ from ele_trading.markets.shared import (
     reconcile_statement_lines,
 )
 
+from ele_trading.domain.contracts import BillingStatement
+
 #: 单结算模式已知的账单分项词汇（用于文档化与归属校验）。
 KNOWN_LINE_ITEMS: tuple[str, ...] = (
     "energy",
@@ -51,4 +53,38 @@ def reconcile_single_settlement_statement(
         tolerance=tolerance,
         confirmed=confirmed,
         category_hints=hints,
+    )
+
+
+#: 单结算 SettlementReport 字段 → 对账 modeled 分项词汇的映射。
+#: 账单适配器（V5-10）负责把市场账单翻译到同一词汇。
+REPORT_LINE_FIELDS: tuple[str, ...] = (
+    "energy_cost",
+    "contract_difference",
+    "long_recovery",
+    "dr_adjustment",
+    "degradation_cost",
+    "execution_adjustment",
+)
+
+
+def reconcile_from_report(
+    *,
+    report,
+    billing_statement: BillingStatement,
+) -> ReconciliationReport:
+    """从结算报告提取 modeled 分项并与正式账单核对。
+
+    ``confirmed=False`` 的账单永远不会通过（由 shared 引擎强制）。
+    """
+    modeled = {
+        field_name: float(getattr(report, field_name))
+        for field_name in REPORT_LINE_FIELDS
+    }
+    return reconcile_statement_lines(
+        modeled=modeled,
+        billed=billing_statement.lines,
+        statement_version=billing_statement.statement_version,
+        tolerance=billing_statement.tolerance,
+        confirmed=billing_statement.confirmed,
     )

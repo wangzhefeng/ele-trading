@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import pytest
+from typing import cast
 
 from ele_trading.backtest.acceptance import (
+    InvariantEvidence,
     ShadowEvaluator,
     block_bootstrap_saving,
     evaluate_acceptance,
@@ -18,6 +21,29 @@ from ele_trading.markets.shared import DifferenceCategory
 from ele_trading.markets.single_settlement.reconciliation import (
     reconcile_single_settlement_statement,
 )
+from ele_trading.domain.contracts import DecisionTrace
+
+
+def _evidence(**overrides) -> InvariantEvidence:
+    trace = DecisionTrace(
+        decision_time=cast(
+            pd.Timestamp,
+            pd.Timestamp("2026-07-01 00:00", tz="Asia/Shanghai"),
+        ),
+        input_versions={"price": "price-v1"},
+        model_versions={"dispatch": "dispatch-v1"},
+        config_version="config-v1",
+        solver_name="CBC",
+        solver_version="2.10",
+        solver_status="optimal",
+    )
+    values = {
+        "no_lookahead_checks": 4,
+        "hard_constraint_violations": 0,
+        "decision_traces": (trace,),
+    }
+    values.update(overrides)
+    return InvariantEvidence(**values)
 
 
 def _counterexample(passes: bool) -> CounterexampleCase:
@@ -74,8 +100,7 @@ def test_acceptance_passes_only_when_all_gates_pass():
         candidate_losses=candidate,
         reconciliation_reports=(_clean_reconciliation(),),
         counterexample_cases=(_counterexample(True),),
-        no_lookahead=True,
-        zero_hard_violations=True,
+        invariant_evidence=_evidence(),
         bootstrap_kwargs={"n_bootstrap": 500, "seed": 6},
     )
     assert report.passed, report.failures
@@ -86,8 +111,11 @@ def test_acceptance_passes_only_when_all_gates_pass():
     [
         ({"counterexample_cases": ()}, "counterexample"),
         ({"reconciliation_reports": ()}, "reconciliation"),
-        ({"no_lookahead": None}, "evidence"),
-        ({"zero_hard_violations": False}, "evidence"),
+        ({"invariant_evidence": None}, "evidence"),
+        (
+            {"invariant_evidence": _evidence(hard_constraint_violations=1)},
+            "evidence",
+        ),
     ],
 )
 def test_acceptance_fails_without_complete_evidence(
@@ -99,8 +127,7 @@ def test_acceptance_fails_without_complete_evidence(
     kwargs = {
         "reconciliation_reports": (_clean_reconciliation(),),
         "counterexample_cases": (_counterexample(True),),
-        "no_lookahead": True,
-        "zero_hard_violations": True,
+        "invariant_evidence": _evidence(),
         "bootstrap_kwargs": {"n_bootstrap": 300, "seed": 8},
     }
     kwargs.update(kwargs_override)
@@ -125,8 +152,7 @@ def test_acceptance_risk_gate_rejects_cvar_deterioration():
         max_cvar_increase_ratio=0.0,
         reconciliation_reports=(_clean_reconciliation(),),
         counterexample_cases=(_counterexample(True),),
-        no_lookahead=True,
-        zero_hard_violations=True,
+        invariant_evidence=_evidence(),
         bootstrap_kwargs={"n_bootstrap": 300, "seed": 9},
     )
     assert not report.passed
@@ -143,8 +169,7 @@ def test_acceptance_rejects_unconfirmed_reconciliation():
         candidate_losses=candidate,
         reconciliation_reports=(_clean_reconciliation(confirmed=False),),
         counterexample_cases=(_counterexample(True),),
-        no_lookahead=True,
-        zero_hard_violations=True,
+        invariant_evidence=_evidence(),
         bootstrap_kwargs={"n_bootstrap": 300, "seed": 10},
     )
     assert not report.passed
@@ -160,8 +185,7 @@ def test_acceptance_rejects_failing_hard_counterexample():
         candidate_losses=candidate,
         reconciliation_reports=(_clean_reconciliation(),),
         counterexample_cases=(_counterexample(False),),
-        no_lookahead=True,
-        zero_hard_violations=True,
+        invariant_evidence=_evidence(),
         bootstrap_kwargs={"n_bootstrap": 300, "seed": 11},
     )
     assert not report.passed
@@ -185,8 +209,7 @@ def test_shadow_evaluator_requires_min_days_then_applies_gates():
         acceptance_kwargs={
             "reconciliation_reports": (_clean_reconciliation(),),
             "counterexample_cases": (_counterexample(True),),
-            "no_lookahead": True,
-            "zero_hard_violations": True,
+            "invariant_evidence": _evidence(),
             "bootstrap_kwargs": {"n_bootstrap": 300, "seed": 12},
         }
     )
@@ -200,8 +223,7 @@ def test_shadow_evaluator_requires_min_days_then_applies_gates():
         acceptance_kwargs={
             "reconciliation_reports": (_clean_reconciliation(),),
             "counterexample_cases": (_counterexample(True),),
-            "no_lookahead": True,
-            "zero_hard_violations": True,
+            "invariant_evidence": _evidence(),
             "bootstrap_kwargs": {"n_bootstrap": 300, "seed": 13},
         }
     )

@@ -15,17 +15,22 @@ from ele_trading.forecasting.contracts import (
 from ele_trading.forecasting.provider import assert_no_future_info
 from ele_trading.scenario.contracts import ScenarioSet
 from ele_trading.domain.contracts import (
+    BidSubmission,
+    BillingStatement,
     IntradayPlan,
+    MarketAwardReceipt,
     MarketForecastBundle,
     OperationalPlan,
     PositionState,
 )
 from ele_trading.domain.events import (
     AwardEvent,
+    BidEvent,
     DispatchEvent,
     ForecastEvent,
     MarketCalendar,
     MeteringEvent,
+    PositionEvent,
     SettlementEvent,
     TradingEvent,
     derive_input_versions,
@@ -40,7 +45,13 @@ from ele_trading.markets.sections import MarketConfig
 from ele_trading.operations.day_ahead_coupled import (
     solve_day_ahead_operational,
 )
+from ele_trading.operations.execution_bias import ExecutionBiasEstimator
 from ele_trading.operations.intraday_rolling import solve_intraday_rolling
+from ele_trading.operations.multi_resource import (
+    MultiResourcePortfolio,
+    MultiResourceResult,
+    solve_multi_resource,
+)
 
 
 @dataclass(slots=True)
@@ -54,8 +65,10 @@ class TradingPipelineResult:
     intraday_plan: IntradayPlan
     settlement_report: Any  # 报告类型由市场模式定义（v3 M4）
     events: tuple[TradingEvent, ...]  # 事件链（v3 M5 / D-006）
+    reconciliation_report: Any | None = None  # 结算后对账（V5-9）
     intraday_forecasts: MarketForecastBundle | None = None
     intraday_scenarios: ScenarioSet | None = None
+    multi_resource_result: MultiResourceResult | None = None
 
 
 def _dispatch_model_tag(plan: OperationalPlan) -> str:
@@ -90,6 +103,9 @@ class TradingOrchestrator:
         solver=None,
         market_state_provider: Any | None = None,
         extreme_templates: tuple[Any, ...] = (),
+        execution_bias_estimator: ExecutionBiasEstimator | None = None,
+        multi_resource_portfolio: MultiResourcePortfolio | None = None,
+        bid_candidate_builder: Any | None = None,
     ) -> None:
         self.data_provider = data_provider
         self.forecast_provider = forecast_provider
@@ -102,6 +118,9 @@ class TradingOrchestrator:
         self.solver = solver
         self.market_state_provider = market_state_provider
         self.extreme_templates = tuple(extreme_templates)
+        self.execution_bias_estimator = execution_bias_estimator
+        self.multi_resource_portfolio = multi_resource_portfolio
+        self.bid_candidate_builder = bid_candidate_builder
 
     def _forecast_bundle(
         self,
@@ -308,6 +327,8 @@ class TradingOrchestrator:
         intraday_start: int,
         long_recovery: float = 0.0,
         execution_adjustment: float = 0.0,
+        award_receipts: tuple[MarketAwardReceipt, ...] = (),
+        billing_statement: BillingStatement | None = None,
     ) -> TradingPipelineResult:
         """Execute the active chain; actuals enter only after all decisions."""
         decision_time = pd.Timestamp(decision_time)
@@ -373,7 +394,7 @@ class TradingOrchestrator:
         )
         events: list[TradingEvent] = []
         events.append(
-            AwardEvent(
+            PositionEvent(
                 issue_time=decision_time,
                 valid_time=cast(pd.Timestamp, valid_times[0]),
                 version=position.source_version,
@@ -429,6 +450,25 @@ class TradingOrchestrator:
             settlement=self.market_mode.settlement,
             solver=self.solver,
         )
+        multi_resource_result = None
+        if self.multi_resource_portfolio is not None:
+            multi_resource_result = solve_multi_resource(
+                load_mwh=load_energy,
+                price=price_forecast,
+                bess_units=self.multi_resource_portfolio.bess_units,
+                dr_units=self.multi_resource_portfolio.dr_units,
+                renewable_units=self.multi_resource_portfolio.renewable_units,
+                dt=self.config.market.dt,
+                solver=self.solver,
+            )
+            trace = day_ahead.decision_trace
+            if trace is not None:
+                trace.diagnostics = {
+                    **trace.diagnostics,
+                    "multi_resource.solve_status": (
+                        multi_resource_result.solve_result.status.value
+                    ),
+                }
         events.append(
             DispatchEvent(
                 issue_time=decision_time,
@@ -439,6 +479,77 @@ class TradingOrchestrator:
                 unit="MW",
             )
         )
+
+        # ---- V5-8：候选报价 → capability 验证 → Bid；Award 仅来自市场回执 ----
+        submitted_bid_ids: set[str] = set()
+        bid_capability = getattr(
+            self.market_mode,
+            "bid_submission_capability",
+            None,
+        )
+        if bid_capability is not None and self.bid_candidate_builder is not None:
+            candidate = self.bid_candidate_builder(
+                decision_time=decision_time,
+                valid_times=valid_times,
+                plan=day_ahead,
+                bundle=bundle,
+                config_version=self.config_version,
+            )
+            if not isinstance(candidate, BidSubmission):
+                raise ValueError(
+                    "bid_candidate_builder must return a BidSubmission"
+                )
+            submission_decision = bid_capability.validate_submission(candidate)
+            trace = day_ahead.decision_trace
+            if submission_decision.accepted:
+                events.append(
+                    BidEvent(
+                        issue_time=decision_time,
+                        valid_time=candidate.delivery_start,
+                        version=candidate.strategy_version,
+                        source=f"bid:{candidate.product}",
+                        calendar=calendar,
+                        unit="MWh",
+                        bid_id=candidate.bid_id,
+                    )
+                )
+                submitted_bid_ids.add(candidate.bid_id)
+                if trace is not None:
+                    trace.diagnostics = {
+                        **trace.diagnostics,
+                        "bid.submitted": "true",
+                    }
+            else:
+                if trace is not None:
+                    trace.diagnostics = {
+                        **trace.diagnostics,
+                        "bid.submitted": "false",
+                        "bid.rejected_reason": str(
+                            submission_decision.reason
+                        ),
+                    }
+        for receipt in award_receipts:
+            if (
+                receipt.bid_id is not None
+                and receipt.bid_id not in submitted_bid_ids
+            ):
+                raise ValueError(
+                    f"award receipt references unknown bid: {receipt.bid_id!r}"
+                )
+            events.append(
+                AwardEvent(
+                    issue_time=receipt.receipt_time,
+                    valid_time=receipt.delivery_start,
+                    version=receipt.source_version,
+                    source="award:market",
+                    calendar=calendar,
+                    unit="MWh",
+                    award_id=receipt.award_id,
+                    bid_id=receipt.bid_id,
+                    external_award_reference=receipt.external_award_reference,
+                )
+            )
+
         executed_prefix = day_ahead.resource_schedule.iloc[
             :intraday_start
         ].copy()
@@ -503,6 +614,11 @@ class TradingOrchestrator:
         intraday_price_forecast = (
             intraday_forecasts.price_forecast.point.to_numpy(dtype=float)
         )
+        constraint_tightening = (
+            self.execution_bias_estimator.constraint_tightening()
+            if self.execution_bias_estimator is not None
+            else None
+        )
         intraday = solve_intraday_rolling(
             load_forecast=intraday_net_load,
             realtime_price_forecast=intraday_price_forecast,
@@ -523,6 +639,7 @@ class TradingOrchestrator:
             config_version=self.config_version,
             settlement=self.market_mode.settlement,
             solver=self.solver,
+            constraint_tightening=constraint_tightening,
         )
         events.append(
             DispatchEvent(
@@ -595,6 +712,20 @@ class TradingOrchestrator:
             baseline_cost=baseline.total_cost,
             trace=intraday.schedule.decision_trace,
         )
+
+        # ---- V5-9：提供正式账单时自动对账；模式不支持则显式失败 ----
+        reconciliation_report = None
+        if billing_statement is not None:
+            reconcile = getattr(self.market_mode, "reconcile_statement", None)
+            if not callable(reconcile):
+                raise ValueError(
+                    "market mode does not support statement reconciliation"
+                )
+            reconciliation_report = reconcile(
+                report=settlement,
+                billing_statement=billing_statement,
+            )
+
         # ---- 事件链收尾（v3 M5）：实际量测 → 结算 ----
         events.append(
             MeteringEvent(
@@ -624,6 +755,8 @@ class TradingOrchestrator:
             intraday_plan=intraday,
             settlement_report=settlement,
             events=tuple(events),
+            reconciliation_report=reconciliation_report,
             intraday_forecasts=intraday_forecasts,
             intraday_scenarios=intraday_scenarios,
+            multi_resource_result=multi_resource_result,
         )

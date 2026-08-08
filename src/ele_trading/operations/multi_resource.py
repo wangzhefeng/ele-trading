@@ -19,7 +19,11 @@ import numpy as np
 from pulp import LpMinimize, LpProblem, LpVariable, lpSum, value
 
 from ele_trading.optimization.risk import add_cvar_auxiliaries
-from ele_trading.optimization.solver import solve_pulp_model
+from ele_trading.optimization.solver import (
+    SolveStatus,
+    SolverResult,
+    solve_pulp_model,
+)
 
 
 # ------------------------------------------------------------------ #
@@ -115,6 +119,19 @@ class RenewableUnit:
         _non_negative(self.curtailment_cost_per_mwh, "curtailment_cost_per_mwh")
 
 
+@dataclass(frozen=True, slots=True)
+class MultiResourcePortfolio:
+    """编排器可选消费的资源组合，不改变单 BESS 默认路径。"""
+
+    bess_units: tuple[BESSUnit, ...] = ()
+    dr_units: tuple[DemandResponseUnit, ...] = ()
+    renewable_units: tuple[RenewableUnit, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not (self.bess_units or self.dr_units or self.renewable_units):
+            raise ValueError("multi-resource portfolio must contain a resource")
+
+
 # ------------------------------------------------------------------ #
 #  结果契约
 # ------------------------------------------------------------------ #
@@ -126,8 +143,9 @@ class MultiResourceResult:
     resource_schedules: Mapping[str, Mapping[str, list[float]]]
     dr_schedules: Mapping[str, Mapping[str, list[float]]]
     renewable_schedules: Mapping[str, Mapping[str, list[float]]]
-    grid_import_mwh: np.ndarray
-    expected_cost: float
+    grid_import_mwh: np.ndarray | None
+    expected_cost: float | None
+    solve_result: SolverResult
     scenario_costs: Mapping[str, float] = field(default_factory=dict)
     cvar: float | None = None
 
@@ -138,7 +156,9 @@ class MultiResourceResult:
 
 def _value(expression) -> float:
     result = value(expression)
-    return 0.0 if result is None else float(result)
+    if result is None:
+        raise RuntimeError("solver returned no value for a solved expression")
+    return float(result)
 
 
 def solve_multi_resource(
@@ -378,7 +398,16 @@ def solve_multi_resource(
             objective = objective + cvar_weight * cvar.expression
         model += objective
 
-    solve_pulp_model(model, solver=solver)
+    solve_result = solve_pulp_model(model, solver=solver)
+    if solve_result.status not in {SolveStatus.OPTIMAL, SolveStatus.FEASIBLE}:
+        return MultiResourceResult(
+            resource_schedules={},
+            dr_schedules={},
+            renewable_schedules={},
+            grid_import_mwh=None,
+            expected_cost=None,
+            solve_result=solve_result,
+        )
 
     # ---------------- 结果抽取 ----------------
     scenario_costs: dict[str, float] = {}
@@ -450,6 +479,7 @@ def solve_multi_resource(
             [_value(grid_import[step]) for step in steps], dtype=float
         ),
         expected_cost=expected_cost,
+        solve_result=solve_result,
         scenario_costs=scenario_costs,
         cvar=cvar_value,
     )

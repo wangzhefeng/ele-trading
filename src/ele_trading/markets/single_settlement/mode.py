@@ -11,11 +11,19 @@ from pathlib import Path
 
 import numpy as np
 
-from ele_trading.markets.protocol import SettlementEngine
+from ele_trading.domain.contracts import BidSubmission
+from ele_trading.markets.protocol import (
+    BidSubmissionCapability,
+    BidSubmissionDecision,
+    SettlementEngine,
+)
 from ele_trading.markets.price_roles import PriceRole
 from ele_trading.markets.single_settlement import settlement as _settlement
 from ele_trading.markets.single_settlement.config_loader import (
     load_market_config,
+)
+from ele_trading.markets.single_settlement.reconciliation import (
+    reconcile_from_report,
 )
 
 
@@ -61,11 +69,26 @@ class _SingleSettlementEngine:
         )
 
 
+class _PlanOnlyBidSubmissionCapability:
+    """单结算当前只产出运行计划，不支持正式向市场申报。"""
+
+    can_submit: bool = False
+
+    def validate_submission(self, bid: BidSubmission) -> BidSubmissionDecision:
+        return BidSubmissionDecision(
+            accepted=False,
+            reason="single_settlement supports operational planning only",
+        )
+
+
 class _SingleSettlementMode:
     """单结算市场模式：配置加载 + 结算引擎装配。"""
 
     name: str = "single_settlement"
     settlement: SettlementEngine = _SingleSettlementEngine()
+    bid_submission_capability: BidSubmissionCapability = (
+        _PlanOnlyBidSubmissionCapability()
+    )
     price_roles: tuple[str, ...] = (
         PriceRole.DAY_AHEAD_REFERENCE.value,
         PriceRole.REAL_TIME_SETTLEMENT.value,
@@ -75,6 +98,13 @@ class _SingleSettlementMode:
 
     def load_config(self, path: str | Path):
         return load_market_config(path)
+
+    def reconcile_statement(self, *, report, billing_statement):
+        """结算后对账：modeled 分项取自本模式报告，账单由调用方提供。"""
+        return reconcile_from_report(
+            report=report,
+            billing_statement=billing_statement,
+        )
 
 
 SINGLE_SETTLEMENT_MODE = _SingleSettlementMode()

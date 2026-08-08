@@ -6,7 +6,7 @@
 
 | 模块 | 当前职责 | 状态 |
 |---|---|---|
-| `contracts.py` | `PositionState`、`MarketForecastBundle`、`OperationalPlan`、`IntradayPlan`、`IntradayAdjustment`、`DRCommitment`、`DecisionTrace` | 活动链使用 |
-| `events.py` | `Forecast/Award/Dispatch/Metering/Settlement` 事件数据类型和 `BidEvent` | 前五类已由编排和回测消费；BidEvent 尚未由主链产生 |
+| `contracts.py` | `BidSubmission`、`MarketAwardReceipt`、`PositionState`、`MarketForecastBundle`、`OperationalPlan`、`IntradayPlan`、`IntradayAdjustment`、`DRCommitment`、`DecisionTrace` | 活动链使用 |
+| `events.py` | `Position/Forecast/Bid/Award/Dispatch/Metering/Settlement` 事件数据类型 | Position、Forecast、Bid、Award、Dispatch、Metering、Settlement 均已由编排消费；Bid 经 capability 验证产生，Award 仅由 `MarketAwardReceipt` 构造 |
 
-`DecisionTrace.input_versions` 已由事件前缀派生。当前缺口不是事件骨架，而是交易侧 `BidSubmission`、BidEvent 和 Bid→Award 对应关系；该闭环列为 v5 V5-8。
+`DecisionTrace.input_versions` 已由事件前缀派生。`PositionEvent` 表示合同/仓位输入，不得伪装为当前市场 Award；工程闭环已接入主链；当前缺口是真实市场产品规则与回执适配器，列为 v5 V5-10。

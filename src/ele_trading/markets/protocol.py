@@ -7,10 +7,36 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
+
+from ele_trading.domain.contracts import BidSubmission
+
+
+@dataclass(frozen=True, slots=True)
+class BidSubmissionDecision:
+    """市场模式对候选报价的结构化接收或拒绝结论。"""
+
+    accepted: bool
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.accepted and not self.reason:
+            raise ValueError("rejected bid submission requires a reason")
+
+
+@runtime_checkable
+class BidSubmissionCapability(Protocol):
+    """市场模式可选的正式报价能力。"""
+
+    can_submit: bool
+
+    def validate_submission(self, bid: BidSubmission) -> BidSubmissionDecision:
+        """校验候选报价是否可由当前市场模式正式提交。"""
+        ...
 
 
 @runtime_checkable

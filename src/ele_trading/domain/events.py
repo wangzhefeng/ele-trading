@@ -110,13 +110,43 @@ class ForecastEvent(TradingEvent):
 
 
 @dataclass(slots=True)
+class PositionEvent(TradingEvent):
+    """头寸事件：决策时点已知的合同/仓位输入证据。"""
+
+
+@dataclass(slots=True)
 class BidEvent(TradingEvent):
     """申报事件：向市场提交的量价申报。"""
+
+    bid_id: str
+
+    def __post_init__(self) -> None:
+        TradingEvent.__post_init__(self)
+        _require_non_empty(self.bid_id, "bid_id")
 
 
 @dataclass(slots=True)
 class AwardEvent(TradingEvent):
     """成交事件：市场出清后返回的成交结果。"""
+
+    award_id: str
+    bid_id: str | None = None
+    external_award_reference: str | None = None
+
+    def __post_init__(self) -> None:
+        TradingEvent.__post_init__(self)
+        _require_non_empty(self.award_id, "award_id")
+        if (self.bid_id is None) == (self.external_award_reference is None):
+            raise ValueError(
+                "exactly one of bid_id or external_award_reference is required"
+            )
+        if self.bid_id is not None:
+            _require_non_empty(self.bid_id, "bid_id")
+        if self.external_award_reference is not None:
+            _require_non_empty(
+                self.external_award_reference,
+                "external_award_reference",
+            )
 
 
 @dataclass(slots=True)
@@ -138,8 +168,8 @@ class SettlementEvent(TradingEvent):
 #  事件链派生（v3 M5 / D-006）
 # ------------------------------------------------------------------ #
 
-#: 参与 input_versions 派生的事件类型（Forecast/Award 携带输入版本）
-_INPUT_VERSION_EVENT_TYPES = (ForecastEvent, AwardEvent)
+#: 参与 input_versions 派生的事件类型（预测、头寸与市场成交携带输入版本）
+_INPUT_VERSION_EVENT_TYPES = (ForecastEvent, PositionEvent, AwardEvent)
 
 
 def derive_input_versions(

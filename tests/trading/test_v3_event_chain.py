@@ -9,15 +9,19 @@ import pandas as pd
 
 from ele_trading.domain.contracts import PositionState
 from ele_trading.domain.events import (
-    AwardEvent,
     DispatchEvent,
     ForecastEvent,
     MeteringEvent,
+    PositionEvent,
     SettlementEvent,
     derive_input_versions,
 )
 from ele_trading.forecasting.contracts import ForecastRequest, ForecastResult
 from ele_trading.markets.single_settlement.mode import SINGLE_SETTLEMENT_MODE
+from ele_trading.operations.multi_resource import (
+    BESSUnit,
+    MultiResourcePortfolio,
+)
 from ele_trading.scenario.joint_builder import build_joint_scenarios
 from ele_trading.trading.orchestrator import TradingOrchestrator
 
@@ -75,7 +79,7 @@ class _StaticForecastProvider:
         )
 
 
-def _run_pipeline():
+def _run_pipeline(*, multi_resource_portfolio: MultiResourcePortfolio | None = None):
     config = SINGLE_SETTLEMENT_MODE.load_config(CONFIG_YAML)
     config.scenario.scenario_count = 2
     orchestrator = TradingOrchestrator(
@@ -87,6 +91,7 @@ def _run_pipeline():
         config=config,
         bess=BESS,
         config_version="config-v1",
+        multi_resource_portfolio=multi_resource_portfolio,
     )
     return orchestrator.run(
         decision_time=DECISION_TIME,
@@ -101,7 +106,7 @@ def test_event_chain_complete_and_ordered():
     result = _run_pipeline()
     event_types = [type(event) for event in result.events]
     assert event_types == (
-        [AwardEvent]
+        [PositionEvent]
         + [ForecastEvent] * 5
         + [DispatchEvent]
         + [ForecastEvent] * 4
@@ -182,3 +187,30 @@ def test_forecast_events_respect_decision_time():
                 else DECISION_TIME
             )
             assert event.issue_time == expected_issue_time
+
+
+def test_configured_multi_resource_portfolio_returns_separate_resource_plan():
+    result = _run_pipeline(
+        multi_resource_portfolio=MultiResourcePortfolio(
+            bess_units=(
+                BESSUnit(
+                    name="bess-a",
+                    soc0=3.0,
+                    soc_min=1.0,
+                    soc_max=5.0,
+                    p_charge_max=2.0,
+                    p_discharge_max=2.0,
+                    eta_charge=0.95,
+                    eta_discharge=0.95,
+                ),
+            ),
+        ),
+    )
+
+    resource_plan = result.multi_resource_result
+    assert resource_plan is not None
+    assert resource_plan.solve_result.status.value == "optimal"
+    assert "bess-a" in resource_plan.resource_schedules
+    trace = result.day_ahead_plan.decision_trace
+    assert trace is not None
+    assert trace.diagnostics["multi_resource.solve_status"] == "optimal"

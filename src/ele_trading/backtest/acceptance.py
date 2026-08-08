@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
-from typing import Callable, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 
@@ -98,6 +98,25 @@ def block_bootstrap_saving(
 # ------------------------------------------------------------------ #
 
 @dataclass(frozen=True, slots=True)
+class InvariantEvidence:
+    """由运行器产出的前置不变量证据（正式验收的唯一接受形式）。
+
+    调用方手工申报的布尔标志不构成正式证据；验收只信任运行期间
+    实际执行的检查计数与决策追踪。
+    """
+
+    no_lookahead_checks: int        # 运行期间执行的防前瞻断言次数（>0 才有效）
+    hard_constraint_violations: int # 硬约束违约计数（必须为 0）
+    decision_traces: tuple[Any, ...]  # 运行产出的 DecisionTrace（非空）
+
+    def __post_init__(self) -> None:
+        for name in ("no_lookahead_checks", "hard_constraint_violations"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+
+
+@dataclass(frozen=True, slots=True)
 class AcceptanceGates:
     """逐项门结果。"""
 
@@ -129,14 +148,16 @@ def evaluate_acceptance(
     max_cvar_increase_ratio: float = 0.0,
     reconciliation_reports: Sequence[ReconciliationReport] = (),
     counterexample_cases: Sequence = (),
+    invariant_evidence: InvariantEvidence | None = None,
     no_lookahead: bool | None = None,
     zero_hard_violations: bool | None = None,
     bootstrap_kwargs: Mapping[str, object] | None = None,
 ) -> AcceptanceReport:
     """执行统一经济验收。
 
-    ``no_lookahead`` / ``zero_hard_violations`` 为调用方申报的前置
-    不变量；``None``（未申报）按失败处理——验收不接受缺失证据。
+    正式验收只接受 ``invariant_evidence``；``no_lookahead`` /
+    ``zero_hard_violations`` 是调用方申报的遗留入口，不能使
+    invariants 门通过——缺失或仅有申报均按失败处理。
     """
     if not 0.0 < cvar_alpha < 1.0:
         raise ValueError("cvar_alpha must be within (0, 1)")
@@ -188,9 +209,23 @@ def evaluate_acceptance(
     if not counterexamples:
         failures.append("counterexample suite missing or failing")
 
-    invariants = bool(no_lookahead) and bool(zero_hard_violations)
-    if not invariants:
-        failures.append("no-lookahead / zero-hard-violation evidence missing")
+    if invariant_evidence is None:
+        invariants = False
+        failures.append(
+            "invariant evidence missing: caller-declared flags are not "
+            "formal evidence"
+        )
+    else:
+        invariants = (
+            invariant_evidence.no_lookahead_checks > 0
+            and invariant_evidence.hard_constraint_violations == 0
+            and bool(invariant_evidence.decision_traces)
+        )
+        if not invariants:
+            failures.append(
+                "invariant evidence invalid: requires no-lookahead checks, "
+                "zero hard violations and non-empty decision traces"
+            )
 
     gates = AcceptanceGates(
         statistical=statistical,
@@ -251,7 +286,7 @@ class ShadowEvaluator:
     def evaluate(
         self,
         *,
-        acceptance_kwargs: Mapping[str, object] | None = None,
+        acceptance_kwargs: Mapping[str, Any] | None = None,
     ) -> ShadowReport:
         if self.days < self.min_days:
             return ShadowReport(

@@ -20,6 +20,10 @@ from ele_trading.markets.sections import MarketConfig
 from ele_trading.operations.day_ahead_coupled import (
     solve_day_ahead_operational,
 )
+from ele_trading.operations.execution_bias import (
+    ConstraintTightening,
+    apply_constraint_tightening,
+)
 
 
 def _remaining_previous_schedule(
@@ -204,6 +208,7 @@ def solve_intraday_rolling(
     config_version: str = "runtime-config",
     settlement: SettlementEngine | None = None,
     solver=None,
+    constraint_tightening: ConstraintTightening | None = None,
 ) -> IntradayPlan:
     """Freeze execution and optimize only the remaining physical schedule.
 
@@ -229,7 +234,15 @@ def solve_intraday_rolling(
         len(frozen_prefix),
         len(load),
     )
-    bess_current = {**bess, "socini": float(current_soc)}
+    bess_current = apply_constraint_tightening(
+        {**bess, "socini": float(current_soc)},
+        constraint_tightening,
+    )
+    # 已实测 SOC 不能被收紧后的下限“抬高”；否则会虚构不可用能量。
+    bess_current["socmin"] = min(
+        bess_current["socmin"],
+        bess_current["socini"],
+    )
 
     # ---- 计算日内履约下限 ----
     dr_min_discharge: float | None = None
@@ -292,6 +305,25 @@ def solve_intraday_rolling(
             settlement=settlement,
         )
         fallback_used = True
+
+    if constraint_tightening is not None:
+        trace = schedule.decision_trace
+        if trace is not None:
+            trace.diagnostics = {
+                **trace.diagnostics,
+                "execution_bias.available": str(
+                    constraint_tightening.available
+                ).lower(),
+                "execution_bias.sample_count": str(
+                    constraint_tightening.sample_count
+                ),
+                "execution_bias.power_derate_mw": (
+                    f"{max(0.0, constraint_tightening.power_derate_mw):g}"
+                ),
+                "execution_bias.soc_reserve_mwh": (
+                    f"{max(0.0, constraint_tightening.soc_reserve_mwh):g}"
+                ),
+            }
 
     previous_net = previous_remaining["p_net"].reset_index(drop=True)
     new_net = schedule.resource_schedule["p_net"].reset_index(drop=True)

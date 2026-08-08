@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from typing import Mapping
 
 import numpy as np
 
@@ -96,3 +97,27 @@ class ExecutionBiasEstimator:
             sample_count=sample_count,
             available=True,
         )
+
+
+def apply_constraint_tightening(
+    bess: Mapping[str, float],
+    tightening: ConstraintTightening | None,
+) -> dict[str, float]:
+    """返回施加执行偏差收紧后的 BESS 约束副本。
+
+    样本不足时保持原始边界；不修改调用方资产参数。
+    """
+    effective = {key: float(value) for key, value in bess.items()}
+    if tightening is None or not tightening.available:
+        return effective
+
+    derate = max(0.0, tightening.power_derate_mw)
+    for key in ("p_bcmax", "p_bdmax"):
+        if key in effective:
+            effective[key] = max(0.0, effective[key] - derate)
+    if "socmin" in effective and "socmax" in effective:
+        effective["socmin"] = min(
+            effective["socmax"],
+            effective["socmin"] + max(0.0, tightening.soc_reserve_mwh),
+        )
+    return effective

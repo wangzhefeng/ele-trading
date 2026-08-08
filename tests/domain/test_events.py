@@ -12,6 +12,7 @@ from ele_trading.domain import (
     ForecastEvent,
     MarketCalendar,
     MeteringEvent,
+    PositionEvent,
     SettlementEvent,
     TradingEvent,
 )
@@ -106,19 +107,20 @@ def test_event_delivery_period_uses_calendar_granularity():
 
 
 @pytest.mark.parametrize(
-    "event_type",
-    [
-        ForecastEvent,
-        BidEvent,
-        AwardEvent,
-        DispatchEvent,
-        MeteringEvent,
-        SettlementEvent,
-    ],
+    ("event_type", "overrides"),
+    (
+        (ForecastEvent, {}),
+        (PositionEvent, {}),
+        (BidEvent, {"bid_id": "bid-1"}),
+        (AwardEvent, {"award_id": "award-1", "bid_id": "bid-1"}),
+        (DispatchEvent, {}),
+        (MeteringEvent, {}),
+        (SettlementEvent, {}),
+    ),
 )
-def test_event_chain_subclasses_are_constructible(event_type):
-    """Forecast→Bid→Award→Dispatch→Metering→Settlement 全链可构造。"""
-    event = _event(event_type)
+def test_event_chain_subclasses_are_constructible(event_type, overrides):
+    """Position→Forecast→Bid→Award→Dispatch→Metering→Settlement 全链可构造。"""
+    event = _event(event_type, **overrides)
 
     assert isinstance(event, TradingEvent)
     assert event.calendar.settle_periods == 96
@@ -128,12 +130,12 @@ def test_event_chain_subclasses_are_constructible(event_type):
 #  derive_input_versions（v3 M5）
 # ------------------------------------------------------------------ #
 
-def test_derive_input_versions_from_forecast_and_award():
-    """input_versions = {source: version}，只取 Forecast/Award 事件。"""
+def test_derive_input_versions_from_forecast_and_position():
+    """input_versions = {source: version}，只取 Forecast/Position/Award 事件。"""
     from ele_trading.domain import derive_input_versions
 
     events = (
-        _event(AwardEvent, source="position", version="position-v1"),
+        _event(PositionEvent, source="position", version="position-v1"),
         _event(ForecastEvent, source="price", version="price-v2"),
         _event(ForecastEvent, source="load", version="load-v3"),
         _event(DispatchEvent, source="dispatch:day_ahead", version="model-v1"),
