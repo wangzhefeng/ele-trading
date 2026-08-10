@@ -132,6 +132,7 @@ v5 新增测试：`tests/market_simulation/`（SCED/SCUC + ABM + MARL）、`test
 | `docs/策略算法框架详细设计-v6.md` | 当前代码事实、算法审计、未退出项、验收门和下一开发路线 |
 | `docs/策略算法框架详细设计-v3.md` | 已批准架构决策（D-001～D-007） |
 | `docs/策略算法框架详细设计-v0.md`～`-v5.md` | 历史需求、迁移和算法增强溯源；未退出项已转入 v6 |
+| `docs/电力市场交易.md` | 电力市场宏观流程知识文档（基于《电力现货市场 101 问》通用机制整理；不构成任何省区现行规则） |
 | `app/README.md` | 入口脚本清单与运行约定（活动 14 个：optimization 3 + trading 7 + user_side_dispatch 4） |
 | `configs/README.md` | YAML 配置清单与对应入口 |
 | `tests/README.md` | 测试清单与冒烟边界 |
